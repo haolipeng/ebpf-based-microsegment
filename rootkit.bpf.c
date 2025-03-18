@@ -1,62 +1,46 @@
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
+#include <bpf/bpf_tracing.h>
 
 char LICENSE[] SEC("license") = "GPL";
 
-//全局变量区
-volatile int target_ppid = 0;
+SEC("raw_tracepoint/sys_enter")
+int enter_fchmodat(struct bpf_raw_tracepoint_args *ctx) {	
+    struct pt_regs* regs;
+    regs = (struct pt_regs*)ctx->args[0];
 
-//宏定义
-#define MAX_PID_LEN 10
-const volatile int pid_to_hide_len = 0;
-const volatile char pid_to_hide[MAX_PID_LEN] = {0};
+    //int fchmodat(int dirfd, const char* pathname, mode_t mode, int flags);
+    char pathname[256];
+    char* pathname_ptr = (char*)PT_REGS_PARM2_CORE(regs);
+    bpf_core_read_user_str(pathname, sizeof(pathname), pathname_ptr);
 
-// 映射表 存储dents 缓冲区的地址
-struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, 8192);
-    __type(key, u32);
-    __type(value, u64);
-} map_buffs SEC(".maps");
-
-// 映射表，用于循环搜索数据
-struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, 8192);
-    __type(key, u32);
-    __type(value, u32);
-} map_bytes_read SEC(".maps");
+    char fmt[] = "fchmodat %s\n";
+    bpf_trace_printk(fmt, sizeof(fmt), &pathname);
+    return 0;
+}
 
 // 映射表，存储程序的尾调用的
 struct {
     __uint(type, BPF_MAP_TYPE_PROG_ARRAY);
-    __uint(max_entries, 5);
-    __type(key, u32);
-    __type(value, u32);
-}map_prog_array SEC(".maps");
+    __uint(max_entries, 1024);
+    __uint(key_size, sizeof(u32));
+    __uint(value_size, sizeof(u32));
+    __array(values,int (void*));
+}tail_jump_map SEC(".maps") = {
+    .values = {
+        [268] = (void*)&enter_fchmodat,
+    },
+};
 
+SEC("raw_tracepoint/sys_enter")
+int raw_tracepoint__sys_enter(struct bpf_raw_tracepoint_args *ctx) {
+    //call another ebpf program
+    u32 syscall_id = 268;
+    bpf_tail_call(ctx,&tail_jump_map,syscall_id);
 
-//映射表，存储实际的地址
-struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, 8192);
-    __type(key, u32);
-    __type(value, u64);
-} map_to_patch SEC(".maps");
+    char fmt[] = "no bpf program for syscall %d\n";
+    bpf_trace_printk(fmt, sizeof(fmt), syscall_id);
 
-// RingBuffer to send events to user space
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 256 * 1024); // 256KB 的缓冲区
-} rb SEC(".maps");
-
-SEC("tracepoint/syscalls/sys_enter_getdents64")
-int handle_getdents_enter(struct trace_event_raw_sys_enter *ctx) {	
-    return 0;
-}
-
-SEC("tracepoint/syscalls/sys_exit_getdents64")
-int handle_getdents_exit(struct trace_event_raw_sys_exit *ctx) {
     return 0;
 }
