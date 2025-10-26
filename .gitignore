@@ -1,0 +1,28 @@
+# Source references directory
+source-references/
+
+# Build artifacts
+*.o
+*.so
+*.a
+*.bpf.o
+*.skel.h
+
+# Executables
+tc_microsegment
+microsegment
+
+# Debug files
+*.log
+*.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
