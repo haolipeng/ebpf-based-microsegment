@@ -197,67 +197,204 @@ clean:
 make hello.bpf.o
 ```
 
-**下午 (3-4小时)：加载和测试**
+**下午 (3-4小时)：使用libbpf加载和测试**
 
-创建加载脚本 `scripts/load_hello.sh`:
+> **💡 现代方法**: 推荐使用 libbpf 库和 skeleton 来加载 eBPF 程序，相比传统的 shell 脚本方式更安全、更易维护。
+
+首先生成 skeleton 头文件：
 
 ```bash
-#!/bin/bash
-set -e
+# 生成 skeleton (需要先编译好 hello.bpf.o)
+bpftool gen skeleton hello.bpf.o > hello.skel.h
+```
 
-BPF_OBJ="hello.bpf.o"
-IFACE="lo"  # 使用loopback测试
+创建 C 语言加载器 `src/user/hello_loader.c`:
 
-# 1. 添加clsact qdisc
-sudo tc qdisc add dev $IFACE clsact 2>/dev/null || true
+```c
+// src/user/hello_loader.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
+#include <errno.h>
+#include <string.h>
+#include <bpf/libbpf.h>
+#include "hello.skel.h"
 
-# 2. 附加eBPF程序到ingress
-sudo tc filter add dev $IFACE ingress bpf da obj $BPF_OBJ sec tc
+static volatile bool exiting = false;
 
-echo "✓ eBPF程序已加载到 $IFACE"
-echo "查看输出: sudo cat /sys/kernel/debug/tracing/trace_pipe"
+static void sig_handler(int sig)
+{
+    exiting = true;
+}
+
+static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
+{
+    return vfprintf(stderr, format, args);
+}
+
+int main(int argc, char **argv)
+{
+    struct hello_bpf *skel;
+    int err;
+    const char *iface = "lo";
+
+    // 设置 libbpf 调试输出
+    libbpf_set_print(libbpf_print_fn);
+
+    // 1. 打开并加载 eBPF 程序
+    skel = hello_bpf__open_and_load();
+    if (!skel) {
+        fprintf(stderr, "Failed to open and load BPF skeleton\n");
+        return 1;
+    }
+    printf("✓ BPF program loaded successfully\n");
+
+    // 2. 附加到 TC hook (使用现代 libbpf TC API)
+    // libbpf 1.x 提供了原生的 bpf_tc_* API
+    LIBBPF_OPTS(bpf_tc_hook, hook,
+        .ifindex = if_nametoindex(iface),
+        .attach_point = BPF_TC_INGRESS);
+    
+    LIBBPF_OPTS(bpf_tc_opts, opts,
+        .handle = 1,
+        .priority = 1,
+        .prog_fd = bpf_program__fd(skel->progs.hello_world));
+    
+    // 创建 TC hook（如果不存在）
+    err = bpf_tc_hook_create(&hook);
+    if (err && err != -EEXIST) {
+        fprintf(stderr, "Failed to create TC hook: %s\n", strerror(-err));
+        goto cleanup;
+    }
+    
+    // 附加 eBPF 程序
+    err = bpf_tc_attach(&hook, &opts);
+    if (err) {
+        fprintf(stderr, "Failed to attach TC program: %s\n", strerror(-err));
+        goto cleanup;
+    }
+    
+    printf("✓ Attached to %s ingress\n", iface);
+    printf("查看输出: sudo cat /sys/kernel/debug/tracing/trace_pipe\n\n");
+
+    // 3. 等待信号
+    signal(SIGINT, sig_handler);
+    signal(SIGTERM, sig_handler);
+    
+    printf("程序运行中，按 Ctrl+C 退出...\n");
+    while (!exiting) {
+        sleep(1);
+    }
+
+cleanup:
+    // 4. 清理（使用 libbpf TC API）
+    if (skel) {
+        // 分离 TC 程序
+        LIBBPF_OPTS(bpf_tc_hook, hook_cleanup,
+            .ifindex = if_nametoindex(iface),
+            .attach_point = BPF_TC_INGRESS);
+        
+        LIBBPF_OPTS(bpf_tc_opts, opts_cleanup,
+            .handle = 1,
+            .priority = 1);
+        
+        bpf_tc_detach(&hook_cleanup, &opts_cleanup);
+        bpf_tc_hook_destroy(&hook_cleanup);
+        
+        hello_bpf__destroy(skel);
+    }
+    
+    printf("\n✓ Cleaned up\n");
+    return err;
+}
+```
+
+更新 `Makefile` 添加 skeleton 生成和用户态编译：
+
+```makefile
+# Makefile
+CLANG ?= clang
+BPFTOOL ?= bpftool
+ARCH := $(shell uname -m | sed 's/x86_64/x86/')
+
+# eBPF 程序编译
+%.bpf.o: src/bpf/%.bpf.c
+	$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) \
+		-I/usr/include/$(shell uname -m)-linux-gnu \
+		-c $< -o $@
+
+# 生成 skeleton
+%.skel.h: %.bpf.o
+	$(BPFTOOL) gen skeleton $< > $@
+
+# 用户态程序编译
+hello_loader: hello.skel.h src/user/hello_loader.c
+	gcc -Wall -o $@ src/user/hello_loader.c -lbpf -lelf -lz
+
+.PHONY: clean
+clean:
+	rm -f *.bpf.o *.skel.h hello_loader
 ```
 
 测试流程:
 ```bash
-# 1. 加载程序
-chmod +x scripts/load_hello.sh
-./scripts/load_hello.sh
+# 1. 编译所有组件
+make hello.bpf.o        # 编译 eBPF 程序
+make hello_loader       # 编译用户态加载器
 
-# 2. 在终端1查看日志
+# 2. 在终端1启动加载器
+sudo ./hello_loader
+
+# 3. 在终端2查看日志
 sudo cat /sys/kernel/debug/tracing/trace_pipe
 
-# 3. 在终端2生成流量
+# 4. 在终端3生成流量测试
 ping 127.0.0.1 -c 5
 
-# 4. 验证能看到 "Hello eBPF!" 输出
+# 5. 验证能看到 "Hello eBPF!" 输出
 
-# 5. 卸载程序
-sudo tc filter del dev lo ingress
-sudo tc qdisc del dev lo clsact
+# 6. 在终端1按 Ctrl+C 优雅退出（自动清理）
 ```
+
+**libbpf 方式的优势**:
+- ✅ **类型安全**: skeleton 提供编译时类型检查
+- ✅ **错误处理**: 详细的错误信息，便于调试
+- ✅ **自动清理**: 程序退出时自动清理资源
+- ✅ **生产就绪**: 被 Cilium、Katran 等项目广泛使用
 
 #### 📚 学习资料
 
-1. 阅读 libbpf-bootstrap 示例：
+1. **libbpf skeleton 机制深入理解**：
    ```bash
    git clone https://github.com/libbpf/libbpf-bootstrap.git
    cd libbpf-bootstrap/examples/c
    # 研究 minimal.bpf.c 和 tc.bpf.c
+   # 对比 .bpf.c 文件和生成的 .skel.h 文件
    ```
+   - 时间：1.5小时
+
+2. **libbpf API 学习**：
+   - `bpf_object__open_and_load()` vs `bpf_object__open()` + `bpf_object__load()`
+   - `bpf_program__fd()` 获取程序文件描述符
+   - `bpf_map__fd()` 获取 Map 文件描述符
    - 时间：1小时
 
-2. 理解TC程序加载过程：
+3. **TC程序附加机制**：
    - 阅读 `man tc-bpf`
-   - 理解 clsact qdisc的作用
+   - 理解 clsact qdisc 的作用
+   - 掌握 libbpf 1.x 的 `bpf_tc_*` API（推荐使用）
+   - 参考：[libbpf TC API 文档](https://github.com/libbpf/libbpf/blob/master/src/libbpf.h)
    - 时间：30分钟
 
 #### ✅ 完成标准
 
-- [ ] Hello World程序成功编译
-- [ ] 程序成功加载到TC hook
-- [ ] 能在trace_pipe中看到输出
-- [ ] 能手动卸载程序
+- [ ] Hello World eBPF程序成功编译 (`hello.bpf.o`)
+- [ ] skeleton 头文件成功生成 (`hello.skel.h`)
+- [ ] 用户态加载器成功编译 (`hello_loader`)
+- [ ] 程序通过 libbpf 成功加载到TC hook
+- [ ] 能在 trace_pipe 中看到输出
+- [ ] 程序能优雅退出并自动清理资源
 
 ---
 
@@ -339,20 +476,28 @@ char LICENSE[] SEC("license") = "GPL";
 
 测试步骤:
 ```bash
-# 1. 编译
+# 1. 编译eBPF程序和生成skeleton
 make parse_packet.bpf.o
+make parse_packet.skel.h
 
-# 2. 加载（修改load_hello.sh中的BPF_OBJ）
-./scripts/load_parse.sh
+# 2. 创建用户态加载器（参考hello_loader.c）
+cp src/user/hello_loader.c src/user/parse_packet_loader.c
+# 修改其中的skeleton包含和程序名
 
-# 3. 生成多种流量测试
+# 3. 编译用户态程序
+make parse_packet_loader
+
+# 4. 启动加载器
+sudo ./parse_packet_loader
+
+# 5. 生成多种流量测试
 # TCP流量
-curl http://example.com
+curl http://httpbin.org/get
 
-# UDP流量
+# UDP流量  
 dig @8.8.8.8 google.com
 
-# 4. 观察解析输出
+# 6. 观察解析输出
 sudo cat /sys/kernel/debug/tracing/trace_pipe
 ```
 
@@ -490,8 +635,31 @@ int main()
         return 1;
     }
 
-    // 2. 附加到TC (手动使用tc命令)
-    printf("请手动加载: sudo tc filter add dev lo ingress bpf da obj stats_counter.bpf.o sec tc\n");
+    // 2. 附加到TC hook (使用 libbpf 1.x TC API)
+    LIBBPF_OPTS(bpf_tc_hook, hook,
+        .ifindex = if_nametoindex("lo"),
+        .attach_point = BPF_TC_INGRESS);
+    
+    LIBBPF_OPTS(bpf_tc_opts, opts,
+        .handle = 1,
+        .priority = 1,
+        .prog_fd = bpf_program__fd(skel->progs.count_packets));
+    
+    err = bpf_tc_hook_create(&hook);
+    if (err && err != -EEXIST) {
+        fprintf(stderr, "Failed to create TC hook: %s\n", strerror(-err));
+        stats_counter_bpf__destroy(skel);
+        return 1;
+    }
+    
+    err = bpf_tc_attach(&hook, &opts);
+    if (err) {
+        fprintf(stderr, "Failed to attach TC program: %s\n", strerror(-err));
+        stats_counter_bpf__destroy(skel);
+        return 1;
+    }
+    
+    printf("✓ Attached to lo ingress\n");
     printf("按Ctrl+C退出...\n\n");
 
     // 3. 循环读取统计
@@ -546,20 +714,21 @@ read_stats: src/user/read_stats.c stats_counter.skel.h
 
 测试:
 ```bash
-# 编译
+# 编译eBPF程序和skeleton
 make stats_counter.bpf.o
+make stats_counter.skel.h
+
+# 编译用户态程序（已使用skeleton）
 make read_stats
 
-# 加载eBPF程序
-sudo tc qdisc add dev lo clsact
-sudo tc filter add dev lo ingress bpf da obj stats_counter.bpf.o sec tc
-
-# 运行用户态程序
+# 运行用户态程序（自动加载和附加）
 sudo ./read_stats
 
 # 在另一终端生成流量
 ping 127.0.0.1 &
-curl http://localhost &
+curl http://httpbin.org/get &
+
+# 观察实时统计输出
 ```
 
 #### 📚 学习资料
@@ -898,6 +1067,202 @@ sudo bpftool map dump name stats_map
 - [x] BPF Map统计功能
 - [x] 5元组策略匹配
 
+---
+
+## 📚 libbpf 最佳实践
+
+### 1. **使用 skeleton 而非手动加载**
+
+skeleton 是 libbpf 推荐的加载方式，提供了更好的类型安全和错误处理：
+
+```c
+// ✅ 推荐：使用 skeleton
+struct my_prog_bpf *skel = my_prog_bpf__open_and_load();
+if (!skel) {
+    fprintf(stderr, "Failed to load skeleton\n");
+    return 1;
+}
+
+// ❌ 不推荐：手动加载
+int prog_fd = bpf_prog_load("my_prog.bpf.o", BPF_PROG_TYPE_SCHED_CLS, ...);
+```
+
+### 2. **正确的错误处理模式**
+
+使用 `goto cleanup` 模式确保资源正确释放：
+
+```c
+int main() {
+    struct my_prog_bpf *skel = NULL;
+    int err = 0;
+    
+    skel = my_prog_bpf__open();
+    if (!skel) {
+        err = -errno;
+        fprintf(stderr, "Failed to open: %s\n", strerror(errno));
+        goto cleanup;
+    }
+    
+    err = my_prog_bpf__load(skel);
+    if (err) {
+        fprintf(stderr, "Failed to load: %d\n", err);
+        goto cleanup;
+    }
+    
+    // ... 使用程序 ...
+    
+cleanup:
+    my_prog_bpf__destroy(skel);  // NULL-safe
+    return err;
+}
+```
+
+### 3. **配置 libbpf 日志输出**
+
+开发阶段启用详细日志，生产环境可屏蔽：
+
+```c
+static int libbpf_print_fn(enum libbpf_print_level level,
+                           const char *format, va_list args)
+{
+    // 生产环境可以屏蔽 DEBUG 级别
+    if (level == LIBBPF_DEBUG)
+        return 0;
+    
+    return vfprintf(stderr, format, args);
+}
+
+int main() {
+    libbpf_set_print(libbpf_print_fn);
+    // ...
+}
+```
+
+### 4. **Map 访问最佳实践**
+
+使用 skeleton 的结构体成员访问 Map，避免字符串路径：
+
+```c
+// ✅ 推荐：类型安全
+int map_fd = bpf_map__fd(skel->maps.my_map);
+struct bpf_map *map = skel->maps.my_map;
+
+// ❌ 不推荐：容易出错
+int map_fd = bpf_obj_get("/sys/fs/bpf/my_map");
+```
+
+### 5. **分离 open 和 load**
+
+如果需要在加载前修改配置，使用分离的 open 和 load：
+
+```c
+skel = my_prog_bpf__open();
+if (!skel)
+    return 1;
+
+// 修改 Map 大小
+bpf_map__set_max_entries(skel->maps.my_map, 100000);
+
+// 然后加载
+err = my_prog_bpf__load(skel);
+```
+
+### 6. **优雅的程序退出**
+
+使用信号处理实现优雅退出：
+
+```c
+static volatile bool exiting = false;
+
+static void sig_handler(int sig) {
+    exiting = true;
+}
+
+int main() {
+    signal(SIGINT, sig_handler);
+    signal(SIGTERM, sig_handler);
+    
+    while (!exiting) {
+        // 主循环
+    }
+    
+    // 清理资源
+    my_prog_bpf__destroy(skel);
+}
+```
+
+### 7. **TC 程序附加的现代方式**
+
+**libbpf 1.x 提供了完善的 `bpf_tc_*` API（强烈推荐）**：
+
+```c
+#include <net/if.h>
+#include <bpf/bpf.h>
+#include <bpf/libbpf.h>
+
+// 使用 libbpf 1.x 原生 TC API
+LIBBPF_OPTS(bpf_tc_hook, hook,
+    .ifindex = if_nametoindex("eth0"),
+    .attach_point = BPF_TC_INGRESS);
+
+LIBBPF_OPTS(bpf_tc_opts, opts,
+    .handle = 1,
+    .priority = 1,
+    .prog_fd = bpf_program__fd(skel->progs.my_tc_prog));
+
+// 创建 TC hook（幂等操作）
+int err = bpf_tc_hook_create(&hook);
+if (err && err != -EEXIST) {
+    fprintf(stderr, "Failed to create hook: %s\n", strerror(-err));
+    return err;
+}
+
+// 附加 eBPF 程序
+err = bpf_tc_attach(&hook, &opts);
+if (err) {
+    fprintf(stderr, "Failed to attach: %s\n", strerror(-err));
+    return err;
+}
+
+printf("✓ TC program attached successfully\n");
+
+// ... 程序运行 ...
+
+// 清理时分离程序
+bpf_tc_detach(&hook, &opts);
+bpf_tc_hook_destroy(&hook);
+```
+
+**优势**：
+- ✅ 纯 C API，无需调用外部命令
+- ✅ 更好的错误处理和返回值
+- ✅ 性能更好，无进程创建开销
+- ✅ 支持更多高级特性（如修改优先级、批量操作）
+
+**旧版本兼容**：如果必须使用 libbpf < 1.0，可以使用 `system()` 调用 `tc` 命令作为降级方案。
+
+### 8. **避免常见陷阱**
+
+```c
+// ❌ 错误：忘记检查返回值
+my_prog_bpf__load(skel);
+
+// ✅ 正确：始终检查
+if (my_prog_bpf__load(skel) != 0) {
+    // 错误处理
+}
+
+// ❌ 错误：访问已销毁的 skeleton
+my_prog_bpf__destroy(skel);
+int fd = bpf_map__fd(skel->maps.my_map);  // 崩溃！
+
+// ✅ 正确：在销毁前获取需要的信息
+int fd = bpf_map__fd(skel->maps.my_map);
+my_prog_bpf__destroy(skel);
+```
+
+---
+
 ## 核心收获
 
 ### 1. eBPF基础概念
@@ -915,7 +1280,14 @@ sudo bpftool map dump name stats_map
 - HASH: O(1)查找
 - Map的pin机制用于持久化
 
-### 4. 遇到的问题和解决
+### 4. libbpf 和 skeleton
+- skeleton 提供类型安全的 eBPF 程序加载
+- `bpftool gen skeleton` 自动生成加载代码
+- `xxx_bpf__open_and_load()` 简化加载流程
+- `bpf_map__fd()` 和 `bpf_program__fd()` 安全访问资源
+- 优雅的资源管理和错误处理
+
+### 5. 遇到的问题和解决
 
 **问题1**: Verifier报错 "invalid access to packet"
 - **原因**: 没有检查指针边界
@@ -1044,11 +1416,13 @@ clean:
 
 ### 2.5 验证清单
 
-- [ ] eBPF程序成功编译
-- [ ] 用户态程序成功编译
-- [ ] TC hook成功附加
+- [ ] eBPF程序成功编译 (`.bpf.o`)
+- [ ] skeleton头文件成功生成 (`.skel.h`)
+- [ ] 用户态程序成功编译 (使用skeleton)
+- [ ] TC hook通过libbpf成功附加
 - [ ] 数据包能被eBPF程序处理
 - [ ] 基础策略匹配工作正常
+- [ ] 程序能优雅退出和清理
 
 ---
 
@@ -1904,12 +2278,7 @@ sudo ./tests/integration_test.sh
    ```
    - 重点: `bpftool gen skeleton` 的作用
    - 时间: 1小时
-
-2. 对比传统方式 vs skeleton方式:
-   - 传统: 手动加载.o文件, 手动获取Map FD
-   - Skeleton: 自动生成结构体, 类型安全
-   - 时间: 30分钟
-
+   
 3. 研究skeleton示例:
    ```bash
    cd libbpf-bootstrap/examples/c
@@ -6361,9 +6730,10 @@ sudo bash scripts/rollback.sh
 ## 附录
 
 ### A. 依赖软件版本
-- Linux Kernel: >= 5.10
-- clang/LLVM: >= 11
-- libbpf: >= 0.6
+- Linux Kernel: >= 5.10 (推荐 5.15+)
+- clang/LLVM: >= 11 (推荐 >= 14)
+- libbpf: >= 1.0 (推荐使用最新的 1.x 版本)
+- bpftool: 匹配内核版本
 - systemd: >= 245
 
 ### B. 测试环境

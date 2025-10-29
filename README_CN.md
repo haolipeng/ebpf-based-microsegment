@@ -1,18 +1,65 @@
-先梳理出来一份neuvector dp的功能都有哪些。
+# eBPF 微隔离项目
 
-将waf类，dlp类的功能代码都删除掉。
+> 基于 eBPF + TC 的高性能网络微隔离系统
 
-想清楚到底要实现什么功能？
+---
 
+## 快速导航
 
+- [环境搭建](#环境搭建)
+- [编译参考项目](docs/neuvector-dp-build-guide.md) - NeuVector dp 组件编译指南
+- [功能需求](#一功能需求)
+- [技术架构](#二微隔离技术架构)
+- [技术研究](#三技术研究)
+- [参考项目](#四可参考的开源架构)
 
-设定目标后，将大任务拆解为小任务，然后具体的内容分配到每一天的工作中。
+---
 
-反思几个事，我真的看透这些开源程序了吗？对里面的原理也看懂了吗？我感觉并没有
+## 环境搭建
 
+### 系统要求
+- Linux Kernel ≥ 5.10（支持 BTF 和 CO-RE）
+- Ubuntu 22.04
+- 至少 4GB 内存
 
+### 基础依赖安装
 
-# 一、功能需求
+```bash
+# 更新包管理器
+sudo apt-get update
+
+# 安装 eBPF 开发工具
+sudo apt-get install -y \
+    clang \
+    llvm \
+    gcc \
+    make \
+    libbpf-dev \
+    libelf-dev \
+    linux-headers-$(uname -r)
+
+# 安装 bpftool
+sudo apt-get install -y linux-tools-common linux-tools-$(uname -r)
+```
+
+---
+
+## 编译参考项目
+
+本项目参考了 NeuVector dp 组件的架构和实现。如需编译 dp 组件用于学习和研究，请参考：
+
+**[NeuVector dp 组件编译指南](docs/neuvector-dp-build-guide.md)**
+
+该文档包含：
+- 组件功能介绍（DPI、策略执行、会话跟踪）
+- 完整的依赖安装脚本
+- 详细的编译步骤
+- 8 个依赖库的深度解析
+- 常见编译问题及解决方案
+
+---
+
+## 一、功能需求
 
 先弄一个demo出来。包括最精简的功能：
 
@@ -47,7 +94,7 @@ PDP策略决策点作为策略管理和动态访问控制引擎，负责策略�
 
 
 
-1、6 自动打
+## 1、6 自动打标签功能
 
 
 
@@ -79,9 +126,7 @@ Ingress根据策略校验认证头
 
 
 
-2、3 前端展示
-
-
+## 2、3 前端展示
 
 每天要抽出一定时间来加强对代码的熟悉度，不能忘本。
 
