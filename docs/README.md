@@ -30,15 +30,26 @@
 
 ### 📚 参考资料
 
-#### NeuVector 分析
-- [NeuVector DP 构建指南](neuvector-dp-build-guide.md)
-- [NeuVector Agent-DP 通信](neuvector-dp-agent-communication.md)
-- [NeuVector Agent-DP 策略流程](neuvector-agent-dp-policy-flow.md)
-- [NeuVector FQDN 实现](neuvector-fqdn-implementation.md)
+#### NeuVector 源码分析
+**完整的 NeuVector 技术分析文档集** → [neuvector-analysis/](neuvector-analysis/)
 
-#### ZFW (Zero Trust Firewall) 分析
-- [ZFW 架构分析](zfw-architecture-analysis.md)
-- [ZFW 快速参考](zfw-quick-reference.md)
+5 个深度分析文档（156KB，7800+ 行）:
+- [dp 组件编译指南](neuvector-analysis/neuvector-dp-build-guide.md) (12KB)
+- [Agent-dp 通信机制](neuvector-analysis/neuvector-dp-agent-communication.md) (40KB) ⭐⭐⭐⭐⭐
+- [Agent-dp 策略分发流程](neuvector-analysis/neuvector-agent-dp-policy-flow.md) (46KB) ⭐⭐⭐⭐⭐
+- [FQDN 域名过滤实现](neuvector-analysis/neuvector-fqdn-implementation.md) (31KB) ⭐⭐⭐⭐
+- [网络拓扑图实现](neuvector-analysis/neuvector-network-topology-implementation.md) (41KB) ⭐⭐⭐⭐⭐
+
+查看 [NeuVector 分析目录 README](neuvector-analysis/README.md) 了解详细导航和学习路径
+
+#### ZFW (Zero Trust Firewall) 源码分析
+**完整的 ZFW 技术分析文档集** → [zfw-analysis/](zfw-analysis/)
+
+2 个深度分析文档（40.4KB，1633 行）:
+- [ZFW eBPF 架构深度分析](zfw-analysis/zfw-architecture-analysis.md) (33KB) ⭐⭐⭐⭐⭐
+- [ZFW 快速参考手册](zfw-analysis/zfw-quick-reference.md) (7.4KB) ⭐⭐⭐⭐
+
+查看 [ZFW 分析目录 README](zfw-analysis/README.md) 了解详细导航和学习路径
 
 ### 🏗️ 设计文档
 设计文档和架构决策记录位于 [`design-docs/`](../design-docs/) 目录：
@@ -105,5 +116,5 @@
 
 ---
 
-*最后更新：2025-10-30*
+*最后更新：2025-10-31*
 
