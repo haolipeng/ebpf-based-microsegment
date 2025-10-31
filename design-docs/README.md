@@ -1,132 +1,232 @@
-# 设计文档 (Design Documents)
+# 设计文档
 
-本目录包含项目前期的分析、设计和规划文档。
+本目录包含项目的架构设计、技术决策和实施细节。
 
-## 📂 目录结构
+## 📐 目录结构
 
 ```
 design-docs/
-├── README.md                    # 本文件
-├── architecture/                # 架构设计文档
-│   ├── ebpf-tc-architecture.md # eBPF + TC 架构设计
-│   ├── design.md               # 详细设计文档
-│   └── tc-mode-microsegmentation.md # TC 模式微隔离分析
-├── analysis/                    # 可行性分析文档
-│   ├── ebpf-tc-comparison.md   # 方案对比分析
-│   ├── ebpf-tc-risks.md        # 风险分析
-│   └── ebpf-tc-feasibility-index.md # 可行性分析索引
-├── implementation/              # 实施指南
-│   └── ebpf-tc-implementation.md # 6周实施指南
-├── CHANGES.md                   # 设计变更记录
-└── REVIEW_REPORT.md             # 设计审查报告
+├── architecture/          # 架构设计文档
+├── analysis/             # 技术分析和可行性评估
+├── implementation/       # 详细实施方案
+├── CHANGES.md           # 设计变更记录
+├── REVIEW_REPORT.md     # 设计评审报告
+└── README.md            # 本文档
 ```
 
-## 📖 文档说明
+## 📚 文档索引
 
-### 架构设计 (architecture/)
-
-#### [ebpf-tc-architecture.md](architecture/ebpf-tc-architecture.md)
-完整的系统架构设计，包括：
-- 整体架构图
-- eBPF 程序设计
-- TC Hook 点设计
-- 数据流设计
-- 组件交互设计
+### 🏗️ 架构设计
 
 #### [design.md](architecture/design.md)
-详细的技术设计文档，包括：
-- 核心数据结构设计
-- BPF Map 设计
-- 策略匹配算法
-- 会话跟踪机制
+**核心架构设计文档**
+- DP (Data Plane) 微隔离系统架构
+- 多线程模型和数据流
+- 部署模式（TAP/TC/NFQ/ProxyMesh）
+- 关键数据结构和算法
+
+#### [ebpf-tc-architecture.md](architecture/ebpf-tc-architecture.md)
+**eBPF + TC 技术架构**
+- TC Hook 机制
+- eBPF 程序设计
+- Map 类型选择
 
 #### [tc-mode-microsegmentation.md](architecture/tc-mode-microsegmentation.md)
-TC 模式微隔离的详细分析
+**TC 模式微隔离**
+- TC 流量控制原理
+- 策略执行机制
 
-### 可行性分析 (analysis/)
-
-#### [ebpf-tc-comparison.md](analysis/ebpf-tc-comparison.md)
-eBPF + TC 方案与其他方案的对比分析：
-- vs iptables
-- vs XDP
-- vs Cilium
-- 性能对比
-- 功能对比
-
-#### [ebpf-tc-risks.md](analysis/ebpf-tc-risks.md)
-项目风险分析和缓解措施：
-- 技术风险
-- 性能风险
-- 维护风险
-- 运维风险
+### 🔍 技术分析
 
 #### [ebpf-tc-feasibility-index.md](analysis/ebpf-tc-feasibility-index.md)
-可行性分析总索引，链接到所有相关分析文档
+**eBPF + TC 可行性索引**
+- 技术可行性评估
+- 性能指标预测
+- 风险评估
 
-### 实施指南 (implementation/)
+#### [ebpf-tc-comparison.md](analysis/ebpf-tc-comparison.md)
+**eBPF + TC 对比分析**
+- 与其他方案对比（XDP, iptables, nftables）
+- 优劣势分析
+- 适用场景
+
+#### [ebpf-tc-risks.md](analysis/ebpf-tc-risks.md)
+**eBPF + TC 风险分析**
+- 技术风险
+- 性能风险
+- 兼容性风险
+- 缓解策略
+
+### 📝 实施方案
 
 #### [ebpf-tc-implementation.md](implementation/ebpf-tc-implementation.md)
-6 周详细实施计划：
-- 周度目标和交付物
-- 每日任务分解
-- 学习路径
-- 技术参考
+**详细实施指南（7187 行）**
+- 6周实施计划
+- 每日任务清单
+- 代码示例和最佳实践
+- 常见问题和解决方案
 
-**注意**：更详细的学习指南在 `docs/weekly-guide/` 目录中。
-
-## 📋 项目管理文档
+## 📋 变更管理
 
 ### [CHANGES.md](CHANGES.md)
-设计变更记录，追踪设计决策的演进
+设计变更记录，包括：
+- 架构演进历史
+- 重大技术决策
+- 变更原因和影响
 
 ### [REVIEW_REPORT.md](REVIEW_REPORT.md)
-设计审查报告，记录评审意见和改进措施
+设计评审报告，包括：
+- 评审会议记录
+- 发现的问题
+- 改进建议
+- 行动项
 
-## 🔗 相关文档
+## 🎯 设计原则
 
-- **OpenSpec 规格**: `openspec/specs/` - 正式的需求规格（待创建）
-- **学习指南**: `docs/weekly-guide/` - 6 周学习计划
-- **架构分析**: `docs/zfw-architecture-analysis.md` - ZFW 参考架构分析
-- **项目上下文**: `openspec/project.md` - 项目约定和技术栈
+### 1. 高性能优先
+- 目标：<10μs 延迟
+- 使用 eBPF 在内核级别处理数据包
+- Per-CPU Map 无锁设计
+- LRU 自动淘汰避免内存泄漏
 
-## 📚 阅读顺序建议
+### 2. 简单可靠
+- 优先选择成熟技术
+- 避免过度设计
+- 渐进式架构演进
 
-### 第一次阅读（了解项目）
-1. `analysis/ebpf-tc-feasibility-index.md` - 从总索引开始
-2. `architecture/ebpf-tc-architecture.md` - 理解整体架构
-3. `implementation/ebpf-tc-implementation.md` - 了解实施计划
+### 3. 云原生适配
+- 容器友好
+- Kubernetes 集成
+- 动态配置更新
 
-### 深入了解（开始开发前）
-1. `analysis/ebpf-tc-comparison.md` - 理解方案选择理由
-2. `architecture/design.md` - 学习详细设计
-3. `analysis/ebpf-tc-risks.md` - 了解潜在风险
-4. `docs/weekly-guide/` - 按周学习实施
+### 4. 可观测性
+- 完整的统计指标
+- 流量可视化
+- 事件日志
 
-### 参考查阅（开发过程中）
-- 架构问题 → `architecture/`
-- 技术选型 → `analysis/ebpf-tc-comparison.md`
-- 风险评估 → `analysis/ebpf-tc-risks.md`
-- 实施进度 → `implementation/ebpf-tc-implementation.md`
+## 🔄 设计演进历史
 
-## 🆚 design-docs/ vs openspec/
+### v0.1 - 初始设计（2025-10）
+- 基于 eBPF + TC 的数据平面
+- LRU_HASH 会话跟踪
+- 5元组策略匹配
+- Go + Cilium eBPF 用户态
 
-| 方面 | design-docs/ | openspec/ |
-|------|-------------|-----------|
-| **目的** | 前期分析、设计、规划 | 正式需求规格和变更管理 |
-| **内容** | 架构图、可行性分析、技术决策 | Requirements + Scenarios |
-| **阶段** | 项目启动前/设计阶段 | 开发过程中持续维护 |
-| **格式** | 自由格式文档 | 结构化规格（OpenSpec 格式）|
-| **受众** | 架构师、技术评审者 | 开发者、测试人员 |
-| **变更** | 相对固定（设计完成后） | 持续演进（功能开发） |
+### v0.2 - 控制平面（计划中）
+- RESTful API 服务
+- 策略管理
+- gRPC 通信
 
-## 📝 文档维护
+### v0.3 - 标签系统（计划中）
+- 自动打标签
+- 标签驱动策略
 
-- **设计阶段**：积极更新 `design-docs/`
-- **开发阶段**：主要维护 `openspec/specs/`
-- **设计变更**：记录到 `CHANGES.md`
-- **重大决策**：更新对应的架构或分析文档
+### v0.4 - 可视化（计划中）
+- 应用依赖图
+- 流量拓扑
+
+## 📖 ADR (Architecture Decision Records)
+
+我们使用 ADR 记录重要的架构决策：
+
+### ADR-001: 选择 Cilium eBPF 而非 libbpf C
+**日期**: 2025-10-30
+
+**背景**:
+项目初期使用 libbpf C 库，但遇到以下问题：
+- 内存管理复杂
+- 错误处理繁琐
+- 与 Go 生态集成困难
+
+**决策**:
+迁移到 Cilium eBPF Go 库
+
+**理由**:
+- 纯 Go 实现，类型安全
+- 更好的错误处理
+- 与 Go 生态无缝集成
+- 社区活跃，文档完善
+
+**后果**:
+- ✅ 开发效率提升
+- ✅ 代码可维护性提高
+- ✅ 单一二进制部署
+- ⚠️ 需要重写用户态代码
+
+### ADR-002: 使用 LRU_HASH 而非 HASH
+**日期**: 2025-10-30
+
+**背景**:
+需要会话跟踪，但 Map 容量有限
+
+**决策**:
+使用 LRU_HASH Map
+
+**理由**:
+- 自动淘汰最少使用的会话
+- 无需手动清理过期会话
+- 防止内存耗尽
+
+**后果**:
+- ✅ 简化代码
+- ✅ 防止内存泄漏
+- ⚠️ 长连接可能被意外淘汰（可通过增大 max_entries 缓解）
+
+## 🤝 如何贡献设计文档
+
+### 新增设计文档
+1. 确定文档类型（架构/分析/实施）
+2. 放在对应目录
+3. 更新本 README.md 索引
+4. 提交 PR
+
+### ADR 模板
+
+```markdown
+# ADR-XXX: 标题
+
+**日期**: YYYY-MM-DD
+**状态**: 提议中 | 已接受 | 已废弃 | 已替代
+
+## 背景
+描述问题和上下文
+
+## 决策
+我们决定...
+
+## 理由
+为什么这样决定：
+- 原因1
+- 原因2
+
+## 替代方案
+考虑过的其他方案：
+- 方案A：优缺点
+- 方案B：优缺点
+
+## 后果
+这个决策的影响：
+- ✅ 正面影响
+- ⚠️ 需要注意的点
+- ❌ 负面影响
+
+## 参考
+- 相关文档链接
+```
+
+## 📚 相关资源
+
+### 用户文档
+参见 [`docs/`](../docs/) 目录
+
+### 实施计划
+- [MVP 实施计划](../docs/microsegmentation-mvp-implementation-plan.md)
+- [实施总结](../IMPLEMENTATION_SUMMARY.md)
+
+### 参考项目
+- [NeuVector 架构分析](../docs/neuvector-dp-agent-communication.md)
+- [ZFW 架构分析](../docs/zfw-architecture-analysis.md)
 
 ---
 
-**最后更新**：2025-10-29
-**维护者**：项目团队
+*最后更新：2025-10-30*
