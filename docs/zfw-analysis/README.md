@@ -92,11 +92,43 @@
 
 ---
 
+### 4. [zfw-deep-dive.md](zfw-deep-dive.md) (35KB, 1010 行) ⭐⭐⭐⭐⭐
+**ZFW 高级功能深度剖析** 🆕
+
+深入分析 ZFW 的高级安全功能和性能优化技术：
+
+**包含章节** (5 个深度分析):
+1. **DDoS 防护机制深度解析** - SYN Flood 检测算法、封禁机制、时间窗口设计
+2. **工控协议深度检测 (DPI)** - DNP3/Modbus 协议解析和状态追踪
+3. **连接超时和清理机制** - 被动超时检查、主动清理、LRU 自动淘汰
+4. **错误处理和边界情况** - Map 满、内存分配失败、恶意流量应对
+5. **性能优化技术清单** - 13 种优化技术和性能基准测试
+
+**核心价值**:
+- ✅ 掌握 DDoS 防护的完整算法（伪代码 + 流程图）
+- ✅ 理解工控协议 DPI 的状态机设计
+- ✅ 学习连接生命周期管理和内存泄漏防护
+- ✅ 了解错误处理最佳实践
+- ✅ 获取可复用的性能优化技术
+
+**适合场景**:
+- 实现类似的安全防护功能
+- 性能调优和优化
+- 故障排查和调试
+- 安全机制设计参考
+
+**阅读时间**: 50-70 分钟
+
+---
+
 ## 📖 按功能分类
 
 ### 架构设计类
 - [zfw-architecture-analysis.md](zfw-architecture-analysis.md) - 完整架构分析 ⭐⭐⭐⭐⭐
 - [zfw-technical-diagrams.md](zfw-technical-diagrams.md) - 关键技术图表集 ⭐⭐⭐⭐⭐ 🆕
+
+### 高级功能类
+- [zfw-deep-dive.md](zfw-deep-dive.md) - 高级功能深度剖析 ⭐⭐⭐⭐⭐ 🆕
 
 ### 参考手册类
 - [zfw-quick-reference.md](zfw-quick-reference.md) - 快速参考手册 ⭐⭐⭐⭐
@@ -111,32 +143,44 @@
 1. ✅ [zfw-quick-reference.md](zfw-quick-reference.md) - 快速浏览核心概念
    - 重点：Map 速查表、TCP 状态表
 
-### 路径 2: 深度学习 (1-1.5 小时)
+### 路径 2: 深度学习 (2.5-3 小时)
 适合需要深入理解 ZFW 架构和实现细节的开发者
 
 1. ✅ [zfw-quick-reference.md](zfw-quick-reference.md) (15 分钟) - 先建立整体印象
-2. ✅ [zfw-architecture-analysis.md](zfw-architecture-analysis.md) (60-90 分钟) - 系统学习
+2. ✅ [zfw-technical-diagrams.md](zfw-technical-diagrams.md) (45-60 分钟) - 理解核心流程 🆕
+   - 重点：完整数据包处理流程图、TPROXY 决策树
+3. ✅ [zfw-architecture-analysis.md](zfw-architecture-analysis.md) (60-90 分钟) - 系统学习
    - 重点章节：
      - eBPF 挂载点 (理解数据包处理流程)
      - BPF Maps 映射表 (理解数据存储)
      - TCP 状态机 (理解连接跟踪)
      - 工作流程 (理解完整数据路径)
+4. ✅ [zfw-deep-dive.md](zfw-deep-dive.md) (50-70 分钟) - 高级功能深度剖析 🆕
+   - 重点：DDoS 防护、OT 协议 DPI、性能优化
 
 ### 路径 3: 特定功能研究
 根据具体需求选择性阅读
 
 **研究 TCP 连接跟踪**:
-- [zfw-architecture-analysis.md](zfw-architecture-analysis.md) → "TCP 状态机" 章节
+- [zfw-architecture-analysis.md](zfw-architecture-analysis.md) → "TCP 双向状态追踪架构详解" 章节
+- [zfw-technical-diagrams.md](zfw-technical-diagrams.md) → "完整数据包处理流程图" 🆕
 - [zfw-quick-reference.md](zfw-quick-reference.md) → "TCP 状态速查" 部分
 
 **研究 DDoS 防护**:
+- [zfw-deep-dive.md](zfw-deep-dive.md) → "DDoS 防护机制深度解析" 章节 🆕
 - [zfw-architecture-analysis.md](zfw-architecture-analysis.md) → "DDoS 防护 Maps" 章节
 
 **研究工控协议过滤**:
+- [zfw-deep-dive.md](zfw-deep-dive.md) → "工控协议深度检测 (DPI)" 章节 🆕
 - [zfw-architecture-analysis.md](zfw-architecture-analysis.md) → "工控协议 Maps" 章节
 
 **研究 NAT 实现**:
+- [zfw-technical-diagrams.md](zfw-technical-diagrams.md) → "Masquerade 完整流程" 🆕
 - [zfw-architecture-analysis.md](zfw-architecture-analysis.md) → "NAT Maps" 章节
+
+**研究性能优化**:
+- [zfw-deep-dive.md](zfw-deep-dive.md) → "性能优化技术清单" 章节 🆕
+- [zfw-technical-diagrams.md](zfw-technical-diagrams.md) → "隧道快速路径优化" 🆕
 
 ---
 
@@ -148,10 +192,13 @@
 | 查看 Map 列表 | zfw-quick-reference.md | 核心 Map 速查表 |
 | 理解 eBPF 挂载点 | zfw-architecture-analysis.md | eBPF 挂载点 |
 | 查看所有 Maps | zfw-architecture-analysis.md | BPF Maps 映射表 |
-| 理解 TCP 状态机 | zfw-architecture-analysis.md | TCP 状态机 |
-| 理解数据流 | zfw-architecture-analysis.md | 工作流程 |
-| 查看架构图 | zfw-architecture-analysis.md | 架构图表 |
+| 理解 TCP 状态机 | zfw-architecture-analysis.md | TCP 双向状态追踪架构详解 |
+| 理解数据流 | zfw-technical-diagrams.md | 完整数据包处理流程图 🆕 |
+| 查看架构图 | zfw-technical-diagrams.md | 6 个核心技术图表 🆕 |
 | 快速查找数据结构 | zfw-quick-reference.md | 数据结构速查 |
+| 研究 DDoS 防护算法 | zfw-deep-dive.md | DDoS 防护机制深度解析 🆕 |
+| 研究工控协议 DPI | zfw-deep-dive.md | 工控协议深度检测 🆕 |
+| 学习性能优化 | zfw-deep-dive.md | 性能优化技术清单 🆕 |
 
 ---
 
@@ -206,12 +253,13 @@
 
 | 项目 | 数量 |
 |------|------|
-| 文档总数 | 3 个 |
-| 总大小 | 102.4KB |
-| 总行数 | 3,400+ 行 |
-| 核心文档 | 2 个 (⭐⭐⭐⭐⭐) |
+| 文档总数 | 4 个 |
+| 总大小 | 141.4KB |
+| 总行数 | 4,400+ 行 |
+| 核心文档 | 3 个 (⭐⭐⭐⭐⭐) |
 | 参考文档 | 1 个 (⭐⭐⭐⭐) |
-| Mermaid 图表 | 20+ 个 |
+| Mermaid 图表 | 25+ 个 |
+| 代码示例 | 50+ 个 |
 
 ---
 
@@ -222,7 +270,9 @@
 2. 查看 [zfw-technical-diagrams.md](zfw-technical-diagrams.md) 理解核心流程 (45-60 分钟) 🆕
    - 重点：完整数据包处理流程图、TPROXY 决策树
 3. 再深入阅读 [zfw-architecture-analysis.md](zfw-architecture-analysis.md) (60-90 分钟)
-4. 结合源码 `/source-references/zfw/` 验证理解
+4. 学习高级功能 [zfw-deep-dive.md](zfw-deep-dive.md) (50-70 分钟) 🆕
+   - 重点：DDoS 防护算法、工控协议 DPI、性能优化
+5. 结合源码 `/source-references/zfw/` 验证理解
 
 ### 日常开发
 - 查询 Map: 使用 [zfw-quick-reference.md](zfw-quick-reference.md)
@@ -234,6 +284,7 @@
 - 参考 TCP 状态机实现
 - 学习 DDoS 防护机制
 - 了解工控协议 DPI 实现
+- 复用性能优化技术
 
 ---
 
@@ -254,9 +305,25 @@
 ## 📝 文档版本
 
 - **创建日期**: 2025-10-31
-- **最后更新**: 2025-10-31
-- **文档数量**: 2 个
+- **最后更新**: 2025-11-01
+- **文档数量**: 4 个
 - **维护状态**: ✅ 活跃维护
+
+---
+
+## 🎓 推荐阅读顺序总结
+
+### 初学者（3.5-4 小时完整学习）
+1. [zfw-quick-reference.md](zfw-quick-reference.md) - 15 分钟
+2. [zfw-technical-diagrams.md](zfw-technical-diagrams.md) - 45-60 分钟 🆕
+3. [zfw-architecture-analysis.md](zfw-architecture-analysis.md) - 60-90 分钟
+4. [zfw-deep-dive.md](zfw-deep-dive.md) - 50-70 分钟 🆕
+
+### 有经验的开发者（按需查阅）
+- 快速参考：[zfw-quick-reference.md](zfw-quick-reference.md)
+- 可视化理解：[zfw-technical-diagrams.md](zfw-technical-diagrams.md) 🆕
+- 深度分析：[zfw-architecture-analysis.md](zfw-architecture-analysis.md)
+- 高级功能：[zfw-deep-dive.md](zfw-deep-dive.md) 🆕
 
 ---
 

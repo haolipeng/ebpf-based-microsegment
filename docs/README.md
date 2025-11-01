@@ -45,8 +45,10 @@
 #### ZFW (Zero Trust Firewall) 源码分析
 **完整的 ZFW 技术分析文档集** → [zfw-analysis/](zfw-analysis/)
 
-2 个深度分析文档（40.4KB，1633 行）:
-- [ZFW eBPF 架构深度分析](zfw-analysis/zfw-architecture-analysis.md) (33KB) ⭐⭐⭐⭐⭐
+4 个深度分析文档（141.4KB，4400+ 行）:
+- [ZFW eBPF 架构深度分析](zfw-analysis/zfw-architecture-analysis.md) (64KB) ⭐⭐⭐⭐⭐
+- [ZFW 关键技术图表集](zfw-analysis/zfw-technical-diagrams.md) (34KB) ⭐⭐⭐⭐⭐ 🆕
+- [ZFW 高级功能深度剖析](zfw-analysis/zfw-deep-dive.md) (35KB) ⭐⭐⭐⭐⭐ 🆕
 - [ZFW 快速参考手册](zfw-analysis/zfw-quick-reference.md) (7.4KB) ⭐⭐⭐⭐
 
 查看 [ZFW 分析目录 README](zfw-analysis/README.md) 了解详细导航和学习路径
