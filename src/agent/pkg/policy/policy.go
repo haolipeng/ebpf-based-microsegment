@@ -428,12 +428,24 @@ func (pm *PolicyManager) addWildcardPolicy(p *Policy) error {
 	// Find empty slot in wildcard array map
 	// Try up to MAX_ENTRIES_WILDCARD_POLICY (1000)
 	for i := uint32(0); i < 1000; i++ {
-		// Try to read existing entry
+		// Try to read existing entry - must match the exact struct layout in eBPF
 		var existing struct {
-			RuleID uint32
+			SrcIP      uint32
+			SrcIPMask  uint32
+			DstIP      uint32
+			DstIPMask  uint32
+			SrcPort    uint16
+			DstPort    uint16
+			Protocol   uint8
+			Action     uint8
+			LogEnabled uint8
+			Pad1       uint8
+			Priority   uint16
+			Pad2       uint16
+			RuleID     uint32
 		}
 
-		// Read just the RuleID field to check if slot is empty
+		// Read the existing entry
 		err := pm.wildcardPolicyMap.Lookup(&i, &existing)
 
 		// If lookup fails or RuleID is 0, slot is empty
