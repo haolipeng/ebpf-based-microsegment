@@ -297,6 +297,11 @@ func (dp *DataPlane) GetPolicyMap() *ebpf.Map {
 	return dp.objs.PolicyMap
 }
 
+// GetWildcardPolicyMap returns the wildcard policy map for external access
+func (dp *DataPlane) GetWildcardPolicyMap() *ebpf.Map {
+	return dp.objs.WildcardPolicyMap
+}
+
 // isFileExistsError checks if an error is due to "file exists"
 func isFileExistsError(err error) bool {
 	if err == nil {

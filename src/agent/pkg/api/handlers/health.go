@@ -14,12 +14,12 @@ var startTime = time.Now()
 
 // HealthHandler handles health check requests
 type HealthHandler struct {
-	dataPlane     *dataplane.DataPlane
-	policyManager *policy.PolicyManager
+	dataPlane     dataplane.DataPlaneInterface
+	policyManager policy.Manager
 }
 
 // NewHealthHandler creates a new health handler
-func NewHealthHandler(dp *dataplane.DataPlane, pm *policy.PolicyManager) *HealthHandler {
+func NewHealthHandler(dp dataplane.DataPlaneInterface, pm policy.Manager) *HealthHandler {
 	return &HealthHandler{
 		dataPlane:     dp,
 		policyManager: pm,

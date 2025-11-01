@@ -57,6 +57,23 @@ type bpfSessionValue struct {
 	Pad             uint32
 }
 
+type bpfWildcardPolicy struct {
+	_          structs.HostLayout
+	SrcIp      uint32
+	SrcIpMask  uint32
+	DstIp      uint32
+	DstIpMask  uint32
+	SrcPort    uint16
+	DstPort    uint16
+	Protocol   uint8
+	Action     uint8
+	LogEnabled uint8
+	Pad1       uint8
+	Priority   uint16
+	Pad2       uint16
+	RuleId     uint32
+}
+
 // loadBpf returns the embedded CollectionSpec for bpf.
 func loadBpf() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_BpfBytes)
@@ -106,10 +123,11 @@ type bpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
-	FlowEvents *ebpf.MapSpec `ebpf:"flow_events"`
-	PolicyMap  *ebpf.MapSpec `ebpf:"policy_map"`
-	SessionMap *ebpf.MapSpec `ebpf:"session_map"`
-	StatsMap   *ebpf.MapSpec `ebpf:"stats_map"`
+	FlowEvents        *ebpf.MapSpec `ebpf:"flow_events"`
+	PolicyMap         *ebpf.MapSpec `ebpf:"policy_map"`
+	SessionMap        *ebpf.MapSpec `ebpf:"session_map"`
+	StatsMap          *ebpf.MapSpec `ebpf:"stats_map"`
+	WildcardPolicyMap *ebpf.MapSpec `ebpf:"wildcard_policy_map"`
 }
 
 // bpfVariableSpecs contains global variables before they are loaded into the kernel.
@@ -138,10 +156,11 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
-	FlowEvents *ebpf.Map `ebpf:"flow_events"`
-	PolicyMap  *ebpf.Map `ebpf:"policy_map"`
-	SessionMap *ebpf.Map `ebpf:"session_map"`
-	StatsMap   *ebpf.Map `ebpf:"stats_map"`
+	FlowEvents        *ebpf.Map `ebpf:"flow_events"`
+	PolicyMap         *ebpf.Map `ebpf:"policy_map"`
+	SessionMap        *ebpf.Map `ebpf:"session_map"`
+	StatsMap          *ebpf.Map `ebpf:"stats_map"`
+	WildcardPolicyMap *ebpf.Map `ebpf:"wildcard_policy_map"`
 }
 
 func (m *bpfMaps) Close() error {
@@ -150,6 +169,7 @@ func (m *bpfMaps) Close() error {
 		m.PolicyMap,
 		m.SessionMap,
 		m.StatsMap,
+		m.WildcardPolicyMap,
 	)
 }
 

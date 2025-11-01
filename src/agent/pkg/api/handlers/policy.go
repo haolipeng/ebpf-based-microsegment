@@ -13,11 +13,11 @@ import (
 
 // PolicyHandler handles policy management requests
 type PolicyHandler struct{
-	policyManager *policy.PolicyManager
+	policyManager policy.Manager
 }
 
 // NewPolicyHandler creates a new policy handler
-func NewPolicyHandler(pm *policy.PolicyManager) *PolicyHandler {
+func NewPolicyHandler(pm policy.Manager) *PolicyHandler {
 	return &PolicyHandler{
 		policyManager: pm,
 	}

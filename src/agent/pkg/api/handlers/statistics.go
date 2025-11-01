@@ -10,11 +10,11 @@ import (
 
 // StatisticsHandler handles statistics requests
 type StatisticsHandler struct {
-	dataPlane *dataplane.DataPlane
+	dataPlane dataplane.DataPlaneInterface
 }
 
 // NewStatisticsHandler creates a new statistics handler
-func NewStatisticsHandler(dp *dataplane.DataPlane) *StatisticsHandler {
+func NewStatisticsHandler(dp dataplane.DataPlaneInterface) *StatisticsHandler {
 	return &StatisticsHandler{
 		dataPlane: dp,
 	}

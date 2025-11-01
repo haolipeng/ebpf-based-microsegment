@@ -25,23 +25,110 @@ type Policy struct {
 
 // PolicyManager manages network policies
 type PolicyManager struct {
-	policyMap *ebpf.Map
+	policyMap         *ebpf.Map
+	wildcardPolicyMap *ebpf.Map
+	storage           Storage
 }
 
 // DataPlaneInterface defines the interface for data plane operations
 type DataPlaneInterface interface {
 	GetPolicyMap() *ebpf.Map
+	GetWildcardPolicyMap() *ebpf.Map
 }
 
-// NewManager creates a new policy manager
+// NewManager creates a new policy manager without persistence
 func NewManager(dp DataPlaneInterface) *PolicyManager {
 	return &PolicyManager{
-		policyMap: dp.GetPolicyMap(),
+		policyMap:         dp.GetPolicyMap(),
+		wildcardPolicyMap: dp.GetWildcardPolicyMap(),
+		storage:           nil,
 	}
+}
+
+// NewManagerWithStorage creates a new policy manager with persistence
+func NewManagerWithStorage(dp DataPlaneInterface, storage Storage) *PolicyManager {
+	return &PolicyManager{
+		policyMap:         dp.GetPolicyMap(),
+		wildcardPolicyMap: dp.GetWildcardPolicyMap(),
+		storage:           storage,
+	}
+}
+
+// LoadPersisted loads policies from persistent storage and applies them to eBPF map
+func (pm *PolicyManager) LoadPersisted() error {
+	if pm.storage == nil {
+		return fmt.Errorf("no storage configured")
+	}
+
+	policies, err := pm.storage.LoadPolicies()
+	if err != nil {
+		return fmt.Errorf("failed to load policies from storage: %w", err)
+	}
+
+	// Apply each policy to eBPF map
+	successCount := 0
+	for i := range policies {
+		if err := pm.addPolicyToMap(&policies[i]); err != nil {
+			log.Warnf("Failed to restore policy rule_id=%d: %v", policies[i].RuleID, err)
+			continue
+		}
+		successCount++
+	}
+
+	log.Infof("Restored %d/%d policies from storage", successCount, len(policies))
+	return nil
 }
 
 // AddPolicy adds a new policy rule
 func (pm *PolicyManager) AddPolicy(p *Policy) error {
+	// Add to eBPF map
+	if err := pm.addPolicyToMap(p); err != nil {
+		return err
+	}
+
+	// Save to persistent storage if configured
+	if pm.storage != nil {
+		if err := pm.storage.SavePolicy(p); err != nil {
+			log.Warnf("Failed to persist policy rule_id=%d: %v", p.RuleID, err)
+			// Continue even if persistence fails - eBPF map is the source of truth
+		}
+	}
+
+	return nil
+}
+
+// hasWildcard checks if a policy contains wildcard fields (0 = any)
+func hasWildcard(p *Policy) bool {
+	// Check for wildcard source port (0 = any)
+	if p.SrcPort == 0 {
+		return true
+	}
+	// Check for wildcard CIDR (0.0.0.0/0 or ::/0)
+	if p.SrcIP == "0.0.0.0/0" || p.SrcIP == "::/0" {
+		return true
+	}
+	if p.DstIP == "0.0.0.0/0" || p.DstIP == "::/0" {
+		return true
+	}
+	// Check for wildcard protocol
+	if strings.ToLower(p.Protocol) == "any" {
+		return true
+	}
+	return false
+}
+
+// addPolicyToMap adds a policy to the eBPF map (internal method)
+// Routes to exact match map or wildcard map based on policy content
+func (pm *PolicyManager) addPolicyToMap(p *Policy) error {
+	// Check if this policy has wildcards
+	if hasWildcard(p) {
+		return pm.addWildcardPolicy(p)
+	}
+	return pm.addExactPolicy(p)
+}
+
+// addExactPolicy adds an exact-match policy to the hash map
+func (pm *PolicyManager) addExactPolicy(p *Policy) error {
 	// Parse source IP
 	srcIP, srcMask, err := parseCIDR(p.SrcIP)
 	if err != nil {
@@ -155,6 +242,14 @@ func (pm *PolicyManager) DeletePolicy(p *Policy) error {
 	log.Infof("Policy deleted: rule_id=%d %s:%d -> %s:%d proto=%s",
 		p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Protocol)
 
+	// Delete from persistent storage if configured
+	if pm.storage != nil {
+		if err := pm.storage.DeletePolicy(p.RuleID); err != nil {
+			log.Warnf("Failed to delete policy from storage rule_id=%d: %v", p.RuleID, err)
+			// Continue even if persistence fails
+		}
+	}
+
 	return nil
 }
 
@@ -263,6 +358,109 @@ func boolToUint8(b bool) uint8 {
 		return 1
 	}
 	return 0
+}
+
+func maskToUint32(mask *net.IPMask) uint32 {
+	if mask == nil {
+		return 0xFFFFFFFF // Exact match if no mask
+	}
+	if len(*mask) != 4 {
+		return 0xFFFFFFFF
+	}
+	return binary.BigEndian.Uint32(*mask)
+}
+
+// addWildcardPolicy adds a wildcard policy to the array map
+func (pm *PolicyManager) addWildcardPolicy(p *Policy) error {
+	// Parse source IP
+	srcIP, srcMask, err := parseCIDR(p.SrcIP)
+	if err != nil {
+		return fmt.Errorf("invalid source IP: %w", err)
+	}
+
+	// Parse destination IP
+	dstIP, dstMask, err := parseCIDR(p.DstIP)
+	if err != nil {
+		return fmt.Errorf("invalid destination IP: %w", err)
+	}
+
+	// Parse protocol
+	proto, err := parseProtocol(p.Protocol)
+	if err != nil {
+		return fmt.Errorf("invalid protocol: %w", err)
+	}
+
+	// Parse action
+	action, err := parseAction(p.Action)
+	if err != nil {
+		return fmt.Errorf("invalid action: %w", err)
+	}
+
+	// Build wildcard policy entry
+	wildcard := struct {
+		SrcIP      uint32
+		SrcIPMask  uint32
+		DstIP      uint32
+		DstIPMask  uint32
+		SrcPort    uint16
+		DstPort    uint16
+		Protocol   uint8
+		Action     uint8
+		LogEnabled uint8
+		Pad1       uint8
+		Priority   uint16
+		Pad2       uint16
+		RuleID     uint32
+	}{
+		SrcIP:      ipToUint32(srcIP),
+		SrcIPMask:  maskToUint32(srcMask),
+		DstIP:      ipToUint32(dstIP),
+		DstIPMask:  maskToUint32(dstMask),
+		SrcPort:    htons(p.SrcPort), // 0 = wildcard
+		DstPort:    htons(p.DstPort), // 0 = wildcard
+		Protocol:   proto,             // 0 = wildcard
+		Action:     action,
+		LogEnabled: boolToUint8(p.Action == "log"),
+		Priority:   p.Priority,
+		RuleID:     p.RuleID,
+	}
+
+	// Find empty slot in wildcard array map
+	// Try up to MAX_ENTRIES_WILDCARD_POLICY (1000)
+	for i := uint32(0); i < 1000; i++ {
+		// Try to read existing entry
+		var existing struct {
+			RuleID uint32
+		}
+
+		// Read just the RuleID field to check if slot is empty
+		err := pm.wildcardPolicyMap.Lookup(&i, &existing)
+
+		// If lookup fails or RuleID is 0, slot is empty
+		if err != nil || existing.RuleID == 0 {
+			// Found empty slot, insert here
+			if err := pm.wildcardPolicyMap.Put(&i, &wildcard); err != nil {
+				return fmt.Errorf("failed to add wildcard policy to map slot %d: %w", i, err)
+			}
+
+			log.Infof("Wildcard policy added to slot %d: rule_id=%d %s:%d -> %s:%d proto=%s action=%s (priority=%d)",
+				i, p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Protocol, p.Action, p.Priority)
+			return nil
+		}
+
+		// Check if this slot already has our rule_id (update case)
+		if existing.RuleID == p.RuleID {
+			// Update existing entry
+			if err := pm.wildcardPolicyMap.Put(&i, &wildcard); err != nil {
+				return fmt.Errorf("failed to update wildcard policy at slot %d: %w", i, err)
+			}
+
+			log.Infof("Wildcard policy updated at slot %d: rule_id=%d", i, p.RuleID)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("wildcard policy map is full (max 1000 entries)")
 }
 
 func uint32ToIP(ip uint32) string {

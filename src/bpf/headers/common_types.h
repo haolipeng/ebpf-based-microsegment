@@ -6,6 +6,7 @@
 
 #define MAX_ENTRIES_SESSION 100000
 #define MAX_ENTRIES_POLICY 10000
+#define MAX_ENTRIES_WILDCARD_POLICY 1000
 
 // 5-tuple flow key for session tracking
 struct flow_key {
@@ -79,6 +80,24 @@ struct policy_value {
     __u32 rule_id;            // Rule ID for tracking
     __u64 hit_count;          // Number of times this policy was matched
 };
+
+// Wildcard policy for matching with wildcards (0 = match any)
+// Used in array map for linear searching
+struct wildcard_policy {
+    __u32 src_ip;
+    __u32 src_ip_mask;        // 0xFFFFFFFF = exact, 0x00000000 = any
+    __u32 dst_ip;
+    __u32 dst_ip_mask;        // 0xFFFFFFFF = exact, 0x00000000 = any
+    __u16 src_port;           // 0 = any port
+    __u16 dst_port;           // 0 = any port
+    __u8  protocol;           // 0 = any protocol
+    __u8  action;             // Policy action
+    __u8  log_enabled;        // Enable logging
+    __u8  pad1;               // Padding
+    __u16 priority;           // Policy priority (higher = more important)
+    __u16 pad2;               // Padding
+    __u32 rule_id;            // Rule ID (0 = empty slot)
+} __attribute__((packed));
 
 // Statistics counters
 enum stats_key {

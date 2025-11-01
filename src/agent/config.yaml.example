@@ -1,0 +1,70 @@
+# eBPF Microsegmentation Agent Configuration
+
+# API Server Configuration
+api:
+  # Address to bind the API server
+  address: "0.0.0.0:8080"
+
+  # Read timeout in seconds
+  read_timeout: 30
+
+  # Write timeout in seconds
+  write_timeout: 30
+
+  # Idle timeout in seconds
+  idle_timeout: 120
+
+# Data Plane Configuration
+dataplane:
+  # Network interface to attach eBPF program
+  interface: "lo"
+
+  # eBPF program path (optional, uses embedded by default)
+  # ebpf_program: "/path/to/custom.o"
+
+# Policy Persistence Configuration
+persistence:
+  # Enable policy persistence
+  enabled: true
+
+  # Storage backend type (currently only "sqlite" is supported)
+  backend: "sqlite"
+
+  # SQLite database path
+  database_path: "/var/lib/ebpf-microsegment/policies.db"
+
+  # Auto-restore policies on startup
+  auto_restore: true
+
+# Logging Configuration
+logging:
+  # Log level: debug, info, warn, error
+  level: "info"
+
+  # Log format: text, json
+  format: "text"
+
+  # Log output: stdout, stderr, file
+  output: "stdout"
+
+  # Log file path (when output is "file")
+  # file_path: "/var/log/ebpf-microsegment/agent.log"
+
+# Statistics Configuration
+statistics:
+  # Enable statistics collection
+  enabled: true
+
+  # Statistics collection interval in seconds
+  interval: 60
+
+# Advanced Options
+advanced:
+  # Enable debug mode
+  debug: false
+
+  # Enable profiling (pprof)
+  profiling: false
+
+  # Profiling address
+  profiling_address: "localhost:6060"
