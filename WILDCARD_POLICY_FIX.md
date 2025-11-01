@@ -228,15 +228,22 @@ TestE2E_NoPolicy       ✅ PASS (default ALLOW)
 TestE2E_PolicyPriority ✅ PASS (both policies failed, used default)
 ```
 
-### After Fix
+### After Fix (Final)
 ```
-TestE2E_AllowPolicy    ✅ PASS (0.26s)
-TestE2E_DenyPolicy     ✅ PASS (1.24s) ← NOW WORKS!
-TestE2E_NoPolicy       ✅ PASS (0.24s)
-TestE2E_PolicyPriority ✅ PASS (0.24s)
+TestE2E_AllowPolicy    ✅ PASS (0.24s)
+TestE2E_DenyPolicy     ✅ PASS (1.20s) ← NOW WORKS!
+TestE2E_NoPolicy       ✅ PASS (0.18s)
+TestE2E_PolicyPriority ✅ PASS (0.22s) ← Multi-policy priority now works!
 
-ok github.com/ebpf-microsegment/src/agent/test/e2e 1.988s
+ok github.com/ebpf-microsegment/src/agent/test/e2e 1.848s
 ```
+
+### Additional Fix Required
+After initial implementation, discovered an issue with multi-policy scenarios:
+- **Problem**: When adding multiple wildcard policies, the Lookup failed because we were only reading the RuleID field instead of the full struct
+- **Result**: Second policy overwrote first policy in slot 0
+- **Fix**: Read complete wildcard_policy struct during Lookup to properly detect empty slots
+- **Validation**: TestE2E_PolicyPriority now correctly adds policies to separate slots (slot 0 and slot 1)
 
 ### Evidence of Fix
 
