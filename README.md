@@ -11,9 +11,14 @@
 - **🚀 High Performance**: Kernel-level packet filtering with <10μs latency overhead
 - **🎯 Session Tracking**: Intelligent connection tracking using LRU hash maps
 - **📊 Real-time Visibility**: Live flow events and traffic statistics
-- **🏷️ Label-based Policies**: Cloud-native policy management (coming soon)
-- **📈 Flow Visualization**: Application dependency mapping (coming soon)
-- **🤖 Auto Policy Generation**: ML-powered policy recommendations (coming soon)
+- **📈 Flow Collection API**: Network flow data collection, storage, and analysis (Phase 1-3 ✅)
+  - 7 REST API endpoints for flow queries
+  - SQLite persistence with optimized indexes
+  - Application dependency mapping
+  - Top Talkers analysis
+- **🏷️ Label-based Policies**: Cloud-native policy management (in progress)
+- **🔴 Real-time Flow Streaming**: WebSocket push for live flow events (Phase 4, coming soon)
+- **🤖 Auto Policy Generation**: ML-powered policy recommendations (planned)
 - **🛡️ Zero Trust Ready**: Built for zero trust network architecture
 
 ## 🏗️ Architecture
@@ -89,10 +94,17 @@ Flags:
 
 ## 📖 Documentation
 
+### Core Documentation
 - [Project Structure](PROJECT_STRUCTURE.md) - Detailed directory layout and module descriptions
 - [Implementation Plan](docs/microsegmentation-mvp-implementation-plan.md) - MVP roadmap and milestones
 - [Architecture Design](design-docs/architecture/design.md) - Technical architecture details
 - [Weekly Guide](docs/weekly-guide/) - 6-week learning and implementation guide
+
+### Flow Collection API (NEW! 🎉)
+- [Quick Start Guide](docs/flow-quick-start.md) - Get started with Flow Collection API in 10 minutes
+- [Implementation Summary](docs/flow-collection-implementation-summary.md) - Complete technical documentation (32,000 words)
+- [Progress Report](docs/flow-implementation-progress.md) - Current status and roadmap
+- [OpenSpec Design](openspec/changes/add-flow-collection-api/design.md) - Detailed architecture design
 
 ## 🛠️ Development
 

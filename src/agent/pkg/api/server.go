@@ -22,6 +22,8 @@ type Server struct {
 	config        *Config
 	dataPlane     *dataplane.DataPlane
 	policyManager *policy.PolicyManager
+	flowCollector interface{}  // flow.Collector - using interface to avoid import cycle
+	flowStorage   interface{}  // flow.Storage - using interface to avoid import cycle
 	httpServer    *http.Server
 	router        *gin.Engine
 }
@@ -130,4 +132,18 @@ func (s *Server) Stop() error {
 //   - *gin.Engine: The Gin router instance
 func (s *Server) GetRouter() *gin.Engine {
 	return s.router
+}
+
+// SetFlowComponents sets the flow collector and storage components.
+// This enables flow collection API endpoints. Should be called before Start().
+//
+// Parameters:
+//   - collector: Flow collector instance (can be nil to disable flow APIs)
+//   - storage: Flow storage instance (can be nil to disable flow APIs)
+func (s *Server) SetFlowComponents(collector, storage interface{}) {
+	s.flowCollector = collector
+	s.flowStorage = storage
+
+	// Re-setup routes to register flow endpoints
+	s.setupRoutes()
 }

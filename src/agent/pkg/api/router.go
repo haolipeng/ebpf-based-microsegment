@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/ebpf-microsegment/src/agent/pkg/api/handlers"
+	"github.com/ebpf-microsegment/src/agent/pkg/flow"
 )
 
 // setupRoutes configures all API routes
@@ -49,6 +50,28 @@ func (s *Server) setupRoutes() {
 		{
 			config.GET("", configHandler.GetConfig)
 			config.PUT("", configHandler.UpdateConfig)
+		}
+
+		// Flow collection endpoints (conditionally enabled)
+		// Note: Flow components are set via SetFlowComponents() if flow collection is enabled
+		if s.flowCollector != nil && s.flowStorage != nil {
+			// Type assertions to convert interfaces to concrete types
+			collector, ok1 := s.flowCollector.(*flow.Collector)
+			storage, ok2 := s.flowStorage.(flow.Storage)
+
+			if ok1 && ok2 {
+				flowHandler := handlers.NewFlowHandler(collector, storage)
+				flows := v1.Group("/flows")
+				{
+					flows.GET("", flowHandler.ListFlows)                      // List/query flows
+					flows.GET("/:id", flowHandler.GetFlow)                    // Get single flow
+					flows.GET("/summary", flowHandler.GetFlowSummary)         // Flow statistics summary
+					flows.GET("/active", flowHandler.GetActiveFlows)          // Active flows from collector
+					flows.GET("/metrics", flowHandler.GetCollectorMetrics)    // Collector metrics
+					flows.GET("/dependencies", flowHandler.GetDependencies)   // Workload dependencies
+					flows.GET("/top-talkers", flowHandler.GetTopTalkers)      // Top talkers analysis
+				}
+			}
 		}
 	}
 }

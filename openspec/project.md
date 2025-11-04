@@ -12,17 +12,36 @@
 ## Tech Stack
 
 ### 核心技术
+
+**数据平面（Data Plane - eBPF）：**
 - **eBPF (Extended Berkeley Packet Filter)** - 内核级数据包处理
 - **libbpf 1.x** - 现代 eBPF 加载器和骨架框架
-- **C** - eBPF 程序和用户空间控制平面
+- **C** - eBPF 程序开发语言
 - **TC (Traffic Control)** - Linux 流量控制子系统（ingress/egress hooks）
-- **Clang/LLVM** - eBPF 程序编译
-- **bpftool** - eBPF 内省和调试
+  - TCX (Kernel ≥ 6.6) - 新型 TC 扩展接口（优先）
+  - Legacy Netlink TC (Kernel ≥ 4.18) - 兼容模式
+- **Clang/LLVM** - eBPF 程序编译器
+- **bpftool** - eBPF 内省和调试工具
 
-### 支持工具
-- **Go**（可选）- 用户空间控制程序的替代方案
-- **Prometheus** - 指标收集和监控
-- **Grafana** - 可视化仪表板
+**控制平面（Control Plane - Go）：**
+- **Go 1.24** - 用户空间控制平面主要语言（非可选）
+- **cilium/ebpf** (v0.19.0) - Go eBPF 加载和管理库
+- **Gin** (v1.9.1) - HTTP REST API 框架
+- **Cobra** (v1.8.0) - CLI 命令行框架
+- **logrus** (v1.9.3) - 结构化日志库
+- **netlink** (vishvananda/netlink v1.3.1) - 网络接口操作
+
+**存储层（Storage Layer）：**
+- **SQLite 3** (go-sqlite3 v1.14.32) - 策略和工作负载元数据持久化
+
+### 监控和可观测性
+- **Prometheus** - 指标收集和监控（待集成）
+- **Grafana** - 可视化仪表板（待集成）
+- **eBPF Ring Buffer** - 实时流事件上报
+
+### 测试和开发工具
+- **Go testing** - 单元测试和基准测试
+- **E2E 测试框架** - 端到端策略执行测试
 - **Python** - 测试和自动化脚本
 
 ### 开发环境
@@ -41,30 +60,110 @@
 - 优先使用内联函数实现代码复用（对 eBPF 验证器友好）
 - 注释 eBPF 辅助函数的使用
 
-**用户空间程序 (C)：**
-- 使用 libbpf skeleton：从 `xxx.bpf.o` 自动生成 `xxx.skel.h`
-- 加载器模式：`xxx_loader.c` 用于程序生命周期管理
-- 信号处理以实现优雅关闭（SIGINT/SIGTERM）
-- 始终检查错误并提供有意义的消息
+**Go 控制平面程序：**
+- 包命名：简短、小写、单数（`policy`、`workload`、`groups`）
+- 结构体：大驼峰（`PolicyManager`、`WorkloadStorage`）
+- 接口：大驼峰，通常以 -er 结尾（`Storage`、`Manager`）
+- 函数/方法：大驼峰公开，小驼峰私有（`AddPolicy()`、`validateRule()`）
+- 常量：大驼峰或 UPPER_CASE（`DefaultMaxEntries`、`MAX_POLICIES`）
+- 文件命名：`snake_case.go`（如 `policy_manager.go`、`storage_test.go`）
+- 测试：与被测文件同目录，`*_test.go` 后缀
+- 错误处理：始终检查 `error`，使用 `fmt.Errorf("context: %w", err)` 包装
 
 **命名约定：**
+
+*eBPF (C):*
 - Maps：`policy_map`、`session_map`、`stats_map`（snake_case）
 - Structs：`struct policy_key`、`struct tcp_state`（snake_case）
 - Functions：`track_session()`、`match_policy()`（snake_case，动词引导）
 - Constants：`MAX_ENTRIES`、`TC_ACT_OK`（UPPER_CASE）
 
+*Go:*
+- 包：`policy`、`workload`、`groups`、`labels`（小写单数）
+- 类型：`Policy`、`WorkloadManager`、`LabelSelector`（大驼峰）
+- 方法：`AddPolicy()`、`ListWorkloads()`（大驼峰，动词引导）
+- 私有：`validateInput()`、`cacheKey`（小驼峰）
+- JSON 标签：`json:"src_ip"` 使用 snake_case
+
 ### 架构模式
 
-**eBPF 程序结构：**
-```
-src/bpf/          # eBPF 内核程序
-  ├── hello.bpf.c         # TC 程序
-  ├── parse_packet.bpf.c
-  └── microsegment.bpf.c
+**三层架构设计：**
 
-src/user/         # 用户空间加载器
-  ├── hello_loader.c
-  └── microsegment_loader.c
+```
+┌─────────────────────────────────────────────────────┐
+│         Control Plane Layer (Go Agent)              │
+│  ┌──────────────────────────────────────────────┐  │
+│  │ REST API Server (Gin)                        │  │
+│  │ - Policies, Workloads, Groups, Labels        │  │
+│  │ - Statistics, Health, Config                 │  │
+│  └──────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────┐  │
+│  │ Management Layer                             │  │
+│  │ - PolicyManager (策略编排)                    │  │
+│  │ - WorkloadManager (工作负载跟踪)               │  │
+│  │ - GroupManager (标签分组)                     │  │
+│  │ - LabelValidator (标签验证)                   │  │
+│  └──────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────┐  │
+│  │ Storage Layer (SQLite)                       │  │
+│  │ - policies, workloads, groups 表              │  │
+│  └──────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+          ↕ (User-space eBPF Maps access)
+┌─────────────────────────────────────────────────────┐
+│      Data Plane Layer (eBPF + TC)                   │
+│  ┌──────────────────────────────────────────────┐  │
+│  │ TC eBPF Program (tc_microsegment.bpf.c)     │  │
+│  │ - 5-tuple extraction                         │  │
+│  │ - Session tracking (LRU_HASH)                │  │
+│  │ - Policy matching (exact + wildcard)        │  │
+│  │ - Packet action (ALLOW/DENY)                │  │
+│  └──────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────┐  │
+│  │ eBPF Maps                                    │  │
+│  │ - session_map, policy_map, stats_map        │  │
+│  │ - wildcard_policy_map, flow_events          │  │
+│  └──────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+```
+
+**项目目录结构：**
+```
+src/
+├── agent/                    # Go 控制平面
+│   ├── cmd/
+│   │   └── main.go          # 程序入口
+│   ├── pkg/
+│   │   ├── api/             # REST API 层
+│   │   │   ├── server.go
+│   │   │   ├── router.go
+│   │   │   ├── handlers/    # 请求处理器
+│   │   │   └── models/      # API 数据模型
+│   │   ├── dataplane/       # eBPF 数据平面驱动
+│   │   │   └── dataplane.go
+│   │   ├── policy/          # 策略管理
+│   │   │   ├── policy.go
+│   │   │   └── storage.go
+│   │   ├── workload/        # 工作负载管理
+│   │   │   ├── types.go
+│   │   │   ├── manager.go
+│   │   │   └── storage.go
+│   │   ├── labels/          # 标签系统
+│   │   │   ├── types.go
+│   │   │   └── validator.go
+│   │   ├── groups/          # 分组和选择器
+│   │   │   ├── types.go
+│   │   │   ├── selector.go
+│   │   │   └── storage.go
+│   │   └── stats/           # 统计数据收集
+│   └── test/
+│       ├── e2e/             # 端到端测试
+│       └── benchmark/       # 性能基准测试
+│
+└── bpf/                      # eBPF 数据平面
+    ├── tc_microsegment.bpf.c # TC 程序主体
+    └── headers/
+        └── common_types.h    # 共享数据结构
 ```
 
 **关键模式：**
@@ -128,7 +227,7 @@ sudo bpftool map dump name policy_map
 - 生成的提交包含 Claude Code 署名：
   ```
   Add TCP state machine tracking
-
+  
   🤖 Generated with Claude Code
   Co-Authored-By: Claude <noreply@anthropic.com>
   ```
@@ -190,8 +289,8 @@ sudo bpftool map dump name policy_map
 - **tc** - Linux 流量控制实用程序
 
 ### 可选依赖
-- **Prometheus** - 指标收集（第 6 周）
-- **Grafana** - 监控仪表板（第 6 周）
+- **Prometheus** - 指标收集
+- **Grafana** - 监控仪表板
 - **iperf3** - 性能测试
 - **netcat/curl** - 功能测试
 

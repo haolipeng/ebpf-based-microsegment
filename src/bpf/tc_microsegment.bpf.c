@@ -205,8 +205,54 @@ static __always_inline __u8 lookup_policy_action(struct flow_key *key, __u32 *ru
     return POLICY_ACTION_ALLOW;  // Default allow if no policy matches
 }
 
+// Helper: Push flow event to user-space via Ring Buffer
+// Returns 0 on success, -1 on failure
+static __always_inline int push_flow_event(
+    struct flow_key *key,
+    __u64 timestamp_ns,
+    __u64 packet_count,
+    __u64 byte_count,
+    __u8 event_type,
+    __u8 policy_action,
+    __u32 policy_id,
+    __u8 state,
+    __u8 direction)
+{
+    // Reserve space in ring buffer (non-blocking)
+    struct flow_event *event = bpf_ringbuf_reserve(&flow_events, sizeof(*event), 0);
+    if (!event) {
+        // Ring buffer full - event dropped (silent failure for performance)
+        return -1;
+    }
+
+    // Populate event fields
+    event->src_ip = key->src_ip;
+    event->dst_ip = key->dst_ip;
+    event->src_port = key->src_port;
+    event->dst_port = key->dst_port;
+    event->protocol = key->protocol;
+
+    event->event_type = event_type;
+    event->direction = direction;
+    event->padding = 0;
+
+    event->packet_count = packet_count;
+    event->byte_count = byte_count;
+    event->timestamp_ns = timestamp_ns;
+
+    event->policy_id = policy_id;
+    event->policy_action = policy_action;
+    event->state = state;
+    event->reserved = 0;
+
+    // Submit to ring buffer (non-blocking, will not fail)
+    bpf_ringbuf_submit(event, 0);
+
+    return 0;
+}
+
 // Helper: Create new session (optimized - minimal initialization)
-static __always_inline int create_session(struct flow_key *key, __u8 action, __u64 ts, __u32 packet_len) {
+static __always_inline int create_session(struct flow_key *key, __u8 action, __u64 ts, __u32 packet_len, __u32 rule_id) {
     struct session_value new_session = {
         .created_ts = ts,
         .last_seen_ts = ts,
@@ -219,26 +265,26 @@ static __always_inline int create_session(struct flow_key *key, __u8 action, __u
         .policy_action = action,
         .flags = 0,
     };
-    
+
     int ret = bpf_map_update_elem(&session_map, key, &new_session, BPF_NOEXIST);
     if (ret == 0) {
         update_stats(STATS_NEW_SESSIONS);
-        
-        // Only send events for DENY or if explicitly logging
-        if (action == POLICY_ACTION_DENY || action == POLICY_ACTION_LOG) {
-            struct flow_event *event = bpf_ringbuf_reserve(&flow_events, sizeof(*event), 0);
-            if (event) {
-                event->key = *key;
-                event->timestamp = ts;
-                event->packets = 1;
-                event->bytes = packet_len;
-                event->action = action;
-                event->event_type = 0;  // new session
-                bpf_ringbuf_submit(event, 0);
-            }
-        }
+
+        // Push flow event for all new connections (ALLOW, DENY, LOG)
+        // Control plane will handle filtering based on configuration
+        push_flow_event(
+            key,
+            ts,
+            1,                      // First packet
+            packet_len,             // First packet bytes
+            FLOW_EVENT_NEW,         // New connection
+            action,                 // Policy action
+            rule_id,                // Matched rule ID
+            FLOW_STATE_ACTIVE,      // Initial state
+            FLOW_DIRECTION_EGRESS   // Assume egress by default (can be enhanced)
+        );
     }
-    
+
     return ret;
 }
 
@@ -302,7 +348,7 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
 #endif
     
     // Create new session with policy action (includes first packet stats)
-    create_session(&key, action, now, skb->len);
+    create_session(&key, action, now, skb->len, matched_rule_id);
     
     // Enforce policy
     if (action == POLICY_ACTION_DENY) {

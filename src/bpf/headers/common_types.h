@@ -112,15 +112,52 @@ enum stats_key {
     STATS_MAX,
 };
 
-// Flow event for reporting to control plane
+// Flow event types
+enum flow_event_type {
+    FLOW_EVENT_NEW = 0,      // New connection established
+    FLOW_EVENT_UPDATE = 1,   // Connection active/updated
+    FLOW_EVENT_CLOSED = 2,   // Connection closed
+    FLOW_EVENT_TIMEOUT = 3,  // Connection timeout
+};
+
+// Flow direction
+enum flow_direction {
+    FLOW_DIRECTION_INGRESS = 0,
+    FLOW_DIRECTION_EGRESS = 1,
+    FLOW_DIRECTION_UNKNOWN = 2,
+};
+
+// Flow state
+enum flow_state {
+    FLOW_STATE_ACTIVE = 0,
+    FLOW_STATE_CLOSED = 1,
+    FLOW_STATE_TIMEOUT = 2,
+};
+
+// Flow event for reporting to control plane (48 bytes, optimized for Ring Buffer)
 struct flow_event {
-    struct flow_key key;
-    __u64 timestamp;
-    __u64 packets;
-    __u64 bytes;
-    __u8  action;
-    __u8  event_type;  // new/update/close
-    __u16 pad;
+    // 5-tuple identification (12 bytes)
+    __u32 src_ip;
+    __u32 dst_ip;
+    __u16 src_port;
+    __u16 dst_port;
+
+    // Packet metadata (4 bytes)
+    __u8  protocol;
+    __u8  event_type;     // enum flow_event_type
+    __u8  direction;      // enum flow_direction
+    __u8  padding;        // Padding for alignment
+
+    // Traffic statistics (24 bytes)
+    __u64 packet_count;   // Total packets in this flow
+    __u64 byte_count;     // Total bytes in this flow
+    __u64 timestamp_ns;   // Event timestamp in nanoseconds
+
+    // Policy context (8 bytes)
+    __u32 policy_id;      // Matched policy/rule ID
+    __u8  policy_action;  // enum policy_action
+    __u8  state;          // enum flow_state
+    __u16 reserved;       // Reserved for future use
 } __attribute__((packed));
 
 #endif /* __COMMON_TYPES_H__ */
