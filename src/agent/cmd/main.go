@@ -286,6 +286,12 @@ func initFlowCollection(cfg *config.Config, dp *dataplane.DataPlane) (*flow.Coll
 	// Create collector (workloadMgr is nil for now, can be added later)
 	collector := flow.NewCollector(ringBuf, storage, nil, collectorConfig)
 
+	// Create and start WebSocket Hub for real-time streaming
+	wsHub := flow.NewHub()
+	go wsHub.Run()
+	collector.SetWebSocketHub(wsHub)
+	log.Info("WebSocket hub started for real-time flow streaming")
+
 	// Start collector
 	if err := collector.Start(); err != nil {
 		log.Errorf("Failed to start flow collector: %v", err)

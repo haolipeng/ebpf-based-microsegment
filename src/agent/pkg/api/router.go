@@ -116,6 +116,14 @@ func (s *Server) setupRoutes() {
 					flows.GET("/metrics", flowHandler.GetCollectorMetrics)  // Collector metrics
 					flows.GET("/dependencies", flowHandler.GetDependencies) // Workload dependencies
 					flows.GET("/top-talkers", flowHandler.GetTopTalkers)    // Top talkers analysis
+
+					// WebSocket endpoints for real-time streaming
+					if hub := collector.GetWebSocketHub(); hub != nil {
+						streamHandler := handlers.NewFlowStreamHandler(hub)
+						flows.GET("/stream", streamHandler.HandleWebSocket)      // WebSocket upgrade
+						flows.GET("/stream/stats", streamHandler.GetHubStats)    // WebSocket hub statistics
+						log.Debug("WebSocket flow streaming endpoints registered")
+					}
 				}
 			}
 		}

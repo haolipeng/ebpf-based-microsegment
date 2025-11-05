@@ -45,6 +45,7 @@ type Collector struct {
 	ringBuf     *ringbuf.Reader
 	storage     Storage
 	workloadMgr WorkloadManager
+	wsHub       *Hub // WebSocket hub for real-time streaming
 
 	// Flow tracking
 	activeFlows map[string]*Flow // Keyed by flow ID
@@ -101,11 +102,23 @@ func NewCollector(ringBuf *ringbuf.Reader, storage Storage, workloadMgr Workload
 		ringBuf:     ringBuf,
 		storage:     storage,
 		workloadMgr: workloadMgr,
+		wsHub:       nil, // Can be set later via SetWebSocketHub
 		activeFlows: make(map[string]*Flow),
 		ctx:         ctx,
 		cancel:      cancel,
 		config:      config,
 	}
+}
+
+// SetWebSocketHub sets the WebSocket hub for real-time streaming
+func (c *Collector) SetWebSocketHub(hub *Hub) {
+	c.wsHub = hub
+	log.Println("[Flow Collector] WebSocket hub configured for real-time streaming")
+}
+
+// GetWebSocketHub returns the WebSocket hub
+func (c *Collector) GetWebSocketHub() *Hub {
+	return c.wsHub
 }
 
 // Start begins collecting flow events from Ring Buffer
@@ -233,6 +246,11 @@ func (c *Collector) handleNewFlow(flow *Flow) error {
 		}
 	}
 
+	// Broadcast to WebSocket clients if hub is configured
+	if c.wsHub != nil {
+		c.wsHub.Broadcast(flow)
+	}
+
 	return nil
 }
 
@@ -290,6 +308,11 @@ func (c *Collector) updateExistingFlow(flow *Flow) error {
 		if err := c.storage.UpdateFlow(existing); err != nil {
 			return fmt.Errorf("failed to update flow: %w", err)
 		}
+	}
+
+	// Broadcast update to WebSocket clients if hub is configured
+	if c.wsHub != nil {
+		c.wsHub.Broadcast(existing)
 	}
 
 	return nil
