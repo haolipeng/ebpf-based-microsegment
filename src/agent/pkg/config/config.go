@@ -10,9 +10,6 @@ import (
 
 // Config holds the agent configuration
 type Config struct {
-	// Mode determines agent operation mode: "standalone" or "agent-server"
-	Mode string `mapstructure:"mode"`
-
 	// Interface is the network interface to attach eBPF program
 	Interface string `mapstructure:"interface"`
 
@@ -22,20 +19,11 @@ type Config struct {
 	// StatsInterval is the interval for printing statistics (seconds)
 	StatsInterval int `mapstructure:"stats_interval"`
 
-	// Storage configuration for standalone mode
-	Storage StorageConfig `mapstructure:"storage"`
-
 	// API server configuration
 	API APIConfig `mapstructure:"api"`
 
-	// AgentServer configuration for agent-server mode
-	AgentServer *AgentServerConfig `mapstructure:"agent_server,omitempty"`
-}
-
-// StorageConfig holds SQLite storage configuration
-type StorageConfig struct {
-	// Path to SQLite database file
-	Path string `mapstructure:"path"`
+	// AgentServer configuration (required)
+	AgentServer *AgentServerConfig `mapstructure:"server"`
 }
 
 // APIConfig holds API server configuration
@@ -53,11 +41,8 @@ type APIConfig struct {
 	EnableCORS bool `mapstructure:"enable_cors"`
 }
 
-// AgentServerConfig holds configuration for agent-server mode
+// AgentServerConfig holds configuration for control plane server connection
 type AgentServerConfig struct {
-	// Enabled controls whether agent-server mode is active
-	Enabled bool `mapstructure:"enabled"`
-
 	// ServerAddr is the gRPC server address (host:port)
 	ServerAddr string `mapstructure:"server_addr"`
 
@@ -110,14 +95,10 @@ func LoadConfig(configPath string) (*Config, error) {
 
 // setDefaults sets default configuration values
 func setDefaults(v *viper.Viper) {
-	// Mode defaults
-	v.SetDefault("mode", "standalone")
-	v.SetDefault("interface", "lo")
+	// Basic defaults
+	v.SetDefault("interface", "eth0")
 	v.SetDefault("log_level", "info")
 	v.SetDefault("stats_interval", 30)
-
-	// Storage defaults
-	v.SetDefault("storage.path", "/var/lib/microsegment/flows.db")
 
 	// API defaults
 	v.SetDefault("api.enabled", true)
@@ -125,19 +106,14 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("api.port", 8080)
 	v.SetDefault("api.enable_cors", true)
 
-	// Agent-server defaults
-	v.SetDefault("agent_server.batch_size", 100)
-	v.SetDefault("agent_server.batch_timeout", "5s")
-	v.SetDefault("agent_server.reconnect_interval", "30s")
+	// Server defaults
+	v.SetDefault("server.batch_size", 100)
+	v.SetDefault("server.batch_timeout", "5s")
+	v.SetDefault("server.reconnect_interval", "30s")
 }
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
-	// Validate mode
-	if c.Mode != "standalone" && c.Mode != "agent-server" {
-		return fmt.Errorf("invalid mode: %s (must be 'standalone' or 'agent-server')", c.Mode)
-	}
-
 	// Validate interface
 	if c.Interface == "" {
 		return fmt.Errorf("interface is required")
@@ -154,38 +130,29 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid log_level: %s (must be debug, info, warn, or error)", c.LogLevel)
 	}
 
-	// Validate standalone mode
-	if c.Mode == "standalone" {
-		if c.Storage.Path == "" {
-			return fmt.Errorf("storage.path is required in standalone mode")
-		}
+	// Validate server configuration
+	if c.AgentServer == nil {
+		return fmt.Errorf("server configuration is required")
 	}
 
-	// Validate agent-server mode
-	if c.Mode == "agent-server" {
-		if c.AgentServer == nil {
-			return fmt.Errorf("agent_server configuration is required for agent-server mode")
-		}
+	if c.AgentServer.ServerAddr == "" {
+		return fmt.Errorf("server.server_addr is required")
+	}
 
-		if c.AgentServer.ServerAddr == "" {
-			return fmt.Errorf("agent_server.server_addr is required")
-		}
+	// Auto-generate agent ID if not provided
+	if c.AgentServer.AgentID == "" {
+		c.AgentServer.AgentID = generateAgentID()
+	}
 
-		// Auto-generate agent ID if not provided
-		if c.AgentServer.AgentID == "" {
-			c.AgentServer.AgentID = generateAgentID()
-		}
-
-		// Set defaults if not specified
-		if c.AgentServer.BatchSize == 0 {
-			c.AgentServer.BatchSize = 100
-		}
-		if c.AgentServer.BatchTimeout == 0 {
-			c.AgentServer.BatchTimeout = 5 * time.Second
-		}
-		if c.AgentServer.ReconnectInterval == 0 {
-			c.AgentServer.ReconnectInterval = 30 * time.Second
-		}
+	// Set defaults if not specified
+	if c.AgentServer.BatchSize == 0 {
+		c.AgentServer.BatchSize = 100
+	}
+	if c.AgentServer.BatchTimeout == 0 {
+		c.AgentServer.BatchTimeout = 5 * time.Second
+	}
+	if c.AgentServer.ReconnectInterval == 0 {
+		c.AgentServer.ReconnectInterval = 30 * time.Second
 	}
 
 	return nil
@@ -203,18 +170,21 @@ func generateAgentID() string {
 // DefaultConfig returns a default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		Mode:          "standalone",
-		Interface:     "lo",
+		Interface:     "eth0",
 		LogLevel:      "info",
 		StatsInterval: 30,
-		Storage: StorageConfig{
-			Path: "/var/lib/microsegment/flows.db",
-		},
 		API: APIConfig{
 			Enabled:    true,
 			Host:       "127.0.0.1",
 			Port:       8080,
 			EnableCORS: true,
+		},
+		AgentServer: &AgentServerConfig{
+			ServerAddr:        "localhost:9090",
+			AgentID:           "",
+			BatchSize:         100,
+			BatchTimeout:      5 * time.Second,
+			ReconnectInterval: 30 * time.Second,
 		},
 	}
 }

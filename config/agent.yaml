@@ -1,10 +1,7 @@
-# Microsegmentation Agent Configuration - Agent-Server Mode
+# Microsegmentation Agent Configuration
 #
-# In agent-server mode, the agent reports all flow data to a central
-# server via gRPC, enabling centralized management and monitoring.
-
-# Operation mode: standalone or agent-server
-mode: agent-server
+# The agent reports all flow data to a central control plane server
+# via gRPC for centralized policy management and monitoring.
 
 # Network interface to attach eBPF program
 interface: eth0
@@ -15,7 +12,7 @@ log_level: info
 # Statistics print interval in seconds
 stats_interval: 30
 
-# API server configuration (local queries)
+# API server configuration (local queries and management)
 api:
   # Enable REST API server for local queries
   enabled: true
@@ -29,11 +26,8 @@ api:
   # Enable CORS support
   enable_cors: true
 
-# Agent-Server mode configuration
-agent_server:
-  # Enable agent-server mode
-  enabled: true
-
+# Control plane server configuration (required)
+server:
   # gRPC server address (host:port)
   server_addr: "localhost:9090"
 

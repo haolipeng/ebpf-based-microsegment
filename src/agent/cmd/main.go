@@ -9,52 +9,47 @@ import (
 	"time"
 
 	"github.com/ebpf-microsegment/src/agent/pkg/api"
+	"github.com/ebpf-microsegment/src/agent/pkg/client"
+	"github.com/ebpf-microsegment/src/agent/pkg/config"
 	"github.com/ebpf-microsegment/src/agent/pkg/dataplane"
 	"github.com/ebpf-microsegment/src/agent/pkg/policy"
+	"github.com/ebpf-microsegment/src/agent/pkg/reporter"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 var (
-	iface         string
-	logLevel      string
-	statsInterval int
-	enableAPI     bool
-	apiHost       string
-	apiPort       int
+	configPath string
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "microsegment-agent",
 	Short: "eBPF-based microsegmentation agent",
-	Long:  `A high-performance microsegmentation agent using eBPF for packet filtering and policy enforcement`,
-	Run:   runAgent,
+	Long: `A high-performance microsegmentation agent using eBPF for packet filtering and policy enforcement.
+
+Reports flows to central control plane server via gRPC for centralized policy management and visibility.`,
+	Run: runAgent,
 }
 
 func init() {
-	rootCmd.Flags().StringVarP(&iface, "interface", "i", "lo", "Network interface to attach eBPF program")
-	rootCmd.Flags().StringVarP(&logLevel, "log-level", "l", "info", "Log level (debug, info, warn, error)")
-	rootCmd.Flags().IntVarP(&statsInterval, "stats-interval", "s", 5, "Statistics print interval in seconds")
-	rootCmd.Flags().BoolVarP(&enableAPI, "enable-api", "a", true, "Enable REST API server")
-	rootCmd.Flags().StringVar(&apiHost, "api-host", "127.0.0.1", "API server host")
-	rootCmd.Flags().IntVar(&apiPort, "api-port", 8080, "API server port")
+	rootCmd.Flags().StringVarP(&configPath, "config", "c", "", "Path to configuration file (YAML)")
 }
 
 func runAgent(cmd *cobra.Command, args []string) {
-	// Setup logging
-	level, err := log.ParseLevel(logLevel)
+	// Load configuration
+	cfg, err := loadConfiguration()
 	if err != nil {
-		log.Fatalf("Invalid log level: %v", err)
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
-	log.SetLevel(level)
-	log.SetFormatter(&log.TextFormatter{
-		FullTimestamp: true,
-	})
 
-	log.Infof("Starting microsegmentation agent on interface %s", iface)
+	// Setup logging
+	setupLogging(cfg.LogLevel)
+
+	log.Info("Starting microsegmentation agent")
+	log.Infof("Interface: %s", cfg.Interface)
 
 	// Create data plane
-	dp, err := dataplane.New(iface)
+	dp, err := dataplane.New(cfg.Interface)
 	if err != nil {
 		log.Fatalf("Failed to create data plane: %v", err)
 	}
@@ -80,14 +75,24 @@ func runAgent(cmd *cobra.Command, args []string) {
 
 	log.Info("✓ Policy manager initialized")
 
+	// Initialize agent-server components
+	log.Info("Connecting to control plane server...")
+	rep, agentClient := initAgentServerMode(cfg, pm)
+
+	// Start reporter
+	if err := rep.Start(); err != nil {
+		log.Fatalf("Failed to start reporter: %v", err)
+	}
+	defer rep.Stop()
+
 	// Start API server if enabled
 	var apiServer *api.Server
-	if enableAPI {
+	if cfg.API.Enabled {
 		apiConfig := &api.Config{
-			Host:       apiHost,
-			Port:       apiPort,
-			EnableCORS: true,
-			LogLevel:   logLevel,
+			Host:       cfg.API.Host,
+			Port:       cfg.API.Port,
+			EnableCORS: cfg.API.EnableCORS,
+			LogLevel:   cfg.LogLevel,
 		}
 
 		apiServer, err = api.NewAPIServer(apiConfig, dp, pm)
@@ -99,14 +104,14 @@ func runAgent(cmd *cobra.Command, args []string) {
 			log.Fatalf("Failed to start API server: %v", err)
 		}
 
-		log.Infof("✓ API server started on http://%s:%d", apiHost, apiPort)
+		log.Infof("✓ API server started on http://%s:%d", cfg.API.Host, cfg.API.Port)
 	}
 
 	// Start flow event monitoring
 	go dp.MonitorFlowEvents()
 
 	// Print statistics periodically
-	ticker := time.NewTicker(time.Duration(statsInterval) * time.Second)
+	ticker := time.NewTicker(time.Duration(cfg.StatsInterval) * time.Second)
 	defer ticker.Stop()
 
 	go func() {
@@ -119,6 +124,13 @@ func runAgent(cmd *cobra.Command, args []string) {
 			log.Infof("  New Sessions:     %d", stats.NewSessions)
 			log.Infof("  Policy Hits:      %d", stats.PolicyHits)
 			log.Infof("  Policy Misses:    %d", stats.PolicyMisses)
+
+			// Update agent metrics if in agent-server mode
+			if agentClient != nil {
+				flowCount := stats.NewSessions
+				policyCount := uint32(pm.GetPolicyCount())
+				agentClient.UpdateMetrics(flowCount, policyCount)
+			}
 		}
 	}()
 
@@ -137,6 +149,82 @@ func runAgent(cmd *cobra.Command, args []string) {
 			log.Errorf("Error stopping API server: %v", err)
 		}
 	}
+
+	// Stop agent client if running
+	if agentClient != nil {
+		if err := agentClient.Close(); err != nil {
+			log.Errorf("Error closing agent client: %v", err)
+		}
+	}
+
+	log.Info("Shutdown complete")
+}
+
+func loadConfiguration() (*config.Config, error) {
+	if configPath != "" {
+		log.Infof("Loading configuration from %s", configPath)
+		return config.LoadConfig(configPath)
+	}
+
+	log.Info("No config file specified, using defaults")
+	return config.DefaultConfig(), nil
+}
+
+func setupLogging(logLevel string) {
+	level, err := log.ParseLevel(logLevel)
+	if err != nil {
+		log.Fatalf("Invalid log level: %v", err)
+	}
+	log.SetLevel(level)
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp: true,
+	})
+}
+
+func initAgentServerMode(cfg *config.Config, pm *policy.Manager) (reporter.Reporter, *client.AgentClient) {
+	log.Info("Initializing agent-server mode...")
+
+	agentCfg := cfg.AgentServer
+
+	// Create GRPCReporter
+	rep := reporter.NewGRPCReporter(
+		agentCfg.ServerAddr,
+		agentCfg.AgentID,
+		agentCfg.BatchSize,
+	)
+
+	// Create AgentClient
+	hostname, _ := os.Hostname()
+	agentClient := client.NewAgentClient(
+		agentCfg.ServerAddr,
+		agentCfg.AgentID,
+		hostname,
+		"1.0.0", // version
+	)
+
+	// Connect and register with server
+	if err := agentClient.Connect(); err != nil {
+		log.Fatalf("Failed to connect to server: %v", err)
+	}
+
+	log.Infof("✓ Connected to server at %s", agentCfg.ServerAddr)
+
+	// Start heartbeat goroutine
+	go agentClient.StartHeartbeat()
+
+	// Sync policies on startup
+	currentVersion := uint64(0) // TODO: Get from policy manager
+	if policies, version, err := agentClient.SyncPolicies(currentVersion); err == nil {
+		log.Infof("✓ Synced %d policies (version %d)", len(policies), version)
+		// TODO: Apply policies to policy manager
+		// for _, p := range policies {
+		//     pm.AddPolicyFromProto(p)
+		// }
+	} else {
+		log.Warnf("Failed to sync policies: %v", err)
+	}
+
+	return rep, agentClient
 }
 
 func main() {
