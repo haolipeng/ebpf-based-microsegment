@@ -305,6 +305,15 @@ func (pm *PolicyManager) ListPolicies() ([]Policy, error) {
 	return policies, nil
 }
 
+// GetPolicyCount returns the number of policies currently loaded
+func (pm *PolicyManager) GetPolicyCount() int {
+	policies, err := pm.ListPolicies()
+	if err != nil {
+		return 0
+	}
+	return len(policies)
+}
+
 // Helper functions
 
 func parseCIDR(cidr string) (net.IP, *net.IPMask, error) {

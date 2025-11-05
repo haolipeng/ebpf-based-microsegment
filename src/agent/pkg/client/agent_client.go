@@ -109,8 +109,8 @@ func (c *AgentClient) registerAgent() error {
 		Hostname:    c.hostname,
 		Version:     c.version,
 		IpAddresses: getLocalIPs(),
-		OsInfo:      getOSInfo(),
-		Metadata:    map[string]string{},
+		Os:          getOSInfo(),
+		StartTime:   time.Now().UnixNano(),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -166,12 +166,12 @@ func (c *AgentClient) StartHeartbeat() {
 func (c *AgentClient) sendHeartbeat() error {
 	req := &agentpb.HeartbeatRequest{
 		AgentId:   c.agentID,
-		Timestamp: uint64(time.Now().Unix()),
+		Timestamp: time.Now().UnixNano(),
 		Metrics: &agentpb.AgentMetrics{
-			CpuUsage:    getCPUUsage(),
-			MemoryUsage: getMemoryUsage(),
-			FlowCount:   c.flowCount,
-			PolicyCount: c.policyCount,
+			CpuUsage:       getCPUUsage(),
+			MemoryUsage:    getMemoryUsage(),
+			FlowsReported:  c.flowCount,
+			ActivePolicies: c.policyCount,
 		},
 	}
 
@@ -183,10 +183,10 @@ func (c *AgentClient) sendHeartbeat() error {
 		return fmt.Errorf("heartbeat RPC failed: %w", err)
 	}
 
-	if !resp.Acknowledged {
-		logrus.Warnf("Heartbeat not acknowledged: %s", resp.Message)
+	if !resp.Healthy {
+		logrus.Warnf("Heartbeat indicates unhealthy: %s", resp.Message)
 	} else {
-		logrus.Debug("Heartbeat acknowledged")
+		logrus.Debug("Heartbeat successful")
 	}
 
 	return nil
@@ -195,9 +195,9 @@ func (c *AgentClient) sendHeartbeat() error {
 // SyncPolicies synchronizes policies from the server
 func (c *AgentClient) SyncPolicies(currentVersion uint64) ([]*policypb.Policy, uint64, error) {
 	req := &policypb.SyncRequest{
-		AgentId:              c.agentID,
-		CurrentPolicyVersion: currentVersion,
-		Capabilities:         []string{"label-based-policy", "ip-based-policy"},
+		AgentId:       c.agentID,
+		PolicyVersion: currentVersion,
+		LastSyncTime:  time.Now().UnixNano(),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

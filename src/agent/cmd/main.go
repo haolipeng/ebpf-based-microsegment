@@ -181,7 +181,7 @@ func setupLogging(logLevel string) {
 	})
 }
 
-func initAgentServerMode(cfg *config.Config, pm *policy.Manager) (reporter.Reporter, *client.AgentClient) {
+func initAgentServerMode(cfg *config.Config, pm *policy.PolicyManager) (reporter.Reporter, *client.AgentClient) {
 	log.Info("Initializing agent-server mode...")
 
 	agentCfg := cfg.AgentServer
