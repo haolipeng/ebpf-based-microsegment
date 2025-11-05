@@ -4,17 +4,16 @@ import (
 	"context"
 
 	"github.com/ebpf-microsegment/src/agent/pkg/flow"
-	"github.com/ebpf-microsegment/src/agent/pkg/storage"
 	"github.com/sirupsen/logrus"
 )
 
 // LocalReporter reports flows to local SQLite storage
 type LocalReporter struct {
-	storage storage.Storage
+	storage flow.Storage
 }
 
 // NewLocalReporter creates a new LocalReporter
-func NewLocalReporter(storage storage.Storage) *LocalReporter {
+func NewLocalReporter(storage flow.Storage) *LocalReporter {
 	return &LocalReporter{
 		storage: storage,
 	}
