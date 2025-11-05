@@ -1,11 +1,13 @@
 # Makefile for eBPF Microsegmentation Project
-.PHONY: all clean bpf agent test install help proto generate-proto install-proto-tools clean-proto
+.PHONY: all clean bpf agent server test install help proto generate-proto install-proto-tools clean-proto
 
 # Variables
 BIN_DIR := bin
 AGENT_BIN := $(BIN_DIR)/microsegment-agent
+SERVER_BIN := $(BIN_DIR)/microsegment-server
 SRC_BPF := src/bpf
 SRC_AGENT := src/agent
+SRC_SERVER := src/server
 PROTO_DIR := proto
 PROTO_OUT := src/proto
 GO := go
@@ -16,7 +18,7 @@ GREEN := \033[0;32m
 YELLOW := \033[0;33m
 NC := \033[0m # No Color
 
-all: proto bpf agent ## Build everything
+all: proto bpf agent server ## Build everything
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -64,10 +66,17 @@ agent: $(BIN_DIR) ## Build the microsegmentation agent
 	cd $(SRC_AGENT) && $(GO) build -o ../../$(AGENT_BIN) ./cmd
 	@echo "$(GREEN)✓ Agent built: $(AGENT_BIN)$(NC)"
 
-install: agent ## Install the agent to /usr/local/bin
+server: $(BIN_DIR) proto ## Build the microsegmentation server
+	@echo "$(YELLOW)Building server...$(NC)"
+	cd $(SRC_SERVER) && $(GO) build -o ../../$(SERVER_BIN) ./cmd
+	@echo "$(GREEN)✓ Server built: $(SERVER_BIN)$(NC)"
+
+install: agent server ## Install binaries to /usr/local/bin
 	@echo "$(YELLOW)Installing agent...$(NC)"
 	sudo install -m 755 $(AGENT_BIN) /usr/local/bin/
-	@echo "$(GREEN)✓ Agent installed to /usr/local/bin/$(NC)"
+	@echo "$(YELLOW)Installing server...$(NC)"
+	sudo install -m 755 $(SERVER_BIN) /usr/local/bin/
+	@echo "$(GREEN)✓ Binaries installed to /usr/local/bin/$(NC)"
 
 test: ## Run unit tests
 	@echo "$(YELLOW)Running tests...$(NC)"
