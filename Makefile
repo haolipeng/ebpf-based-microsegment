@@ -1,11 +1,13 @@
 # Makefile for eBPF Microsegmentation Project
-.PHONY: all clean bpf agent test install help
+.PHONY: all clean bpf agent test install help proto generate-proto install-proto-tools clean-proto
 
 # Variables
 BIN_DIR := bin
 AGENT_BIN := $(BIN_DIR)/microsegment-agent
 SRC_BPF := src/bpf
 SRC_AGENT := src/agent
+PROTO_DIR := proto
+PROTO_OUT := src/proto
 GO := go
 CLANG := clang
 
@@ -14,7 +16,7 @@ GREEN := \033[0;32m
 YELLOW := \033[0;33m
 NC := \033[0m # No Color
 
-all: bpf agent ## Build everything
+all: proto bpf agent ## Build everything
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -24,6 +26,33 @@ help: ## Show this help message
 
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
+
+proto: generate-proto ## Alias for generate-proto
+
+generate-proto: ## Generate Go code from Protocol Buffers
+	@echo "$(YELLOW)Generating Go code from Protocol Buffers...$(NC)"
+	@./scripts/generate-proto.sh
+	@echo "$(GREEN)✓ Protocol Buffers code generated$(NC)"
+
+install-proto-tools: ## Install Protocol Buffers code generation tools
+	@echo "$(YELLOW)Installing Protocol Buffers tools...$(NC)"
+	@echo "Installing protoc-gen-go..."
+	$(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	@echo "Installing protoc-gen-go-grpc..."
+	$(GO) install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	@echo "$(GREEN)✓ Protocol Buffers tools installed$(NC)"
+	@echo ""
+	@echo "Note: Make sure protoc is installed on your system:"
+	@echo "  Ubuntu/Debian: sudo apt-get install -y protobuf-compiler"
+	@echo "  macOS: brew install protobuf"
+
+clean-proto: ## Clean generated Protocol Buffers code
+	@echo "$(YELLOW)Cleaning generated proto code...$(NC)"
+	rm -rf $(PROTO_OUT)/common/*.pb.go
+	rm -rf $(PROTO_OUT)/flow/*.pb.go $(PROTO_OUT)/flow/*_grpc.pb.go
+	rm -rf $(PROTO_OUT)/policy/*.pb.go $(PROTO_OUT)/policy/*_grpc.pb.go
+	rm -rf $(PROTO_OUT)/agent/*.pb.go $(PROTO_OUT)/agent/*_grpc.pb.go
+	@echo "$(GREEN)✓ Cleaned proto code$(NC)"
 
 bpf: ## Generate eBPF Go bindings using bpf2go
 	@echo "$(YELLOW)Generating eBPF Go bindings...$(NC)"
@@ -50,7 +79,7 @@ test-integration: agent ## Run integration tests
 	sudo ./tests/integration_test.sh
 	@echo "$(GREEN)✓ Integration tests completed$(NC)"
 
-clean: ## Clean build artifacts
+clean: clean-proto ## Clean build artifacts
 	@echo "$(YELLOW)Cleaning...$(NC)"
 	rm -rf $(BIN_DIR)
 	rm -f $(SRC_AGENT)/pkg/dataplane/bpf_*.go

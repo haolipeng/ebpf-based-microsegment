@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package microsegment.common;
+
+option go_package = "github.com/ebpf-microsegment/src/proto/common";
+
+// Protocol represents network protocol types
+// Uses IANA protocol numbers where applicable
+enum Protocol {
+  // Unknown or unspecified protocol
+  PROTOCOL_UNKNOWN = 0;
+
+  // Internet Control Message Protocol
+  PROTOCOL_ICMP = 1;
+
+  // Transmission Control Protocol
+  PROTOCOL_TCP = 6;
+
+  // User Datagram Protocol
+  PROTOCOL_UDP = 17;
+
+  // Match any protocol (wildcard)
+  PROTOCOL_ANY = 255;
+}
+
+// PolicyAction defines the action to take when a policy rule matches
+enum PolicyAction {
+  // Unknown or unspecified action
+  ACTION_UNKNOWN = 0;
+
+  // Allow the traffic
+  ACTION_ALLOW = 1;
+
+  // Deny/block the traffic
+  ACTION_DENY = 2;
+
+  // Log the traffic (may be combined with allow/deny)
+  ACTION_LOG = 3;
+}
+
+// FlowEventType indicates the type of flow event being reported
+enum FlowEventType {
+  // Unknown event type
+  EVENT_UNKNOWN = 0;
+
+  // New flow established
+  EVENT_NEW = 1;
+
+  // Existing flow updated (stats refresh)
+  EVENT_UPDATE = 2;
+
+  // Flow closed normally
+  EVENT_CLOSED = 3;
+
+  // Flow timed out
+  EVENT_TIMEOUT = 4;
+}
+
+// FlowDirection indicates the direction of traffic relative to the agent
+enum FlowDirection {
+  // Unknown direction
+  DIRECTION_UNKNOWN = 0;
+
+  // Traffic coming into the workload
+  DIRECTION_INGRESS = 1;
+
+  // Traffic going out from the workload
+  DIRECTION_EGRESS = 2;
+}
+
+// FlowState represents the current state of a flow
+enum FlowState {
+  // Unknown state
+  STATE_UNKNOWN = 0;
+
+  // Flow is active
+  STATE_ACTIVE = 1;
+
+  // Flow is closed
+  STATE_CLOSED = 2;
+
+  // Flow timed out
+  STATE_TIMEOUT = 3;
+}
+
+// ReportResponse is the standard response for reporting operations
+// Used by FlowService.ReportFlowEvents and PolicyService.ReportPolicyStats
+message ReportResponse {
+  // Whether the report was successfully received
+  bool success = 1;
+
+  // Human-readable message (error details or success confirmation)
+  string message = 2;
+
+  // Number of items accepted and processed
+  uint32 accepted_count = 3;
+
+  // Number of items rejected (validation failures, duplicates, etc.)
+  uint32 rejected_count = 4;
+}
+
+// TimeRange represents a time interval for queries
+message TimeRange {
+  // Start time in Unix nanoseconds (inclusive)
+  int64 start_time = 1;
+
+  // End time in Unix nanoseconds (exclusive)
+  int64 end_time = 2;
+}
