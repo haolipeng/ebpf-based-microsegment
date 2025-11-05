@@ -299,21 +299,24 @@ func initFlowCollection(cfg *config.Config, dp *dataplane.DataPlane) (*flow.Coll
 		return nil, nil
 	}
 
-	// Start cleanup goroutine for old flows
-	go func() {
-		ticker := time.NewTicker(24 * time.Hour) // Run cleanup daily
-		defer ticker.Stop()
+	// Create and start lifecycle manager for data cleanup and monitoring
+	lifecycleConfig := flow.LifecycleConfig{
+		CleanupInterval:            24 * time.Hour, // Daily cleanup
+		RetentionDuration:          time.Duration(cfg.Flow.RetentionDays) * 24 * time.Hour,
+		StoragePath:                cfg.Flow.StoragePath,
+		DiskSpaceThresholdPercent:  80, // Warn when disk usage exceeds 80%
+		EnableDiskMonitoring:       true,
+	}
 
-		for range ticker.C {
-			retentionDuration := time.Duration(cfg.Flow.RetentionDays) * 24 * time.Hour
-			deleted, err := storage.DeleteOldFlows(retentionDuration)
-			if err != nil {
-				log.Errorf("Failed to cleanup old flows: %v", err)
-			} else {
-				log.Infof("Cleaned up %d old flows (retention: %d days)", deleted, cfg.Flow.RetentionDays)
-			}
-		}
-	}()
+	lifecycleManager := flow.NewLifecycleManager(storage, lifecycleConfig)
+	if err := lifecycleManager.Start(); err != nil {
+		log.Warnf("Failed to start lifecycle manager: %v", err)
+	} else {
+		log.Info("Lifecycle manager started for data cleanup and monitoring")
+	}
+
+	// Store lifecycle manager in collector for API access
+	collector.SetLifecycleManager(lifecycleManager)
 
 	return collector, storage
 }

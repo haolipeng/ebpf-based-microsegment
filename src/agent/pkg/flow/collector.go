@@ -42,10 +42,11 @@ type Storage interface {
 
 // Collector collects flow events from eBPF Ring Buffer
 type Collector struct {
-	ringBuf     *ringbuf.Reader
-	storage     Storage
-	workloadMgr WorkloadManager
-	wsHub       *Hub // WebSocket hub for real-time streaming
+	ringBuf         *ringbuf.Reader
+	storage         Storage
+	workloadMgr     WorkloadManager
+	wsHub           *Hub               // WebSocket hub for real-time streaming
+	lifecycleManager *LifecycleManager // Lifecycle manager for data cleanup
 
 	// Flow tracking
 	activeFlows map[string]*Flow // Keyed by flow ID
@@ -119,6 +120,17 @@ func (c *Collector) SetWebSocketHub(hub *Hub) {
 // GetWebSocketHub returns the WebSocket hub
 func (c *Collector) GetWebSocketHub() *Hub {
 	return c.wsHub
+}
+
+// SetLifecycleManager sets the lifecycle manager for data cleanup and monitoring
+func (c *Collector) SetLifecycleManager(manager *LifecycleManager) {
+	c.lifecycleManager = manager
+	log.Println("[Flow Collector] Lifecycle manager configured")
+}
+
+// GetLifecycleManager returns the lifecycle manager
+func (c *Collector) GetLifecycleManager() *LifecycleManager {
+	return c.lifecycleManager
 }
 
 // Start begins collecting flow events from Ring Buffer

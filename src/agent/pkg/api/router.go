@@ -124,6 +124,13 @@ func (s *Server) setupRoutes() {
 						flows.GET("/stream/stats", streamHandler.GetHubStats)    // WebSocket hub statistics
 						log.Debug("WebSocket flow streaming endpoints registered")
 					}
+
+					// Lifecycle management endpoints
+					if lifecycleManager := collector.GetLifecycleManager(); lifecycleManager != nil {
+						lifecycleHandler := handlers.NewLifecycleHandler(lifecycleManager)
+						flows.GET("/lifecycle/stats", lifecycleHandler.GetLifecycleStats) // Lifecycle statistics
+						log.Debug("Lifecycle management endpoints registered")
+					}
 				}
 			}
 		}
