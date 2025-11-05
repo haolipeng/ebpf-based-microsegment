@@ -12,6 +12,7 @@ import (
 	"github.com/ebpf-microsegment/src/agent/pkg/client"
 	"github.com/ebpf-microsegment/src/agent/pkg/config"
 	"github.com/ebpf-microsegment/src/agent/pkg/dataplane"
+	"github.com/ebpf-microsegment/src/agent/pkg/flow"
 	"github.com/ebpf-microsegment/src/agent/pkg/policy"
 	"github.com/ebpf-microsegment/src/agent/pkg/reporter"
 	log "github.com/sirupsen/logrus"
@@ -85,6 +86,21 @@ func runAgent(cmd *cobra.Command, args []string) {
 	}
 	defer rep.Stop()
 
+	// Initialize flow collection if enabled
+	var flowCollector *flow.Collector
+	var flowStorage flow.Storage
+	if cfg.Flow.Enabled {
+		log.Info("Initializing flow collection...")
+		flowCollector, flowStorage = initFlowCollection(cfg, dp)
+		if flowCollector != nil {
+			defer flowCollector.Stop()
+			defer flowStorage.Close()
+			log.Info("✓ Flow collection initialized")
+		}
+	} else {
+		log.Info("Flow collection disabled")
+	}
+
 	// Start API server if enabled
 	var apiServer *api.Server
 	if cfg.API.Enabled {
@@ -98,6 +114,12 @@ func runAgent(cmd *cobra.Command, args []string) {
 		apiServer, err = api.NewAPIServer(apiConfig, dp, pm)
 		if err != nil {
 			log.Fatalf("Failed to create API server: %v", err)
+		}
+
+		// Register flow components with API server if flow collection is enabled
+		if flowCollector != nil && flowStorage != nil {
+			apiServer.SetFlowComponents(flowCollector, flowStorage)
+			log.Debug("Flow components registered with API server")
 		}
 
 		if err := apiServer.Start(); err != nil {
@@ -225,6 +247,69 @@ func initAgentServerMode(cfg *config.Config, pm *policy.PolicyManager) (reporter
 	}
 
 	return rep, agentClient
+}
+
+func initFlowCollection(cfg *config.Config, dp *dataplane.DataPlane) (*flow.Collector, flow.Storage) {
+	// Create storage directory if it doesn't exist
+	storageDir := "./data"
+	if err := os.MkdirAll(storageDir, 0755); err != nil {
+		log.Warnf("Failed to create storage directory: %v", err)
+		return nil, nil
+	}
+
+	// Initialize SQLite storage
+	storage, err := flow.NewSQLiteStorage(cfg.Flow.StoragePath)
+	if err != nil {
+		log.Errorf("Failed to create flow storage: %v", err)
+		return nil, nil
+	}
+
+	log.Infof("Flow storage initialized at %s", cfg.Flow.StoragePath)
+
+	// Get Ring Buffer from dataplane
+	ringBuf := dp.GetFlowRingBuffer()
+	if ringBuf == nil {
+		log.Error("Failed to get flow ring buffer from dataplane")
+		storage.Close()
+		return nil, nil
+	}
+
+	// Create collector configuration
+	collectorConfig := flow.CollectorConfig{
+		FlowTimeout:       cfg.Flow.FlowTimeout,
+		BatchSize:         100,
+		EnableEnrichment:  true,
+		EnablePersistence: true,
+		CleanupInterval:   cfg.Flow.CleanupInterval,
+	}
+
+	// Create collector (workloadMgr is nil for now, can be added later)
+	collector := flow.NewCollector(ringBuf, storage, nil, collectorConfig)
+
+	// Start collector
+	if err := collector.Start(); err != nil {
+		log.Errorf("Failed to start flow collector: %v", err)
+		storage.Close()
+		return nil, nil
+	}
+
+	// Start cleanup goroutine for old flows
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour) // Run cleanup daily
+		defer ticker.Stop()
+
+		for range ticker.C {
+			retentionDuration := time.Duration(cfg.Flow.RetentionDays) * 24 * time.Hour
+			deleted, err := storage.DeleteOldFlows(retentionDuration)
+			if err != nil {
+				log.Errorf("Failed to cleanup old flows: %v", err)
+			} else {
+				log.Infof("Cleaned up %d old flows (retention: %d days)", deleted, cfg.Flow.RetentionDays)
+			}
+		}
+	}()
+
+	return collector, storage
 }
 
 func main() {

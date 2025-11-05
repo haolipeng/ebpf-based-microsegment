@@ -287,6 +287,12 @@ func intToIP(ip uint32) net.IP {
 	return net.IPv4(byte(ip), byte(ip>>8), byte(ip>>16), byte(ip>>24))
 }
 
+// GetFlowRingBuffer returns the ring buffer reader for flow events
+// This allows external components (like flow.Collector) to read flow events
+func (dp *DataPlane) GetFlowRingBuffer() *ringbuf.Reader {
+	return dp.rbReader
+}
+
 // GetSessionMap returns the session map for external access
 func (dp *DataPlane) GetSessionMap() *ebpf.Map {
 	return dp.objs.SessionMap

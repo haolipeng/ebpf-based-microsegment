@@ -45,3 +45,21 @@ server:
 
   # Time to wait before attempting to reconnect on server failure
   reconnect_interval: 30s
+
+# Flow collection configuration
+flow:
+  # Enable flow data collection and storage
+  enabled: true
+
+  # Path to SQLite database for flow storage
+  storage_path: "./data/flows.db"
+
+  # Duration after which inactive flows are considered closed
+  flow_timeout: 5m
+
+  # Interval for cleaning up inactive flows from memory
+  cleanup_interval: 1m
+
+  # Number of days to retain historical flow data
+  # Older flows are automatically deleted
+  retention_days: 7

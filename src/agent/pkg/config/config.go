@@ -24,6 +24,9 @@ type Config struct {
 
 	// AgentServer configuration (required)
 	AgentServer *AgentServerConfig `mapstructure:"server"`
+
+	// Flow collection configuration
+	Flow FlowConfig `mapstructure:"flow"`
 }
 
 // APIConfig holds API server configuration
@@ -39,6 +42,24 @@ type APIConfig struct {
 
 	// EnableCORS enables Cross-Origin Resource Sharing
 	EnableCORS bool `mapstructure:"enable_cors"`
+}
+
+// FlowConfig holds flow collection configuration
+type FlowConfig struct {
+	// Enabled controls whether flow collection is enabled
+	Enabled bool `mapstructure:"enabled"`
+
+	// StoragePath is the path to SQLite database for flow storage
+	StoragePath string `mapstructure:"storage_path"`
+
+	// FlowTimeout is the duration after which inactive flows are considered closed
+	FlowTimeout time.Duration `mapstructure:"flow_timeout"`
+
+	// CleanupInterval is the interval for cleaning up old flows
+	CleanupInterval time.Duration `mapstructure:"cleanup_interval"`
+
+	// RetentionDays is the number of days to retain flow data
+	RetentionDays int `mapstructure:"retention_days"`
 }
 
 // AgentServerConfig holds configuration for control plane server connection
@@ -110,6 +131,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.batch_size", 100)
 	v.SetDefault("server.batch_timeout", "5s")
 	v.SetDefault("server.reconnect_interval", "30s")
+
+	// Flow collection defaults
+	v.SetDefault("flow.enabled", true)
+	v.SetDefault("flow.storage_path", "./data/flows.db")
+	v.SetDefault("flow.flow_timeout", "5m")
+	v.SetDefault("flow.cleanup_interval", "1m")
+	v.SetDefault("flow.retention_days", 7)
 }
 
 // Validate validates the configuration
@@ -185,6 +213,13 @@ func DefaultConfig() *Config {
 			BatchSize:         100,
 			BatchTimeout:      5 * time.Second,
 			ReconnectInterval: 30 * time.Second,
+		},
+		Flow: FlowConfig{
+			Enabled:         true,
+			StoragePath:     "./data/flows.db",
+			FlowTimeout:     5 * time.Minute,
+			CleanupInterval: 1 * time.Minute,
+			RetentionDays:   7,
 		},
 	}
 }
