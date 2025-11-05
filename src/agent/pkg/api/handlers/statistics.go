@@ -92,4 +92,3 @@ func (h *StatisticsHandler) GetPolicyStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response)
 }
-

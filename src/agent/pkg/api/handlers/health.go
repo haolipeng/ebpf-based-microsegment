@@ -91,4 +91,3 @@ func (h *HealthHandler) GetStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response)
 }
-

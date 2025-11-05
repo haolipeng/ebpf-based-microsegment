@@ -1,0 +1,35 @@
+# Microsegmentation Agent Configuration - Standalone Mode
+#
+# In standalone mode, the agent operates independently and stores
+# all flow data locally in SQLite database.
+
+# Operation mode: standalone or agent-server
+mode: standalone
+
+# Network interface to attach eBPF program
+interface: lo
+
+# Log level: debug, info, warn, error
+log_level: info
+
+# Statistics print interval in seconds
+stats_interval: 30
+
+# Storage configuration for standalone mode
+storage:
+  # Path to SQLite database file
+  path: /var/lib/microsegment/flows.db
+
+# API server configuration
+api:
+  # Enable REST API server
+  enabled: true
+
+  # API server host
+  host: 127.0.0.1
+
+  # API server port
+  port: 8080
+
+  # Enable CORS support
+  enable_cors: true

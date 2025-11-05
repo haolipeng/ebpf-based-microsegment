@@ -34,4 +34,3 @@ type PolicyStatsResponse struct {
 	PolicyMisses uint64  `json:"policy_misses"`
 	HitRate      float64 `json:"hit_rate"`
 }
-

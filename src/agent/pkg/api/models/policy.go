@@ -29,4 +29,3 @@ type PolicyListResponse struct {
 	Policies []PolicyResponse `json:"policies"`
 	Count    int              `json:"count"`
 }
-

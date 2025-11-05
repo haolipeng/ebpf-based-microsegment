@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/ebpf-microsegment/src/agent/pkg/dataplane"
+	"github.com/ebpf-microsegment/src/agent/pkg/groups"
 	"github.com/ebpf-microsegment/src/agent/pkg/policy"
+	"github.com/ebpf-microsegment/src/agent/pkg/workload"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )
@@ -22,8 +24,10 @@ type Server struct {
 	config        *Config
 	dataPlane     *dataplane.DataPlane
 	policyManager *policy.PolicyManager
-	flowCollector interface{}  // flow.Collector - using interface to avoid import cycle
-	flowStorage   interface{}  // flow.Storage - using interface to avoid import cycle
+	workloadMgr   *workload.Manager
+	groupMgr      *groups.GroupManager
+	flowCollector interface{} // flow.Collector - using interface to avoid import cycle
+	flowStorage   interface{} // flow.Storage - using interface to avoid import cycle
 	httpServer    *http.Server
 	router        *gin.Engine
 }
@@ -145,5 +149,29 @@ func (s *Server) SetFlowComponents(collector, storage interface{}) {
 	s.flowStorage = storage
 
 	// Re-setup routes to register flow endpoints
+	s.setupRoutes()
+}
+
+// SetWorkloadManager sets the workload manager component.
+// This enables workload management API endpoints. Should be called before Start().
+//
+// Parameters:
+//   - wm: Workload manager instance
+func (s *Server) SetWorkloadManager(wm *workload.Manager) {
+	s.workloadMgr = wm
+
+	// Re-setup routes to register workload endpoints
+	s.setupRoutes()
+}
+
+// SetGroupManager sets the group manager component.
+// This enables group management API endpoints. Should be called before Start().
+//
+// Parameters:
+//   - gm: Group manager instance
+func (s *Server) SetGroupManager(gm *groups.GroupManager) {
+	s.groupMgr = gm
+
+	// Re-setup routes to register group endpoints
 	s.setupRoutes()
 }

@@ -28,6 +28,7 @@ type PolicyManager struct {
 	policyMap         *ebpf.Map
 	wildcardPolicyMap *ebpf.Map
 	storage           Storage
+	compiler          *PolicyCompiler // 策略编译器（用于标签到IP的编译）
 }
 
 // DataPlaneInterface defines the interface for data plane operations
@@ -51,7 +52,13 @@ func NewManagerWithStorage(dp DataPlaneInterface, storage Storage) *PolicyManage
 		policyMap:         dp.GetPolicyMap(),
 		wildcardPolicyMap: dp.GetWildcardPolicyMap(),
 		storage:           storage,
+		compiler:          nil,
 	}
+}
+
+// SetCompiler sets the policy compiler for label-based policy support
+func (pm *PolicyManager) SetCompiler(compiler *PolicyCompiler) {
+	pm.compiler = compiler
 }
 
 // LoadPersisted loads policies from persistent storage and applies them to eBPF map
@@ -511,4 +518,201 @@ func actionToString(action uint8) string {
 	default:
 		return fmt.Sprintf("%d", action)
 	}
+}
+
+// ========== Label-Based Policy Methods ==========
+
+// AddPolicyRule adds a label-based policy rule
+// It compiles the rule to IP-based policies and loads them into eBPF
+func (pm *PolicyManager) AddPolicyRule(r *PolicyRule) error {
+	if pm.compiler == nil {
+		return fmt.Errorf("policy compiler not configured")
+	}
+
+	if pm.storage == nil {
+		return fmt.Errorf("storage not configured")
+	}
+
+	// 1. Store the source rule
+	if err := pm.storage.CreatePolicyRule(r); err != nil {
+		return fmt.Errorf("failed to store policy rule: %w", err)
+	}
+
+	// 2. Compile the rule to IP-based policies
+	result, err := pm.compiler.CompilePolicyRule(r.ID)
+	if err != nil {
+		// Rollback: delete the source rule
+		pm.storage.DeletePolicyRule(r.ID)
+		return fmt.Errorf("failed to compile policy rule: %w", err)
+	}
+
+	// 3. Load each compiled policy into eBPF
+	successCount := 0
+	for _, cp := range result.CompiledPolicies {
+		if err := pm.AddPolicy(&cp.Policy); err != nil {
+			log.Warnf("Failed to load compiled policy %d: %v", cp.RuleID, err)
+			continue
+		}
+		successCount++
+	}
+
+	if successCount == 0 && len(result.CompiledPolicies) > 0 {
+		// All policies failed to load
+		pm.compiler.InvalidateCompiledPolicies(r.ID)
+		pm.storage.DeletePolicyRule(r.ID)
+		return fmt.Errorf("failed to load any compiled policies")
+	}
+
+	log.Infof("Policy rule added: id=%d, name=%s, compiled=%d/%d policies",
+		r.ID, r.Name, successCount, len(result.CompiledPolicies))
+
+	return nil
+}
+
+// DeletePolicyRule deletes a label-based policy rule
+// It removes all compiled policies from eBPF and storage
+func (pm *PolicyManager) DeletePolicyRule(id uint32) error {
+	if pm.compiler == nil {
+		return fmt.Errorf("policy compiler not configured")
+	}
+
+	if pm.storage == nil {
+		return fmt.Errorf("storage not configured")
+	}
+
+	// 1. Get all compiled policies for this rule
+	compiledPolicies, err := pm.compiler.GetCompiledPoliciesForRule(id)
+	if err != nil {
+		log.Warnf("Failed to get compiled policies for rule %d: %v", id, err)
+		// Continue anyway to try to delete the source rule
+	}
+
+	// 2. Delete each compiled policy from eBPF
+	for _, cp := range compiledPolicies {
+		if err := pm.DeletePolicy(&cp.Policy); err != nil {
+			log.Warnf("Failed to delete compiled policy %d from eBPF: %v", cp.RuleID, err)
+			// Continue deleting other policies
+		}
+	}
+
+	// 3. Invalidate (delete) all compiled policies from storage
+	if err := pm.compiler.InvalidateCompiledPolicies(id); err != nil {
+		log.Warnf("Failed to invalidate compiled policies for rule %d: %v", id, err)
+	}
+
+	// 4. Delete the source policy rule
+	if err := pm.storage.DeletePolicyRule(id); err != nil {
+		return fmt.Errorf("failed to delete policy rule: %w", err)
+	}
+
+	log.Infof("Policy rule deleted: id=%d, removed %d compiled policies", id, len(compiledPolicies))
+	return nil
+}
+
+// UpdatePolicyRule updates a label-based policy rule
+// It recompiles and reloads the policies
+func (pm *PolicyManager) UpdatePolicyRule(r *PolicyRule) error {
+	if pm.compiler == nil {
+		return fmt.Errorf("policy compiler not configured")
+	}
+
+	if pm.storage == nil {
+		return fmt.Errorf("storage not configured")
+	}
+
+	// 1. Delete old compiled policies
+	if err := pm.DeletePolicyRule(r.ID); err != nil {
+		log.Warnf("Failed to delete old policy rule %d: %v", r.ID, err)
+		// Continue with update
+	}
+
+	// 2. Add the updated rule (this will compile and load new policies)
+	if err := pm.AddPolicyRule(r); err != nil {
+		return fmt.Errorf("failed to add updated policy rule: %w", err)
+	}
+
+	log.Infof("Policy rule updated: id=%d, name=%s", r.ID, r.Name)
+	return nil
+}
+
+// GetPolicyRule retrieves a policy rule by ID
+func (pm *PolicyManager) GetPolicyRule(id uint32) (*PolicyRule, error) {
+	if pm.storage == nil {
+		return nil, fmt.Errorf("storage not configured")
+	}
+
+	return pm.storage.GetPolicyRule(id)
+}
+
+// ListPolicyRules lists all policy rules
+func (pm *PolicyManager) ListPolicyRules() ([]*PolicyRule, error) {
+	if pm.storage == nil {
+		return nil, fmt.Errorf("storage not configured")
+	}
+
+	return pm.storage.ListPolicyRules()
+}
+
+// GetCompiledPoliciesForRule gets all compiled policies for a source rule
+func (pm *PolicyManager) GetCompiledPoliciesForRule(ruleID uint32) ([]*CompiledPolicy, error) {
+	if pm.compiler == nil {
+		return nil, fmt.Errorf("policy compiler not configured")
+	}
+
+	return pm.compiler.GetCompiledPoliciesForRule(ruleID)
+}
+
+// RecompileAllPolicyRules recompiles all policy rules
+// This is useful when workload membership changes
+func (pm *PolicyManager) RecompileAllPolicyRules() error {
+	if pm.compiler == nil {
+		return fmt.Errorf("policy compiler not configured")
+	}
+
+	if pm.storage == nil {
+		return fmt.Errorf("storage not configured")
+	}
+
+	// Get all enabled policy rules
+	rules, err := pm.storage.ListEnabledPolicyRules()
+	if err != nil {
+		return fmt.Errorf("failed to list policy rules: %w", err)
+	}
+
+	log.Infof("Recompiling %d policy rules...", len(rules))
+
+	successCount := 0
+	for _, rule := range rules {
+		// Delete old compiled policies
+		oldPolicies, _ := pm.compiler.GetCompiledPoliciesForRule(rule.ID)
+		for _, cp := range oldPolicies {
+			pm.DeletePolicy(&cp.Policy)
+		}
+		pm.compiler.InvalidateCompiledPolicies(rule.ID)
+
+		// Recompile
+		result, err := pm.compiler.CompilePolicyRule(rule.ID)
+		if err != nil {
+			log.Errorf("Failed to recompile rule %d (%s): %v", rule.ID, rule.Name, err)
+			continue
+		}
+
+		// Load new compiled policies
+		loadedCount := 0
+		for _, cp := range result.CompiledPolicies {
+			if err := pm.AddPolicy(&cp.Policy); err != nil {
+				log.Warnf("Failed to load compiled policy %d: %v", cp.RuleID, err)
+				continue
+			}
+			loadedCount++
+		}
+
+		if loadedCount > 0 {
+			successCount++
+			log.Infof("Recompiled rule %d (%s): %d policies", rule.ID, rule.Name, loadedCount)
+		}
+	}
+
+	log.Infof("Recompilation complete: %d/%d rules recompiled successfully", successCount, len(rules))
+	return nil
 }

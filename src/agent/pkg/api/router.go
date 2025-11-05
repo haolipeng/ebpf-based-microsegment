@@ -3,6 +3,7 @@ package api
 import (
 	"github.com/ebpf-microsegment/src/agent/pkg/api/handlers"
 	"github.com/ebpf-microsegment/src/agent/pkg/flow"
+	log "github.com/sirupsen/logrus"
 )
 
 // setupRoutes configures all API routes
@@ -12,9 +13,9 @@ func (s *Server) setupRoutes() {
 	policyHandler := handlers.NewPolicyHandler(s.policyManager)
 	statsHandler := handlers.NewStatisticsHandler(s.dataPlane)
 	configHandler := handlers.NewConfigHandler(
-		"lo",                // TODO: Get from actual config
+		"lo", // TODO: Get from actual config
 		s.config.LogLevel,
-		5,                   // TODO: Get from actual config
+		5, // TODO: Get from actual config
 		s.config.Host,
 		s.config.Port,
 	)
@@ -26,7 +27,7 @@ func (s *Server) setupRoutes() {
 		v1.GET("/health", healthHandler.GetHealth)
 		v1.GET("/status", healthHandler.GetStatus)
 
-		// Policy management endpoints
+		// Policy management endpoints (low-level IP-based policies)
 		policies := v1.Group("/policies")
 		{
 			policies.POST("", policyHandler.CreatePolicy)
@@ -34,6 +35,51 @@ func (s *Server) setupRoutes() {
 			policies.GET("/:id", policyHandler.GetPolicy)
 			policies.PUT("/:id", policyHandler.UpdatePolicy)
 			policies.DELETE("/:id", policyHandler.DeletePolicy)
+		}
+
+		// Workload management endpoints
+		if s.workloadMgr != nil {
+			workloadHandler := handlers.NewWorkloadHandler(s.workloadMgr)
+			workloads := v1.Group("/workloads")
+			{
+				workloads.POST("", workloadHandler.CreateWorkload)
+				workloads.GET("", workloadHandler.ListWorkloads)
+				workloads.GET("/:id", workloadHandler.GetWorkload)
+				workloads.PUT("/:id", workloadHandler.UpdateWorkload)
+				workloads.DELETE("/:id", workloadHandler.DeleteWorkload)
+			}
+		} else {
+			log.Debug("Workload manager not configured, workload endpoints disabled")
+		}
+
+		// Group management endpoints
+		if s.groupMgr != nil {
+			groupHandler := handlers.NewGroupHandler(s.groupMgr)
+			groups := v1.Group("/groups")
+			{
+				groups.POST("", groupHandler.CreateGroup)
+				groups.GET("", groupHandler.ListGroups)
+				groups.GET("/:name", groupHandler.GetGroup)
+				groups.GET("/:name/members", groupHandler.GetGroupMembers)
+				groups.PUT("/:name", groupHandler.UpdateGroup)
+				groups.DELETE("/:name", groupHandler.DeleteGroup)
+			}
+		} else {
+			log.Debug("Group manager not configured, group endpoints disabled")
+		}
+
+		// Policy rule management endpoints (high-level label-based policies)
+		if s.policyManager != nil {
+			policyRuleHandler := handlers.NewPolicyRuleHandler(s.policyManager)
+			policyRules := v1.Group("/policy-rules")
+			{
+				policyRules.POST("", policyRuleHandler.CreatePolicyRule)
+				policyRules.GET("", policyRuleHandler.ListPolicyRules)
+				policyRules.GET("/:id", policyRuleHandler.GetPolicyRule)
+				policyRules.GET("/:id/compiled", policyRuleHandler.GetCompiledPolicies)
+				policyRules.PUT("/:id", policyRuleHandler.UpdatePolicyRule)
+				policyRules.DELETE("/:id", policyRuleHandler.DeletePolicyRule)
+			}
 		}
 
 		// Statistics endpoints
@@ -63,16 +109,15 @@ func (s *Server) setupRoutes() {
 				flowHandler := handlers.NewFlowHandler(collector, storage)
 				flows := v1.Group("/flows")
 				{
-					flows.GET("", flowHandler.ListFlows)                      // List/query flows
-					flows.GET("/:id", flowHandler.GetFlow)                    // Get single flow
-					flows.GET("/summary", flowHandler.GetFlowSummary)         // Flow statistics summary
-					flows.GET("/active", flowHandler.GetActiveFlows)          // Active flows from collector
-					flows.GET("/metrics", flowHandler.GetCollectorMetrics)    // Collector metrics
-					flows.GET("/dependencies", flowHandler.GetDependencies)   // Workload dependencies
-					flows.GET("/top-talkers", flowHandler.GetTopTalkers)      // Top talkers analysis
+					flows.GET("", flowHandler.ListFlows)                    // List/query flows
+					flows.GET("/:id", flowHandler.GetFlow)                  // Get single flow
+					flows.GET("/summary", flowHandler.GetFlowSummary)       // Flow statistics summary
+					flows.GET("/active", flowHandler.GetActiveFlows)        // Active flows from collector
+					flows.GET("/metrics", flowHandler.GetCollectorMetrics)  // Collector metrics
+					flows.GET("/dependencies", flowHandler.GetDependencies) // Workload dependencies
+					flows.GET("/top-talkers", flowHandler.GetTopTalkers)    // Top talkers analysis
 				}
 			}
 		}
 	}
 }
-

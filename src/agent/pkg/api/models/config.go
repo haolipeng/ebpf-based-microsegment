@@ -14,4 +14,3 @@ type ConfigUpdateRequest struct {
 	LogLevel      *string `json:"log_level,omitempty" binding:"omitempty,oneof=debug info warn error"`
 	StatsInterval *int    `json:"stats_interval,omitempty" binding:"omitempty,min=1,max=300"`
 }
-

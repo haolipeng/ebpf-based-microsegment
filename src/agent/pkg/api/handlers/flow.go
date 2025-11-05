@@ -43,9 +43,9 @@ func NewFlowHandler(collector *flow.Collector, storage flow.Storage) *FlowHandle
 //   - sort_order: Sort order (asc/desc, default: desc)
 func (h *FlowHandler) ListFlows(c *gin.Context) {
 	query := &flow.FlowQuery{
-		Limit:  100,
-		Offset: 0,
-		SortBy: "start_time",
+		Limit:     100,
+		Offset:    0,
+		SortBy:    "start_time",
 		SortOrder: "desc",
 	}
 
@@ -149,10 +149,10 @@ func (h *FlowHandler) ListFlows(c *gin.Context) {
 		Flows: flows,
 		Count: len(flows),
 		Query: models.FlowQueryInfo{
-			Limit:      query.Limit,
-			Offset:     query.Offset,
-			SortBy:     query.SortBy,
-			SortOrder:  query.SortOrder,
+			Limit:     query.Limit,
+			Offset:    query.Offset,
+			SortBy:    query.SortBy,
+			SortOrder: query.SortOrder,
 		},
 	})
 }

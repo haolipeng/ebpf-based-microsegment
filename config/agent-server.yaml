@@ -1,0 +1,53 @@
+# Microsegmentation Agent Configuration - Agent-Server Mode
+#
+# In agent-server mode, the agent reports all flow data to a central
+# server via gRPC, enabling centralized management and monitoring.
+
+# Operation mode: standalone or agent-server
+mode: agent-server
+
+# Network interface to attach eBPF program
+interface: eth0
+
+# Log level: debug, info, warn, error
+log_level: info
+
+# Statistics print interval in seconds
+stats_interval: 30
+
+# API server configuration (local queries)
+api:
+  # Enable REST API server for local queries
+  enabled: true
+
+  # API server host
+  host: 127.0.0.1
+
+  # API server port
+  port: 8080
+
+  # Enable CORS support
+  enable_cors: true
+
+# Agent-Server mode configuration
+agent_server:
+  # Enable agent-server mode
+  enabled: true
+
+  # gRPC server address (host:port)
+  server_addr: "localhost:9090"
+
+  # Unique agent identifier
+  # If not specified, will be auto-generated from hostname
+  # agent_id: "agent-node1"
+
+  # Number of flow events to batch before sending to server
+  # Higher values reduce network overhead but increase latency
+  batch_size: 100
+
+  # Maximum time to wait before sending a partial batch
+  # Ensures flows are not delayed too long
+  batch_timeout: 5s
+
+  # Time to wait before attempting to reconnect on server failure
+  reconnect_interval: 30s

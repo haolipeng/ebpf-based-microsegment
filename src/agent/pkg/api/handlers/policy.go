@@ -12,7 +12,7 @@ import (
 )
 
 // PolicyHandler handles policy management requests
-type PolicyHandler struct{
+type PolicyHandler struct {
 	policyManager policy.Manager
 }
 
@@ -317,4 +317,3 @@ func (h *PolicyHandler) DeletePolicy(c *gin.Context) {
 		"message": fmt.Sprintf("Policy with rule ID %d deleted successfully", ruleID),
 	})
 }
-
