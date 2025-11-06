@@ -21,6 +21,7 @@ import (
 	"github.com/ebpf-microsegment/src/server/pkg/config"
 	grpcserv "github.com/ebpf-microsegment/src/server/pkg/grpc"
 	"github.com/ebpf-microsegment/src/server/pkg/storage"
+	"github.com/ebpf-microsegment/src/server/pkg/api/handlers"
 )
 
 func main() {
@@ -138,7 +139,7 @@ func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 		})
 	})
 
-	// API routes (simplified for MVP)
+	// API routes
 	api := router.Group("/api/v1")
 	{
 		// Agent management
@@ -151,12 +152,11 @@ func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 			c.JSON(200, agents)
 		})
 
-		// Flow queries (placeholder)
-		api.GET("/flows", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "Flow query API - coming soon"})
-		})
+		// Flow API - use dedicated handler
+		flowHandler := handlers.NewFlowHandler(flowStorage)
+		flowHandler.RegisterRoutes(api)
 
-		// Policy management (placeholder)
+		// Policy management
 		api.GET("/policies", func(c *gin.Context) {
 			policies, version, err := policyStorage.GetAllPolicies(c.Request.Context())
 			if err != nil {

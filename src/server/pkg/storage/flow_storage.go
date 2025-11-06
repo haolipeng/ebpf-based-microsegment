@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"time"
 
 	flowpb "github.com/ebpf-microsegment/src/proto/flow"
 	"github.com/sirupsen/logrus"
@@ -183,4 +184,148 @@ func (s *FlowStorage) QueryFlows(ctx context.Context, query *flowpb.FlowQuery) (
 // intToIP converts uint32 IP to string
 func intToIP(ip uint32) string {
 	return net.IPv4(byte(ip>>24), byte(ip>>16), byte(ip>>8), byte(ip)).String()
+}
+
+// FlowSummary represents aggregated flow statistics
+type FlowSummary struct {
+	TotalFlows      int64   `json:"total_flows"`
+	TotalPackets    int64   `json:"total_packets"`
+	TotalBytes      int64   `json:"total_bytes"`
+	UniqueSourceIPs int64   `json:"unique_source_ips"`
+	UniqueDestIPs   int64   `json:"unique_dest_ips"`
+	AvgDuration     float64 `json:"avg_duration_ms"`
+	TopProtocols    []ProtocolStat `json:"top_protocols"`
+}
+
+// ProtocolStat represents protocol statistics
+type ProtocolStat struct {
+	Protocol string `json:"protocol"`
+	Count    int64  `json:"count"`
+	Bytes    int64  `json:"bytes"`
+}
+
+// FlowDependency represents a dependency between two workloads
+type FlowDependency struct {
+	SourceLabel string `json:"source_label"`
+	DestLabel   string `json:"dest_label"`
+	FlowCount   int64  `json:"flow_count"`
+	TotalBytes  int64  `json:"total_bytes"`
+	Protocols   []string `json:"protocols"`
+}
+
+// GetFlowSummary returns aggregated flow statistics for a time range
+func (s *FlowStorage) GetFlowSummary(ctx context.Context, startTime, endTime time.Time) (*FlowSummary, error) {
+	query := `
+		SELECT
+			COUNT(*) as total_flows,
+			SUM(packet_count) as total_packets,
+			SUM(byte_count) as total_bytes,
+			COUNT(DISTINCT src_ip) as unique_source_ips,
+			COUNT(DISTINCT dst_ip) as unique_dest_ips,
+			AVG(EXTRACT(EPOCH FROM (COALESCE(end_time, last_seen) - start_time)) * 1000) as avg_duration_ms
+		FROM flows
+		WHERE timestamp_ns >= $1 AND timestamp_ns <= $2
+	`
+
+	summary := &FlowSummary{}
+	err := s.db.QueryRowContext(
+		ctx,
+		query,
+		startTime.UnixNano(),
+		endTime.UnixNano(),
+	).Scan(
+		&summary.TotalFlows,
+		&summary.TotalPackets,
+		&summary.TotalBytes,
+		&summary.UniqueSourceIPs,
+		&summary.UniqueDestIPs,
+		&summary.AvgDuration,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get flow summary: %w", err)
+	}
+
+	// Get top protocols
+	protocolQuery := `
+		SELECT
+			protocol,
+			COUNT(*) as count,
+			SUM(byte_count) as bytes
+		FROM flows
+		WHERE timestamp_ns >= $1 AND timestamp_ns <= $2
+		GROUP BY protocol
+		ORDER BY count DESC
+		LIMIT 5
+	`
+
+	rows, err := s.db.QueryContext(ctx, protocolQuery, startTime.UnixNano(), endTime.UnixNano())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get protocol stats: %w", err)
+	}
+	defer rows.Close()
+
+	summary.TopProtocols = []ProtocolStat{}
+	for rows.Next() {
+		var stat ProtocolStat
+		if err := rows.Scan(&stat.Protocol, &stat.Count, &stat.Bytes); err != nil {
+			continue
+		}
+		summary.TopProtocols = append(summary.TopProtocols, stat)
+	}
+
+	return summary, nil
+}
+
+// GetFlowDependencies returns application dependencies based on label-based flow aggregation
+func (s *FlowStorage) GetFlowDependencies(ctx context.Context, startTime, endTime time.Time, groupBy string) ([]*FlowDependency, error) {
+	// Query dependencies by aggregating flows based on labels
+	// group_by can be "app", "env", "tier", etc.
+
+	query := `
+		SELECT
+			COALESCE(source_labels->>'` + groupBy + `', 'unknown') as source_label,
+			COALESCE(dest_labels->>'` + groupBy + `', 'unknown') as dest_label,
+			COUNT(*) as flow_count,
+			SUM(byte_count) as total_bytes,
+			array_agg(DISTINCT protocol) as protocols
+		FROM flows
+		WHERE timestamp_ns >= $1 AND timestamp_ns <= $2
+		  AND source_labels ? $3
+		  AND dest_labels ? $3
+		GROUP BY source_label, dest_label
+		ORDER BY flow_count DESC
+		LIMIT 100
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, startTime.UnixNano(), endTime.UnixNano(), groupBy)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get flow dependencies: %w", err)
+	}
+	defer rows.Close()
+
+	dependencies := []*FlowDependency{}
+	for rows.Next() {
+		var dep FlowDependency
+		var protocolsJSON []byte
+
+		err := rows.Scan(
+			&dep.SourceLabel,
+			&dep.DestLabel,
+			&dep.FlowCount,
+			&dep.TotalBytes,
+			&protocolsJSON,
+		)
+		if err != nil {
+			logrus.Warnf("Failed to scan dependency: %v", err)
+			continue
+		}
+
+		// Parse protocols array from PostgreSQL
+		json.Unmarshal(protocolsJSON, &dep.Protocols)
+
+		dependencies = append(dependencies, &dep)
+	}
+
+	return dependencies, nil
 }
