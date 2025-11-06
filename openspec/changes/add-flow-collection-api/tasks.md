@@ -10,6 +10,54 @@
 
 ---
 
+## 📊 当前完成状态 (更新时间: 2025-11-06)
+
+### Agent 端实现进度
+- ✅ **Phase 2 完成 (100%)**: Flow Collector + gRPC Reporter
+  - ✅ Task 2.1: Flow 包结构创建
+  - ✅ Task 2.2: Flow Collector 实现
+  - ✅ Task 2.3: gRPC Reporter 实现
+  - ✅ Task 2.4: 集成到 Agent 主程序
+  - ✅ Task 3.0: Flow 生命周期管理（补充）
+- ⏳ **Phase 1 (未验证)**: eBPF 数据平面（需验证是否已实现）
+- ⏳ **Phase 3 (进行中)**: 集成测试和性能测试（未完成）
+
+### Server 端实现进度
+- ✅ **Phase 4 基础完成 (70%)**: gRPC 接收和存储
+  - ✅ Task 4.1: FlowService gRPC 接口实现
+  - ✅ Task 4.2: PostgreSQL 存储层实现（MVP 版本，未启用 TimescaleDB Hypertable）
+- ❌ **Phase 5 (0%)**: HTTP API 和 WebSocket
+  - ❌ Task 5.1: Flow 查询 API（仅占位符）
+  - ❌ Task 5.2: WebSocket 实时推送（已在 Agent 端实现，需迁移到 Server）
+- ❌ **Phase 6 (0%)**: 全局依赖分析和聚合
+  - ❌ Task 6.1: 跨节点聚合（未实现）
+
+### 关键文件路径
+**Agent 端（已实现）**:
+- `src/agent/pkg/flow/types.go` - Flow 数据结构
+- `src/agent/pkg/flow/collector.go` - Flow Collector
+- `src/agent/pkg/flow/lifecycle.go` - 生命周期管理
+- `src/agent/pkg/flow/websocket.go` - WebSocket 流推送（需迁移到 Server）
+- `src/agent/pkg/reporter/grpc_reporter.go` - gRPC Reporter
+
+**Server 端（已实现）**:
+- `src/server/pkg/grpc/flow_service.go` - FlowService gRPC 接口
+- `src/server/pkg/storage/flow_storage.go` - FlowStorage 存储层
+- `src/server/pkg/storage/postgres.go` - 数据库 Schema
+
+**Server 端（缺失）**:
+- `src/server/pkg/api/handlers/flow.go` - HTTP Flow API（仅占位符）
+- `src/server/pkg/aggregator/` - 聚合器（目录不存在）
+
+### 下一步优先级
+1. 🔴 **高优先级**: 实现 Server HTTP Flow API (Task 5.1)
+2. 🔴 **高优先级**: 实现全局依赖分析和聚合 (Task 6.1)
+3. 🟡 **中优先级**: 将 WebSocket Hub 迁移到 Server 端 (Task 5.2)
+4. 🟢 **低优先级**: 启用 TimescaleDB Hypertable 优化
+5. 🟢 **低优先级**: 端到端测试和性能测试 (Phase 3, Phase 7)
+
+---
+
 ## 📦 Agent 端实施任务
 
 ### Phase 1: Agent - eBPF 数据平面 Flow 收集（Week 1）
@@ -149,8 +197,8 @@
 **负责人**：Go 开发者
 **估时**：2 小时
 
-- [ ] 创建 `src/agent/pkg/flow/` 目录
-- [ ] 创建文件结构：
+- [x] 创建 `src/agent/pkg/flow/` 目录
+- [x] 创建文件结构：
   ```
   src/agent/pkg/flow/
   ├── types.go           # Flow 数据结构
@@ -159,7 +207,7 @@
   ├── collector_test.go
   └── reporter_test.go
   ```
-- [ ] 定义 `Flow` 结构体（Go 版本）
+- [x] 定义 `Flow` 结构体（Go 版本）
   ```go
   type Flow struct {
       ID           string
@@ -193,7 +241,7 @@
 **负责人**：Go 开发者
 **估时**：8 小时
 
-- [ ] 实现 `Collector` 结构体
+- [x] 实现 `Collector` 结构体
   ```go
   type Collector struct {
       ringBuf     *ringbuf.Reader
@@ -203,17 +251,17 @@
       cancel      context.CancelFunc
   }
   ```
-- [ ] 实现 `NewCollector()` 构造函数
-- [ ] 实现 `Start()` 方法启动收集循环
-- [ ] 实现 `collectLoop()` 主循环：
+- [x] 实现 `NewCollector()` 构造函数
+- [x] 实现 `Start()` 方法启动收集循环
+- [x] 实现 `collectLoop()` 主循环：
   - 读取 Ring Buffer 事件
   - 解析二进制数据到 Flow 结构体
   - 丰富工作负载标签
   - 传递给 Reporter
-- [ ] 实现 `Stop()` 方法优雅关闭
-- [ ] 实现 `parseFlowEvent()` 解析二进制事件
-- [ ] 实现 `eventToFlow()` 转换为 Flow 结构体
-- [ ] 实现 `enrichWithLabels()` 标签丰富化
+- [x] 实现 `Stop()` 方法优雅关闭
+- [x] 实现 `parseFlowEvent()` 解析二进制事件
+- [x] 实现 `eventToFlow()` 转换为 Flow 结构体
+- [x] 实现 `enrichWithLabels()` 标签丰富化
 
 **验收标准**：
 - ✅ Collector 能够从 Ring Buffer 读取事件
@@ -227,7 +275,7 @@
 **负责人**：Go 开发者
 **估时**：8 小时
 
-- [ ] 实现 `Reporter` 结构体
+- [x] 实现 `Reporter` 结构体
   ```go
   type Reporter struct {
       client       pb.FlowServiceClient
@@ -242,14 +290,14 @@
       wg           sync.WaitGroup
   }
   ```
-- [ ] 实现 `NewReporter(config ReporterConfig)` 构造函数
+- [x] 实现 `NewReporter(config ReporterConfig)` 构造函数
   - 连接到 Server gRPC 地址
   - 创建 FlowServiceClient
-- [ ] 实现 `Start()` 启动上报循环
-- [ ] 实现 `Report(flow *Flow)` 添加到缓冲区
-- [ ] 实现 `reportLoop()` 定时刷新缓冲区
-- [ ] 实现 `flushBuffer()` 发送批量流事件
-- [ ] 实现 `sendBatch(batch []*Flow)` gRPC 流式上报
+- [x] 实现 `Start()` 启动上报循环
+- [x] 实现 `Report(flow *Flow)` 添加到缓冲区
+- [x] 实现 `reportLoop()` 定时刷新缓冲区
+- [x] 实现 `flushBuffer()` 发送批量流事件
+- [x] 实现 `sendBatch(batch []*Flow)` gRPC 流式上报
   ```go
   stream, err := r.client.ReportFlowEvents(ctx)
   for _, flow := range batch {
@@ -258,8 +306,8 @@
   }
   resp, err := stream.CloseAndRecv()
   ```
-- [ ] 实现 `flowToProto()` 转换为 protobuf
-- [ ] 实现 `Stop()` 优雅关闭（刷新剩余数据）
+- [x] 实现 `flowToProto()` 转换为 protobuf
+- [x] 实现 `Stop()` 优雅关闭（刷新剩余数据）
 
 **验收标准**：
 - ✅ Reporter 能够连接到 Server gRPC
@@ -274,8 +322,8 @@
 **负责人**：Go 开发者
 **估时**：4 小时
 
-- [ ] 修改 `src/agent/cmd/main.go`
-- [ ] 添加 Flow 配置到 `Config` 结构体
+- [x] 修改 `src/agent/cmd/main.go`
+- [x] 添加 Flow 配置到 `Config` 结构体
   ```go
   type FlowConfig struct {
       Enabled      bool
@@ -284,7 +332,7 @@
       BatchTimeout time.Duration
   }
   ```
-- [ ] 在 `runAgent()` 中初始化 Flow Collector 和 Reporter
+- [x] 在 `runAgent()` 中初始化 Flow Collector 和 Reporter
   ```go
   if cfg.Flow.Enabled {
       // Create Reporter
@@ -308,7 +356,7 @@
       defer collector.Stop()
   }
   ```
-- [ ] 更新 `config/agent.yaml` 配置文件
+- [x] 更新 `config/agent.yaml` 配置文件
 
 **验收标准**：
 - ✅ Agent 启动时自动初始化 Flow Collector
@@ -319,6 +367,24 @@
 ---
 
 ### Phase 3: Agent 端集成测试（Week 3）
+
+#### Task 3.0: Flow 生命周期管理（补充实现）
+**负责人**：Go 开发者
+**估时**：6 小时
+**文件路径**：`src/agent/pkg/flow/lifecycle.go`
+
+- [x] 实现 `LifecycleManager` 用于管理流的生命周期
+- [x] 实现流过期检测和清理机制
+- [x] 实现流聚合和去重逻辑
+- [x] 实现监控指标（活跃流数量、过期流数量）
+- [x] 集成到 Collector 中
+
+**验收标准**：
+- ✅ 流过期自动清理
+- ✅ 内存占用受控
+- ✅ 监控指标正常工作
+
+---
 
 #### Task 3.1: 端到端测试
 **负责人**：QA + Go 开发者
@@ -377,7 +443,7 @@
 **估时**：6 小时
 **文件路径**：`src/server/pkg/grpc/flow_service.go`
 
-- [ ] 实现 `ReportFlowEvents()` 方法（客户端流）
+- [x] 实现 `ReportFlowEvents()` 方法（客户端流）
   ```go
   func (s *FlowService) ReportFlowEvents(stream pb.FlowService_ReportFlowEventsServer) error {
       var acceptedCount, rejectedCount uint64
@@ -408,8 +474,8 @@
       }
   }
   ```
-- [ ] 实现批量接收优化
-- [ ] 实现错误处理和日志
+- [x] 实现批量接收优化
+- [x] 实现错误处理和日志
 
 **验收标准**：
 - ✅ 能够接收 Agent 的流式上报
@@ -423,7 +489,7 @@
 **估时**：8 小时
 **文件路径**：`src/server/pkg/storage/flow_storage.go`
 
-- [ ] 创建 `flows` 表 schema
+- [x] 创建 `flows` 表 schema
   ```sql
   CREATE TABLE flows (
       time              TIMESTAMPTZ NOT NULL,
@@ -452,7 +518,7 @@
   SELECT create_hypertable('flows', 'time', chunk_time_interval => INTERVAL '1 day');
   SELECT add_retention_policy('flows', INTERVAL '30 days');
   ```
-- [ ] 创建索引
+- [x] 创建索引
   ```sql
   CREATE INDEX ON flows (agent_id, time DESC);
   CREATE INDEX ON flows (source_ip, time DESC);
@@ -460,7 +526,7 @@
   CREATE INDEX ON flows USING GIN (source_labels);
   CREATE INDEX ON flows USING GIN (dest_labels);
   ```
-- [ ] 实现 `FlowStorage` 接口
+- [x] 实现 `FlowStorage` 接口
   ```go
   type FlowStorage interface {
       BatchSaveFlowEvents(events []*pb.FlowEvent) error
@@ -469,12 +535,12 @@
       GetDependencies(startTime, endTime time.Time) ([]*Dependency, error)
   }
   ```
-- [ ] 实现批量插入优化（使用 `COPY` 或批量 INSERT）
+- [x] 实现批量插入优化（使用 `COPY` 或批量 INSERT）
 
 **验收标准**：
-- ✅ TimescaleDB Hypertable 创建成功
-- ✅ 批量写入性能 > 100K flows/s
-- ✅ 查询性能达标（1000 条 < 100ms）
+- ⚠️ TimescaleDB Hypertable 创建成功 (MVP: 简化版本，未启用 Hypertable)
+- ⏳ 批量写入性能 > 100K flows/s (未测试)
+- ⏳ 查询性能达标（1000 条 < 100ms）(未测试)
 
 ---
 
@@ -515,6 +581,8 @@
 - ✅ WebSocket 连接正常工作
 - ✅ 实时推送延迟 < 500ms
 - ✅ 支持 1000+ 并发连接
+
+**注意**：当前 WebSocket 实现在 Agent 端（`src/agent/pkg/flow/websocket.go`），需要迁移到 Server 端以支持全局流推送。
 
 ---
 
