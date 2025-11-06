@@ -22,6 +22,7 @@ import (
 	grpcserv "github.com/ebpf-microsegment/src/server/pkg/grpc"
 	"github.com/ebpf-microsegment/src/server/pkg/storage"
 	"github.com/ebpf-microsegment/src/server/pkg/api/handlers"
+	ws "github.com/ebpf-microsegment/src/server/pkg/websocket"
 )
 
 func main() {
@@ -63,12 +64,17 @@ func main() {
 	policyStorage := storage.NewPolicyStorage(db)
 	agentStorage := storage.NewAgentStorage(db)
 
+	// Create and start WebSocket hub for real-time flow streaming
+	wsHub := ws.NewHub()
+	go wsHub.Run()
+	logrus.Info("WebSocket hub started")
+
 	// Start gRPC server
-	grpcServer := startGRPCServer(cfg, flowStorage, policyStorage, agentStorage)
+	grpcServer := startGRPCServer(cfg, flowStorage, policyStorage, agentStorage, wsHub)
 	defer grpcServer.GracefulStop()
 
 	// Start HTTP API server
-	httpServer := startHTTPServer(cfg, flowStorage, policyStorage, agentStorage)
+	httpServer := startHTTPServer(cfg, flowStorage, policyStorage, agentStorage, wsHub)
 
 	// Wait for shutdown signal
 	shutdown := make(chan os.Signal, 1)
@@ -104,7 +110,7 @@ func setupLogging(cfg config.LogConfig) {
 	}
 }
 
-func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage) *grpc.Server {
+func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, wsHub *ws.Hub) *grpc.Server {
 	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.GRPC.Host, cfg.GRPC.Port))
 	if err != nil {
 		logrus.Fatalf("Failed to listen on gRPC port: %v", err)
@@ -112,8 +118,8 @@ func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 
 	grpcServer := grpc.NewServer()
 
-	// Register gRPC services
-	flowpb.RegisterFlowServiceServer(grpcServer, grpcserv.NewFlowServiceServer(flowStorage))
+	// Register gRPC services with WebSocket hub for real-time streaming
+	flowpb.RegisterFlowServiceServer(grpcServer, grpcserv.NewFlowServiceServer(flowStorage, wsHub))
 	policypb.RegisterPolicyServiceServer(grpcServer, grpcserv.NewPolicyServiceServer(policyStorage))
 	agentpb.RegisterAgentServiceServer(grpcServer, grpcserv.NewAgentServiceServer(agentStorage))
 
@@ -127,7 +133,7 @@ func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 	return grpcServer
 }
 
-func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage) *http.Server {
+func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, wsHub *ws.Hub) *http.Server {
 	router := gin.Default()
 
 	// Health check endpoint
@@ -155,6 +161,10 @@ func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 		// Flow API - use dedicated handler
 		flowHandler := handlers.NewFlowHandler(flowStorage)
 		flowHandler.RegisterRoutes(api)
+
+		// WebSocket real-time flow streaming
+		flowStreamHandler := handlers.NewFlowStreamHandler(wsHub)
+		flowStreamHandler.RegisterRoutes(api)
 
 		// Policy management
 		api.GET("/policies", func(c *gin.Context) {

@@ -8,6 +8,7 @@ import (
 	commonpb "github.com/ebpf-microsegment/src/proto/common"
 	flowpb "github.com/ebpf-microsegment/src/proto/flow"
 	"github.com/ebpf-microsegment/src/server/pkg/storage"
+	ws "github.com/ebpf-microsegment/src/server/pkg/websocket"
 	"github.com/sirupsen/logrus"
 )
 
@@ -15,12 +16,14 @@ import (
 type FlowServiceServer struct {
 	flowpb.UnimplementedFlowServiceServer
 	flowStorage *storage.FlowStorage
+	wsHub       *ws.Hub
 }
 
 // NewFlowServiceServer creates a new FlowServiceServer
-func NewFlowServiceServer(flowStorage *storage.FlowStorage) *FlowServiceServer {
+func NewFlowServiceServer(flowStorage *storage.FlowStorage, wsHub *ws.Hub) *FlowServiceServer {
 	return &FlowServiceServer{
 		flowStorage: flowStorage,
+		wsHub:       wsHub,
 	}
 }
 
@@ -65,6 +68,15 @@ func (s *FlowServiceServer) ReportFlowEvents(stream flowpb.FlowService_ReportFlo
 				RejectedCount:  uint32(acceptedCount + rejectedCount),
 			})
 		}
+
+		// Broadcast flows to WebSocket clients (real-time streaming)
+		// Convert each FlowEvent to Flow and broadcast
+		for _, event := range events {
+			flow := s.eventToFlow(event)
+			if s.wsHub != nil {
+				s.wsHub.Broadcast(flow)
+			}
+		}
 	}
 
 	logrus.Infof("Received %d flow events (%d accepted, %d rejected)",
@@ -104,4 +116,36 @@ func (s *FlowServiceServer) GetFlowSummary(ctx context.Context, req *flowpb.Flow
 		TotalPackets: 0,
 		TotalBytes:   0,
 	}, nil
+}
+
+// eventToFlow converts a FlowEvent (from agent) to Flow (for storage/WebSocket)
+func (s *FlowServiceServer) eventToFlow(event *flowpb.FlowEvent) *flowpb.Flow {
+	// Convert IP addresses from uint32 to string
+	srcIP := intToIP(event.SrcIp)
+	dstIP := intToIP(event.DstIp)
+
+	return &flowpb.Flow{
+		// Note: id will be 0 (database will assign proper ID on insert)
+		AgentId:      event.AgentId,
+		SrcIp:        srcIP,
+		DstIp:        dstIP,
+		SrcPort:      event.SrcPort,
+		DstPort:      event.DstPort,
+		Protocol:     event.Protocol,
+		Direction:    event.Direction,
+		PacketCount:  event.PacketCount,
+		ByteCount:    event.ByteCount,
+		StartTime:    int64(event.TimestampNs), // Convert uint64 to int64
+		PolicyId:     event.PolicyId,
+		PolicyAction: event.PolicyAction,
+		State:        event.State,
+		SourceLabels: event.SourceLabels,
+		DestLabels:   event.DestLabels,
+	}
+}
+
+// intToIP converts uint32 IP to string (IPv4)
+func intToIP(ip uint32) string {
+	return fmt.Sprintf("%d.%d.%d.%d",
+		byte(ip>>24), byte(ip>>16), byte(ip>>8), byte(ip))
 }
