@@ -26,3 +26,6 @@ microsegment
 # OS
 .DS_Store
 Thumbs.db
+
+# Backup files
+*.backup
