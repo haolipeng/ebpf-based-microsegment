@@ -1,10 +1,62 @@
-# Flow 数据收集 API - 详细设计文档
+# Flow 数据收集 API - 详细设计文档 (Agent-Server 架构)
+
+## 0. 架构变更说明
+
+> **重要**：本文档已从单节点架构更新为 **Agent-Server 架构**。
+
+### 0.1 架构演进
+
+**旧架构（单节点）**：
+- Agent 本地收集 Flow → 存储到本地 SQLite → Agent 提供 HTTP API
+- 问题：数据孤岛、无全局视图、无法跨节点查询
+
+**新架构（Agent-Server）**：
+- Agent 收集 Flow → gRPC 上报到 Server → Server 集中存储（PostgreSQL/TimescaleDB） → Server 提供全局 HTTP API
+- 优势：集中管理、全局查询、可扩展至 10000+ 节点
+
+### 0.2 文档阅读指南
+
+本文档分为两大部分：
+
+**第 2 节 - Agent 端设计（保留）**：
+- eBPF 数据平面设计（不变）
+- Agent Flow Collector 设计（修改：增加 gRPC Reporter）
+- 这部分设计仍然适用，但增加了 gRPC 上报逻辑
+
+**第 3-7 节 - Server 端设计（需结合 `add-server-component` 阅读）**：
+- ~~原本的 SQLite 存储设计~~ → 改为 PostgreSQL/TimescaleDB（见 `add-server-component/design.md`）
+- ~~原本的 Agent HTTP API~~ → 改为 Server HTTP API
+- ~~原本的 WebSocket Hub~~ → 改为 Server WebSocket Hub
+
+**建议阅读顺序**：
+1. 本文档第 2 节（Agent 端 eBPF 和 Collector）
+2. `add-server-component/design.md`（Server 端 gRPC、存储、API）
+3. 本文档第 5 节（WebSocket 实时推送，移至 Server 端）
+
+### 0.3 关键变更总结
+
+| 组件 | 旧架构位置 | 新架构位置 | 说明 |
+|------|-----------|-----------|------|
+| **eBPF Ring Buffer** | Agent | Agent | 不变 |
+| **Flow Collector** | Agent | Agent | 保留，增加 gRPC Reporter |
+| **Flow 存储** | Agent (SQLite) | Server (PostgreSQL) | **移动到 Server** |
+| **Query API** | Agent (HTTP) | Server (HTTP) | **移动到 Server** |
+| **WebSocket Hub** | Agent | Server | **移动到 Server** |
+| **Aggregator** | Agent | Server | **移动到 Server** |
+
+---
 
 ## 1. 系统架构概览
 
 ### 1.1 整体架构
 
-Flow 数据收集系统采用三层架构设计，从 eBPF 内核态到用户态 Go Agent，再到前端 API，实现完整的网络流量可观测性。
+Flow 数据收集系统采用 **Agent-Server 四层架构**设计，从 eBPF 内核态到 Agent 用户态，通过 gRPC 上报到 Server 控制平面，Server 提供全局 API 供前端访问，实现跨节点的网络流量可观测性。
+
+**核心设计原则**：
+1. **数据平面（Agent）**：轻量级，仅负责收集和上报
+2. **控制平面（Server）**：集中存储、聚合、查询
+3. **解耦设计**：Agent 和 Server 通过 gRPC 松耦合
+4. **可扩展性**：支持 10-10000 节点
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -727,7 +779,235 @@ func directionToString(dir uint8) string {
 }
 ```
 
-### 3.4 Storage 接口 (storage.go)
+### 3.4 gRPC Reporter 实现 (reporter.go) - **新增**
+
+> **架构变更**：Agent 不再存储 Flow 到本地 SQLite，而是通过 gRPC 批量上报到 Server。
+
+```go
+package flow
+
+import (
+    "context"
+    "time"
+
+    pb "github.com/ebpf-microsegment/src/proto/flow"
+    "google.golang.org/grpc"
+    log "github.com/sirupsen/logrus"
+)
+
+// Reporter sends flow events to Server via gRPC
+type Reporter struct {
+    client      pb.FlowServiceClient
+    conn        *grpc.ClientConn
+    batchSize   int
+    batchTimeout time.Duration
+    buffer      []*Flow
+    bufferMutex sync.Mutex
+    ctx         context.Context
+    cancel      context.CancelFunc
+    wg          sync.WaitGroup
+}
+
+// ReporterConfig holds Reporter configuration
+type ReporterConfig struct {
+    ServerAddr   string        // Server gRPC address (e.g., "server:9090")
+    BatchSize    int           // Max flows per batch (default: 1000)
+    BatchTimeout time.Duration // Max wait time before sending (default: 1s)
+    EnableRetry  bool          // Enable retry on failure
+}
+
+// NewReporter creates a new gRPC Reporter
+func NewReporter(config ReporterConfig) (*Reporter, error) {
+    // Connect to Server
+    conn, err := grpc.Dial(config.ServerAddr, grpc.WithInsecure())
+    if err != nil {
+        return nil, fmt.Errorf("failed to connect to server: %w", err)
+    }
+
+    client := pb.NewFlowServiceClient(conn)
+    ctx, cancel := context.WithCancel(context.Background())
+
+    return &Reporter{
+        client:       client,
+        conn:         conn,
+        batchSize:    config.BatchSize,
+        batchTimeout: config.BatchTimeout,
+        buffer:       make([]*Flow, 0, config.BatchSize),
+        ctx:          ctx,
+        cancel:       cancel,
+    }, nil
+}
+
+// Start begins the reporting loop
+func (r *Reporter) Start() {
+    r.wg.Add(1)
+    go r.reportLoop()
+}
+
+// Stop stops the reporter and flushes remaining flows
+func (r *Reporter) Stop() error {
+    r.cancel()
+    r.wg.Wait()
+
+    // Flush remaining flows
+    if len(r.buffer) > 0 {
+        r.sendBatch(r.buffer)
+    }
+
+    return r.conn.Close()
+}
+
+// Report adds a flow to the buffer and sends when batch is full
+func (r *Reporter) Report(flow *Flow) {
+    r.bufferMutex.Lock()
+    r.buffer = append(r.buffer, flow)
+    shouldSend := len(r.buffer) >= r.batchSize
+    r.bufferMutex.Unlock()
+
+    if shouldSend {
+        r.flushBuffer()
+    }
+}
+
+// reportLoop periodically flushes the buffer based on timeout
+func (r *Reporter) reportLoop() {
+    defer r.wg.Done()
+
+    ticker := time.NewTicker(r.batchTimeout)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-r.ctx.Done():
+            return
+        case <-ticker.C:
+            r.flushBuffer()
+        }
+    }
+}
+
+// flushBuffer sends all buffered flows to Server
+func (r *Reporter) flushBuffer() {
+    r.bufferMutex.Lock()
+    if len(r.buffer) == 0 {
+        r.bufferMutex.Unlock()
+        return
+    }
+
+    batch := r.buffer
+    r.buffer = make([]*Flow, 0, r.batchSize)
+    r.bufferMutex.Unlock()
+
+    r.sendBatch(batch)
+}
+
+// sendBatch sends a batch of flows via gRPC streaming
+func (r *Reporter) sendBatch(batch []*Flow) {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    // Open client stream
+    stream, err := r.client.ReportFlowEvents(ctx)
+    if err != nil {
+        log.Errorf("Failed to open flow report stream: %v", err)
+        return
+    }
+
+    // Send all flows in batch
+    for _, flow := range batch {
+        event := r.flowToProto(flow)
+        if err := stream.Send(event); err != nil {
+            log.Errorf("Failed to send flow event: %v", err)
+            break
+        }
+    }
+
+    // Close stream and get response
+    resp, err := stream.CloseAndRecv()
+    if err != nil {
+        log.Errorf("Failed to close flow report stream: %v", err)
+        return
+    }
+
+    if resp.Success {
+        log.Debugf("Reported %d flows to server (accepted: %d, rejected: %d)",
+            len(batch), resp.AcceptedCount, resp.RejectedCount)
+    } else {
+        log.Errorf("Server rejected flow batch: %s", resp.Message)
+    }
+}
+
+// flowToProto converts Flow struct to protobuf FlowEvent
+func (r *Reporter) flowToProto(flow *Flow) *pb.FlowEvent {
+    event := &pb.FlowEvent{
+        Id:           flow.ID,
+        AgentId:      r.agentID, // Set in NewReporter
+        SourceIp:     flow.SourceIP,
+        SourcePort:   uint32(flow.SourcePort),
+        DestIp:       flow.DestIP,
+        DestPort:     uint32(flow.DestPort),
+        Protocol:     flow.Protocol,
+        PacketCount:  flow.PacketCount,
+        ByteCount:    flow.ByteCount,
+        StartTime:    flow.StartTime.Unix(),
+        LastSeen:     flow.LastSeen.Unix(),
+        PolicyId:     uint32(flow.PolicyID),
+        PolicyAction: flow.PolicyAction,
+        State:        flow.State,
+        Direction:    flow.Direction,
+        SourceLabels: flow.SourceLabels,
+        DestLabels:   flow.DestLabels,
+    }
+
+    if flow.EndTime != nil {
+        event.EndTime = flow.EndTime.Unix()
+    }
+
+    return event
+}
+```
+
+**集成到 Collector**：
+
+```go
+// 修改 Collector 结构体，移除 storage，添加 reporter
+type Collector struct {
+    ringBuf      *ringbuf.Reader
+    reporter     *Reporter        // 替代 storage
+    workloadMgr  WorkloadManager
+    ctx          context.Context
+    cancel       context.CancelFunc
+}
+
+// 修改 collectLoop，将 SaveFlow 改为 Report
+func (c *Collector) collectLoop() {
+    for {
+        // ... 读取和解析事件 ...
+
+        flow, err := c.eventToFlow(event)
+        if err != nil {
+            continue
+        }
+
+        c.enrichWithLabels(flow)
+
+        // 通过 gRPC 上报到 Server（替代本地存储）
+        c.reporter.Report(flow)
+
+        log.Debugf("Reported flow: %s:%d -> %s:%d",
+            flow.SourceIP, flow.SourcePort,
+            flow.DestIP, flow.DestPort)
+    }
+}
+```
+
+---
+
+### 3.5 Storage 接口 (storage.go) - **已废弃，移至 Server 端**
+
+> **架构变更**：Storage 接口现在在 Server 端实现（见 `add-server-component/design.md`），Agent 不再需要本地存储。
+
+以下是 Server 端的 Storage 接口定义（位于 `src/server/pkg/storage/`）：
 
 ```go
 package flow
@@ -928,7 +1208,30 @@ func (s *SQLiteStorage) ListFlows(query *FlowQuery) ([]*Flow, int64, error) {
 
 ---
 
-## 4. API 设计
+---
+
+## **架构变更说明：Server 端设计**
+
+> 从第 4 节开始，以下章节（API 设计、WebSocket 推送、性能优化等）的实现已**从 Agent 移至 Server**。
+>
+> **重要**：这些章节中的代码示例和设计仍然有效，但需要理解为**在 Server 端实现**，而不是 Agent 端。
+>
+> **建议**：结合阅读 `add-server-component/design.md` 以获取完整的 Server 端架构。
+
+**关键变更**：
+- ~~Agent 提供 HTTP API~~ → **Server 提供 HTTP API**（端口 :8080）
+- ~~Agent 存储到 SQLite~~ → **Server 存储到 PostgreSQL/TimescaleDB**
+- ~~Agent 运行 WebSocket Hub~~ → **Server 运行 WebSocket Hub**
+- ~~Agent 本地聚合~~ → **Server 跨节点全局聚合**
+
+以下章节的代码路径更新：
+- `src/agent/pkg/api/` → `src/server/pkg/api/`
+- `src/agent/pkg/flow/storage.go` → `src/server/pkg/storage/flow_storage.go`
+- `src/agent/pkg/flow/aggregator.go` → `src/server/pkg/aggregator/`
+
+---
+
+## 4. API 设计 (**Server 端实现**)
 
 ### 4.1 REST API 端点
 
