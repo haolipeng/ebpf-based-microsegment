@@ -30,9 +30,9 @@
 - ✅ **Phase 4 完成 (100%)**: gRPC 接收和存储
   - ✅ Task 4.1: FlowService gRPC 接口实现
   - ✅ Task 4.2: PostgreSQL 存储层实现（MVP 版本，未启用 TimescaleDB Hypertable）
-- ✅ **Phase 5 部分完成 (50%)**: HTTP API 和 WebSocket
+- ✅ **Phase 5 完成 (100%)**: HTTP API 和 WebSocket
   - ✅ Task 5.1: Flow 查询 API（已完成）
-  - ❌ Task 5.2: WebSocket 实时推送（已在 Agent 端实现，需迁移到 Server）
+  - ✅ Task 5.2: WebSocket 实时推送（已迁移到 Server）
 - ❌ **Phase 6 (0%)**: 全局依赖分析和聚合
   - ❌ Task 6.1: 跨节点聚合（未实现）
 
@@ -51,15 +51,16 @@
 
 **Server 端（已实现）**:
 - `src/server/pkg/api/handlers/flow.go` - HTTP Flow API（已完成 4 个端点）
+- `src/server/pkg/api/handlers/flow_stream.go` - WebSocket 实时流推送
+- `src/server/pkg/websocket/hub.go` - WebSocket Hub
 
 **Server 端（缺失）**:
 - `src/server/pkg/aggregator/` - 聚合器（目录不存在）
 
 ### 下一步优先级
 1. 🔴 **高优先级**: 实现全局依赖分析和聚合 (Task 6.1)
-2. 🟡 **中优先级**: 将 WebSocket Hub 迁移到 Server 端 (Task 5.2)
-3. 🟢 **低优先级**: 启用 TimescaleDB Hypertable 优化
-4. 🟢 **低优先级**: 端到端测试和性能测试 (Phase 3, Phase 7)
+2. 🟢 **低优先级**: 启用 TimescaleDB Hypertable 优化
+3. 🟢 **低优先级**: 端到端测试和性能测试 (Phase 3, Phase 7)
 
 ---
 
@@ -602,22 +603,47 @@
 
 ---
 
-#### Task 5.2: 实现 WebSocket 实时推送
+#### Task 5.2: 实现 WebSocket 实时推送 ✅ 已完成
 **负责人**：Go 开发者
 **估时**：6 小时
 **文件路径**：`src/server/pkg/api/handlers/flow_stream.go`
 
-- [ ] 实现 `WebSocketHub` 管理 WebSocket 连接
-- [ ] 实现 `WS /api/v1/flows/stream` - 实时流推送
-- [ ] 实现客户端订阅过滤
-- [ ] 实现广播机制（非阻塞）
+- [x] 实现 `WebSocketHub` 管理 WebSocket 连接
+  - Hub 管理多个客户端连接
+  - 统计跟踪（连接数、消息数、丢弃数）
+  - 非阻塞广播机制
+- [x] 实现 `WS /api/v1/flows/stream` - 实时流推送
+  - WebSocket 升级端点
+  - 双向通信（read/write pumps）
+  - Ping/Pong 心跳保活
+- [x] 实现客户端订阅过滤
+  - 支持按 protocol, src_ip, dst_ip, agent_id 过滤
+  - 支持按 source_labels, dest_labels 过滤
+  - 客户端可动态更新过滤器
+- [x] 实现广播机制（非阻塞）
+  - 使用 select 语句非阻塞发送
+  - 慢客户端自动丢弃消息
+  - 避免阻塞 gRPC handler
+
+**实现细节**:
+- 从 Agent 端迁移 WebSocket 实现到 Server
+- FlowServiceServer 接收到 flow 事件后自动广播
+- 添加 eventToFlow() 转换函数
+- 集成到 Server 主程序，与 gRPC 服务共享 Hub
 
 **验收标准**：
 - ✅ WebSocket 连接正常工作
-- ✅ 实时推送延迟 < 500ms
-- ✅ 支持 1000+ 并发连接
+- ✅ 代码编译通过（36MB 测试二进制文件）
+- ⏳ 实时推送延迟 < 500ms（需运行时测试）
+- ⏳ 支持 1000+ 并发连接（需负载测试）
 
-**注意**：当前 WebSocket 实现在 Agent 端（`src/agent/pkg/flow/websocket.go`），需要迁移到 Server 端以支持全局流推送。
+**实现位置**：
+- Hub: [src/server/pkg/websocket/hub.go](src/server/pkg/websocket/hub.go)
+- Handler: [src/server/pkg/api/handlers/flow_stream.go](src/server/pkg/api/handlers/flow_stream.go)
+- Integration: [src/server/pkg/grpc/flow_service.go](src/server/pkg/grpc/flow_service.go)
+- Main: [src/server/cmd/main.go](src/server/cmd/main.go)
+
+**提交记录**: commit 0d0a642
 
 ---
 
