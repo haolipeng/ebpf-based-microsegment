@@ -22,6 +22,7 @@ import (
 	grpcserv "github.com/ebpf-microsegment/src/server/pkg/grpc"
 	"github.com/ebpf-microsegment/src/server/pkg/storage"
 	"github.com/ebpf-microsegment/src/server/pkg/api/handlers"
+	"github.com/ebpf-microsegment/src/server/pkg/aggregator"
 	ws "github.com/ebpf-microsegment/src/server/pkg/websocket"
 )
 
@@ -69,12 +70,16 @@ func main() {
 	go wsHub.Run()
 	logrus.Info("WebSocket hub started")
 
+	// Create aggregator for flow analysis
+	flowAggregator := aggregator.NewFlowAggregator(db)
+	logrus.Info("Flow aggregator initialized")
+
 	// Start gRPC server
 	grpcServer := startGRPCServer(cfg, flowStorage, policyStorage, agentStorage, wsHub)
 	defer grpcServer.GracefulStop()
 
 	// Start HTTP API server
-	httpServer := startHTTPServer(cfg, flowStorage, policyStorage, agentStorage, wsHub)
+	httpServer := startHTTPServer(cfg, flowStorage, policyStorage, agentStorage, wsHub, flowAggregator)
 
 	// Wait for shutdown signal
 	shutdown := make(chan os.Signal, 1)
@@ -133,7 +138,7 @@ func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 	return grpcServer
 }
 
-func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, wsHub *ws.Hub) *http.Server {
+func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, wsHub *ws.Hub, flowAggregator *aggregator.FlowAggregator) *http.Server {
 	router := gin.Default()
 
 	// Health check endpoint
@@ -165,6 +170,10 @@ func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 		// WebSocket real-time flow streaming
 		flowStreamHandler := handlers.NewFlowStreamHandler(wsHub)
 		flowStreamHandler.RegisterRoutes(api)
+
+		// Aggregator for flow analysis and dependencies
+		aggregatorHandler := handlers.NewAggregatorHandler(flowAggregator)
+		aggregatorHandler.RegisterRoutes(api)
 
 		// Policy management
 		api.GET("/policies", func(c *gin.Context) {
