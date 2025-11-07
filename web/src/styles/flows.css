@@ -1,0 +1,21 @@
+/* Flow table row highlight animation */
+@keyframes flowHighlight {
+  0% {
+    background-color: #e6f7ff;
+  }
+  50% {
+    background-color: #bae7ff;
+  }
+  100% {
+    background-color: #e6f7ff;
+  }
+}
+
+.flow-row-highlighted {
+  animation: flowHighlight 1s ease-in-out;
+  background-color: #e6f7ff !important;
+}
+
+.flow-row-highlighted:hover {
+  background-color: #d1eeff !important;
+}
