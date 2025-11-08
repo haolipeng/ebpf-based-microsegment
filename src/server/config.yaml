@@ -1,0 +1,13 @@
+server:
+  http_addr: "0.0.0.0:8080"
+  grpc_addr: "0.0.0.0:50051"
+
+database:
+  host: 10.107.12.201
+  port: 5432
+  user: microsegment_user
+  password: secret
+  dbname: microsegment
+  sslmode: disable
+  max_conns: 25
+  min_conns: 5

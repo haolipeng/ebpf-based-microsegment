@@ -218,11 +218,11 @@ func (s *FlowStorage) GetFlowSummary(ctx context.Context, startTime, endTime tim
 	query := `
 		SELECT
 			COUNT(*) as total_flows,
-			SUM(packet_count) as total_packets,
-			SUM(byte_count) as total_bytes,
+			COALESCE(SUM(packet_count), 0) as total_packets,
+			COALESCE(SUM(byte_count), 0) as total_bytes,
 			COUNT(DISTINCT src_ip) as unique_source_ips,
 			COUNT(DISTINCT dst_ip) as unique_dest_ips,
-			AVG(EXTRACT(EPOCH FROM (COALESCE(end_time, last_seen) - start_time)) * 1000) as avg_duration_ms
+			COALESCE(AVG(EXTRACT(EPOCH FROM (COALESCE(end_time, last_seen) - start_time)) * 1000), 0) as avg_duration_ms
 		FROM flows
 		WHERE timestamp_ns >= $1 AND timestamp_ns <= $2
 	`

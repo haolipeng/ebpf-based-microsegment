@@ -148,12 +148,13 @@ func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 	router.Use(middleware.RequestLoggerMiddleware())
 
 	// Configure CORS to allow frontend access
+	// For development, allow all origins and headers
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "http://localhost:3000"}, // Vite and CRA default ports
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowAllOrigins:  true,  // Allow all origins for development
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+		AllowHeaders:     []string{"*"},  // Allow all headers
 		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
+		AllowCredentials: false,  // Must be false when AllowAllOrigins is true
 		MaxAge:           12 * time.Hour,
 	}))
 

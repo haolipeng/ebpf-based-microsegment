@@ -54,7 +54,7 @@ export default function FlowTrendChart({
     return {
       ...baseOption,
       title: {
-        text: '流量趋势',
+        text: 'Flow Trend',
         left: 'center',
         textStyle: {
           fontSize: 16,
@@ -70,7 +70,7 @@ export default function FlowTrendChart({
               <div style="padding: 8px;">
                 <div style="margin-bottom: 4px;">${formatTimeAxis(param.name, granularity)}</div>
                 <div style="color: ${CHART_COLORS.primary};">
-                  <strong>流数量:</strong> ${formatNumber(param.value)}
+                  <strong>Flow Count:</strong> ${formatNumber(param.value)}
                 </div>
               </div>
             `
@@ -89,7 +89,7 @@ export default function FlowTrendChart({
       },
       yAxis: {
         type: 'value',
-        name: '流数量',
+        name: 'Flow Count',
         axisLabel: {
           formatter: (value: number) => formatNumber(value),
         },
@@ -101,7 +101,7 @@ export default function FlowTrendChart({
       },
       series: [
         {
-          name: '流数量',
+          name: 'Flow Count',
           type: 'line',
           smooth: true,
           symbol: 'circle',
@@ -178,20 +178,20 @@ export default function FlowTrendChart({
 
   return (
     <Card
-      title="流量趋势图"
+      title="Flow Trend Chart"
       extra={
         showToolbar && (
           <Space>
             <Radio.Group value={granularity} onChange={e => setGranularity(e.target.value)} size="small">
-              <Radio.Button value="minute">1分钟</Radio.Button>
-              <Radio.Button value="hour">1小时</Radio.Button>
-              <Radio.Button value="day">1天</Radio.Button>
+              <Radio.Button value="minute">1 Min</Radio.Button>
+              <Radio.Button value="hour">1 Hour</Radio.Button>
+              <Radio.Button value="day">1 Day</Radio.Button>
             </Radio.Group>
             <Button icon={<ReloadOutlined />} onClick={handleRefresh} size="small">
-              刷新
+              Refresh
             </Button>
             <Button icon={<DownloadOutlined />} onClick={handleExport} size="small">
-              导出
+              Export
             </Button>
           </Space>
         )
@@ -200,14 +200,14 @@ export default function FlowTrendChart({
     >
       {isLoading && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <Spin size="large" tip="加载中..." />
+          <Spin size="large" tip="Loading..." />
         </div>
       )}
 
       {error && (
         <Alert
-          message="加载失败"
-          description={error instanceof Error ? error.message : '未知错误'}
+          message="Load Failed"
+          description={error instanceof Error ? error.message : 'Unknown error'}
           type="error"
           showIcon
         />
@@ -215,8 +215,8 @@ export default function FlowTrendChart({
 
       {!isLoading && !error && data && data.length === 0 && (
         <Alert
-          message="暂无数据"
-          description="当前时间范围内没有流量数据"
+          message="No Data"
+          description="No flow data in the current time range"
           type="info"
           showIcon
         />

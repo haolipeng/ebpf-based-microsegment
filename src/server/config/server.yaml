@@ -7,7 +7,7 @@ grpc:
   port: 9090
 
 database:
-  host: "localhost"
+  host: "10.107.12.201"
   port: 5432
   user: "microsegment_user"
   password: "secret"

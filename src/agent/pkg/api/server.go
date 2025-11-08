@@ -65,9 +65,10 @@ func NewAPIServer(cfg *Config, dp *dataplane.DataPlane, pm *policy.PolicyManager
 		router:        router,
 	}
 
-	// Setup routes and middleware
+	// Setup middleware
 	server.setupMiddleware()
-	server.setupRoutes()
+	// Note: Routes will be set up after all components (flow, workload, etc.) are registered
+	// Call setupRoutes() explicitly after setting all components, or it will be called in Start()
 
 	return server, nil
 }
@@ -148,7 +149,8 @@ func (s *Server) SetFlowComponents(collector, storage interface{}) {
 	s.flowCollector = collector
 	s.flowStorage = storage
 
-	// Re-setup routes to register flow endpoints
+	// Setup routes now that all components are registered
+	// This is safe because routes haven't been set up yet (deferred from NewAPIServer)
 	s.setupRoutes()
 }
 

@@ -19,14 +19,14 @@ stats_interval: 30
 # API Server Configuration (optional in agent-server mode)
 api:
   enabled: true  # Enable for local debugging
-  host: 127.0.0.1  # Only localhost access by default
+  host: 0.0.0.0  # Listen on all interfaces for external access
   port: 8080
   enable_cors: true
 
 # Server Configuration (required in agent-server mode)
 server:
   # Server gRPC address
-  server_addr: localhost:9090
+  server_addr: 10.107.12.201:9090
 
   # Agent unique ID (auto-generated from hostname if not specified)
   agent_id: ""

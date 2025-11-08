@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo } from 'react'
-import ReactECharts from 'echarts-for-react'
 import { Card, Spin, Alert, Button, Space, Tag } from 'antd'
 import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons'
+import SafeECharts from '../common/SafeECharts'
 import { useTopPolicies } from '../../hooks/useVisualization'
 import { getBaseChartOption, formatNumber, CHART_COLORS } from '../../utils/chartHelpers'
 
@@ -253,19 +253,18 @@ export default function TopPoliciesChart({
             </Space>
           </div>
 
-          {option && (
-            <ReactECharts
-              option={option}
-              style={{ height: `${height}px` }}
-              opts={{ renderer: 'canvas' }}
-              onChartReady={(chart: any) => {
+          <SafeECharts
+            option={option}
+            style={{ height: `${height}px` }}
+            onChartReady={(chart: any) => {
+              if (chart) {
                 ;(window as any).__TOP_POLICIES_CHART__ = chart
-              }}
-              onEvents={{
-                click: handleChartClick,
-              }}
-            />
-          )}
+              }
+            }}
+            onEvents={{
+              click: handleChartClick,
+            }}
+          />
         </>
       )}
     </Card>

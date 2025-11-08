@@ -344,28 +344,15 @@ export function useTopPolicies(topN: number = 10) {
     queryKey: ['topPolicies', topN],
     queryFn: async (): Promise<TopPolicyData[]> => {
       // 获取所有策略
-      const policies = await policiesApi.list()
+      const policyResponse = await policiesApi.list()
 
-      // 获取所有策略的统计数据
-      const statsPromises = policies.map(async policy => {
-        try {
-          const stats = await policiesApi.stats(policy.ruleId)
-          return {
-            ruleId: policy.ruleId,
-            hitCount: stats.hitCount,
-            description: policy.description,
-          }
-        } catch {
-          // 如果某个策略的统计数据获取失败，返回默认值
-          return {
-            ruleId: policy.ruleId,
-            hitCount: 0,
-            description: policy.description,
-          }
-        }
-      })
-
-      const allStats = await Promise.all(statsPromises)
+      // 暂时不调用stats API（服务器端点未实现）
+      // TODO: 等服务器实现 GET /api/v1/policies/:id/stats 后再启用
+      const allStats = policyResponse.policies.map(policy => ({
+        ruleId: policy.ruleId,
+        hitCount: 0, // 暂时返回0
+        description: policy.description || `Rule ${policy.ruleId}`,
+      }))
 
       // 按命中次数排序并返回前 N 个
       return allStats

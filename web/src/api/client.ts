@@ -2,8 +2,10 @@ import axios, { AxiosError } from 'axios'
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 
 // Create axios instance with default config
+// Development: Direct connection to server (CORS enabled)
 const apiClient: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080',
+  // Direct connection to server with CORS
+  baseURL: 'http://10.107.12.201:8080/api',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',

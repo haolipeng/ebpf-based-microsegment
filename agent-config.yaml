@@ -1,0 +1,27 @@
+mode: agent-server
+interface: ens33
+log_level: info
+stats_interval: 30
+
+api:
+  enabled: true
+  host: 0.0.0.0
+  port: 8081
+  enable_cors: true
+
+server:
+  server_addr: 10.107.12.201:9090
+  agent_id: agent-001
+  batch_size: 100
+  batch_timeout: 5s
+  reconnect_interval: 30s
+  max_retries: 3
+  retry_base_delay: 1s
+  retry_max_delay: 30s
+
+flow:
+  enabled: true
+  storage_path: /home/work/ebpf-based-microsegment/data/flows.db
+  flow_timeout: 5m
+  cleanup_interval: 1m
+  retention_days: 7

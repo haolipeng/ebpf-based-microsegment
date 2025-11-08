@@ -86,9 +86,9 @@ type AgentServerConfig struct {
 	ReconnectInterval time.Duration `mapstructure:"reconnect_interval"`
 
 	// Retry configuration for flow reporting
-	MaxRetries      int           `mapstructure:"max_retries"`        // Maximum number of retries (default: 3)
-	RetryBaseDelay  time.Duration `mapstructure:"retry_base_delay"`   // Base delay for exponential backoff (default: 1s)
-	RetryMaxDelay   time.Duration `mapstructure:"retry_max_delay"`    // Maximum retry delay (default: 30s)
+	MaxRetries     int           `mapstructure:"max_retries"`      // Maximum number of retries (default: 3)
+	RetryBaseDelay time.Duration `mapstructure:"retry_base_delay"` // Base delay for exponential backoff (default: 1s)
+	RetryMaxDelay  time.Duration `mapstructure:"retry_max_delay"`  // Maximum retry delay (default: 30s)
 }
 
 // LoadConfig loads configuration from file or returns defaults
@@ -242,7 +242,7 @@ func DefaultConfig() *Config {
 			EnableCORS: true,
 		},
 		AgentServer: &AgentServerConfig{
-			ServerAddr:        "localhost:9090",
+			ServerAddr:        "10.107.12.201:9090",
 			AgentID:           "",
 			BatchSize:         100,
 			BatchTimeout:      5 * time.Second,

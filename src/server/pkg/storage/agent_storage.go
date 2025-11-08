@@ -84,8 +84,8 @@ func (s *AgentStorage) UpdateHeartbeat(ctx context.Context, agentID string, metr
 func (s *AgentStorage) GetAllAgents(ctx context.Context) ([]*Agent, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT a.agent_id, a.hostname, a.version, a.interface, a.ip_addresses, a.os, a.kernel_version,
-		       EXTRACT(EPOCH FROM a.start_time)*1000000000 as start_time,
-		       EXTRACT(EPOCH FROM a.last_heartbeat)*1000000000 as last_heartbeat,
+		       FLOOR(EXTRACT(EPOCH FROM a.start_time)*1000000000)::bigint as start_time,
+		       FLOOR(EXTRACT(EPOCH FROM a.last_heartbeat)*1000000000)::bigint as last_heartbeat,
 		       a.status,
 		       COALESCE(m.cpu_usage, 0), COALESCE(m.memory_usage, 0),
 		       COALESCE(m.packets_processed, 0), COALESCE(m.active_sessions, 0),
@@ -140,8 +140,8 @@ func (s *AgentStorage) GetAgentByID(ctx context.Context, agentID string) (*Agent
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT a.agent_id, a.hostname, a.version, a.interface, a.ip_addresses, a.os, a.kernel_version,
-		       EXTRACT(EPOCH FROM a.start_time)*1000000000 as start_time,
-		       EXTRACT(EPOCH FROM a.last_heartbeat)*1000000000 as last_heartbeat,
+		       FLOOR(EXTRACT(EPOCH FROM a.start_time)*1000000000)::bigint as start_time,
+		       FLOOR(EXTRACT(EPOCH FROM a.last_heartbeat)*1000000000)::bigint as last_heartbeat,
 		       a.status,
 		       COALESCE(m.cpu_usage, 0), COALESCE(m.memory_usage, 0),
 		       COALESCE(m.packets_processed, 0), COALESCE(m.active_sessions, 0),

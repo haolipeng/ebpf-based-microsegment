@@ -1,8 +1,8 @@
 /**
  * Format bytes to human-readable format (KB, MB, GB, TB)
  */
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
+export function formatBytes(bytes: number | undefined): string {
+  if (bytes === undefined || bytes === null || isNaN(bytes) || bytes === 0) return '0 B'
 
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   const k = 1024
@@ -14,7 +14,8 @@ export function formatBytes(bytes: number): string {
 /**
  * Format number with commas (e.g., 1000000 -> 1,000,000)
  */
-export function formatNumber(num: number): string {
+export function formatNumber(num: number | undefined): string {
+  if (num === undefined || num === null || isNaN(num)) return '0'
   return num.toLocaleString()
 }
 

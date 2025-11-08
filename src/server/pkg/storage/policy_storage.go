@@ -32,8 +32,8 @@ func (s *PolicyStorage) GetAllPolicies(ctx context.Context) ([]*policypb.Policy,
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT rule_id, src_ip, dst_ip, src_port, dst_port, protocol, action, priority,
 		       source_labels, dest_labels, description,
-		       EXTRACT(EPOCH FROM created_at)*1000000000 as created_at,
-		       EXTRACT(EPOCH FROM updated_at)*1000000000 as updated_at
+		       FLOOR(EXTRACT(EPOCH FROM created_at)*1000000000)::bigint as created_at,
+		       FLOOR(EXTRACT(EPOCH FROM updated_at)*1000000000)::bigint as updated_at
 		FROM policies
 		ORDER BY priority DESC, rule_id
 	`)
