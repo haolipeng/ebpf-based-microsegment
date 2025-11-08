@@ -1,0 +1,14 @@
+FROM alpine:latest
+
+WORKDIR /app
+
+# Install test dependencies
+RUN apk add --no-cache curl postgresql-client jq bash
+
+# Copy test scripts
+COPY tests/e2e/run-tests.sh /app/
+COPY tests/e2e/verify-flows.sh /app/
+
+RUN chmod +x /app/*.sh
+
+CMD ["/app/run-tests.sh"]

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ebpf-microsegment/src/agent/pkg/flow"
 	commonpb "github.com/ebpf-microsegment/src/proto/common"
 	flowpb "github.com/ebpf-microsegment/src/proto/flow"
-	"github.com/ebpf-microsegment/src/agent/pkg/flow"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -24,6 +24,16 @@ type GRPCReporter struct {
 	batchSize  int
 	batchQueue chan *flowpb.FlowEvent
 	stopCh     chan struct{}
+
+	// Retry configuration
+	maxRetries     int
+	retryBaseDelay time.Duration
+	retryMaxDelay  time.Duration
+
+	// Metrics
+	totalSent    uint64
+	totalFailed  uint64
+	totalRetried uint64
 }
 
 // NewGRPCReporter creates a new GRPCReporter
@@ -33,11 +43,41 @@ func NewGRPCReporter(serverAddr, agentID string, batchSize int) *GRPCReporter {
 	}
 
 	return &GRPCReporter{
-		serverAddr: serverAddr,
-		agentID:    agentID,
-		batchSize:  batchSize,
-		batchQueue: make(chan *flowpb.FlowEvent, batchSize*2),
-		stopCh:     make(chan struct{}),
+		serverAddr:     serverAddr,
+		agentID:        agentID,
+		batchSize:      batchSize,
+		batchQueue:     make(chan *flowpb.FlowEvent, batchSize*2),
+		stopCh:         make(chan struct{}),
+		maxRetries:     3,                // 最多重试3次
+		retryBaseDelay: 1 * time.Second,  // 基础延迟1秒
+		retryMaxDelay:  30 * time.Second, // 最大延迟30秒
+	}
+}
+
+// NewGRPCReporterWithRetry creates a new GRPCReporter with custom retry settings
+func NewGRPCReporterWithRetry(serverAddr, agentID string, batchSize, maxRetries int, retryBaseDelay, retryMaxDelay time.Duration) *GRPCReporter {
+	if batchSize == 0 {
+		batchSize = 100
+	}
+	if maxRetries < 0 {
+		maxRetries = 0 // 0 means no retry
+	}
+	if retryBaseDelay <= 0 {
+		retryBaseDelay = 1 * time.Second
+	}
+	if retryMaxDelay <= 0 {
+		retryMaxDelay = 30 * time.Second
+	}
+
+	return &GRPCReporter{
+		serverAddr:     serverAddr,
+		agentID:        agentID,
+		batchSize:      batchSize,
+		batchQueue:     make(chan *flowpb.FlowEvent, batchSize*2),
+		stopCh:         make(chan struct{}),
+		maxRetries:     maxRetries,
+		retryBaseDelay: retryBaseDelay,
+		retryMaxDelay:  retryMaxDelay,
 	}
 }
 
@@ -76,6 +116,7 @@ func (r *GRPCReporter) Report(ctx context.Context, f *flow.Flow) error {
 	case r.batchQueue <- event:
 		return nil
 	default:
+		//The buffer queue is full; data should be discarded.
 		return fmt.Errorf("batch queue full, dropping flow")
 	}
 }
@@ -107,13 +148,14 @@ func (r *GRPCReporter) batchSender() {
 			}
 
 		case <-ticker.C:
+			//Periodic reporting
 			if len(batch) > 0 {
 				r.sendBatchAsync(batch)
 				batch = make([]*flowpb.FlowEvent, 0, r.batchSize)
 			}
 
 		case <-r.stopCh:
-			// Send remaining events
+			// report remaining events when received stop signal
 			if len(batch) > 0 {
 				r.sendBatchAsync(batch)
 			}
@@ -122,18 +164,54 @@ func (r *GRPCReporter) batchSender() {
 	}
 }
 
-// sendBatchAsync sends batch without blocking
+// sendBatchAsync sends batch without blocking, with retry mechanism
 func (r *GRPCReporter) sendBatchAsync(events []*flowpb.FlowEvent) {
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := r.sendBatch(ctx, events); err != nil {
-			logrus.Errorf("Failed to send batch: %v", err)
+		if err := r.sendBatchWithRetry(events); err != nil {
+			logrus.Errorf("Failed to send batch after %d retries: %v", r.maxRetries, err)
+			r.totalFailed++
 		} else {
-			logrus.Debugf("Sent %d flow events to server", len(events))
+			logrus.Debugf("Successfully sent %d flow events to server", len(events))
+			r.totalSent++
 		}
 	}()
+}
+
+// sendBatchWithRetry sends batch with exponential backoff retry
+func (r *GRPCReporter) sendBatchWithRetry(events []*flowpb.FlowEvent) error {
+	var lastErr error
+
+	for attempt := 0; attempt <= r.maxRetries; attempt++ {
+		if attempt > 0 {
+			// exponential backoff：1s, 2s, 4s, 8s, 16s, 30s(max)
+			delay := r.retryBaseDelay * time.Duration(1<<uint(attempt-1))
+			if delay > r.retryMaxDelay {
+				delay = r.retryMaxDelay
+			}
+
+			logrus.Warnf("Retry attempt %d/%d after %v delay", attempt, r.maxRetries, delay)
+			time.Sleep(delay)
+			r.totalRetried++
+		}
+
+		// Create a context with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err := r.sendBatch(ctx, events)
+		cancel()
+
+		if err == nil {
+			// send successed
+			if attempt > 0 {
+				logrus.Infof("Batch sent successfully after %d retries", attempt)
+			}
+			return nil
+		}
+
+		lastErr = err
+		logrus.Warnf("Send attempt %d failed: %v", attempt+1, err)
+	}
+
+	return fmt.Errorf("all retry attempts exhausted: %w", lastErr)
 }
 
 // sendBatch sends a batch of events via gRPC streaming
@@ -287,4 +365,9 @@ func policyActionStringToEnum(action string) commonpb.PolicyAction {
 	default:
 		return commonpb.PolicyAction_ACTION_UNKNOWN
 	}
+}
+
+// GetMetrics returns reporter metrics
+func (r *GRPCReporter) GetMetrics() (sent, failed, retried uint64) {
+	return r.totalSent, r.totalFailed, r.totalRetried
 }

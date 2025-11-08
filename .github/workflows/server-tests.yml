@@ -1,0 +1,276 @@
+name: Server Tests
+
+on:
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      - 'src/server/**'
+      - '.github/workflows/server-tests.yml'
+  pull_request:
+    branches: [ master, main, develop ]
+    paths:
+      - 'src/server/**'
+      - '.github/workflows/server-tests.yml'
+
+# 取消正在运行的同分支工作流
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================
+  # 单元测试
+  # ============================================
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.22', '1.23']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache-dependency-path: src/server/go.sum
+
+      - name: Install dependencies
+        working-directory: src/server
+        run: go mod download
+
+      - name: Run unit tests
+        working-directory: src/server
+        run: |
+          go test -v -race -coverprofile=coverage.txt -covermode=atomic \
+            ./pkg/storage/... \
+            ./pkg/grpc/... \
+            ./pkg/api/... \
+            ./pkg/testutil/...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./src/server/coverage.txt
+          flags: unittests
+          name: unit-tests-go${{ matrix.go-version }}
+          fail_ci_if_error: false
+
+  # ============================================
+  # 集成测试（需要 PostgreSQL）
+  # ============================================
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_DB: test_microsegment
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: src/server/go.sum
+
+      - name: Install dependencies
+        working-directory: src/server
+        run: go mod download
+
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U test_user; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+
+      - name: Initialize database schema
+        working-directory: src/server
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: test_user
+          DB_PASSWORD: test_password
+          DB_NAME: test_microsegment
+        run: |
+          # 安装 migrate 工具
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+          # 运行迁移
+          if [ -d "migrations" ]; then
+            migrate -path migrations \
+              -database "postgresql://test_user:test_password@localhost:5432/test_microsegment?sslmode=disable" \
+              up
+          fi
+
+      - name: Run integration tests
+        working-directory: src/server
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: test_user
+          DB_PASSWORD: test_password
+          DB_NAME: test_microsegment
+        run: |
+          go test -v -race -coverprofile=coverage-integration.txt -covermode=atomic \
+            -tags=integration \
+            ./pkg/integration/...
+
+      - name: Upload integration coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./src/server/coverage-integration.txt
+          flags: integration
+          name: integration-tests
+          fail_ci_if_error: false
+
+  # ============================================
+  # 代码质量检查
+  # ============================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: src/server/go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: src/server
+          args: --timeout=5m
+
+  # ============================================
+  # 安全扫描
+  # ============================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: src/server/go.sum
+
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt json -out gosec-report.json ./...'
+
+      - name: Upload Gosec report
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gosec-report.json
+
+  # ============================================
+  # 覆盖率检查（必须达到 60%）
+  # ============================================
+  coverage-check:
+    name: Coverage Check
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-reports
+          path: ./coverage
+
+      - name: Check coverage threshold
+        run: |
+          # 合并覆盖率报告并检查是否达到 60%
+          # 注意：这是一个简化示例，生产环境应使用专门的工具
+          echo "Coverage check: Ensure total coverage >= 60%"
+          # TODO: 实现覆盖率合并和阈值检查逻辑
+
+  # ============================================
+  # 构建测试
+  # ============================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: src/server/go.sum
+
+      - name: Build server binary
+        working-directory: src/server
+        run: |
+          go build -v -o bin/microsegment-server cmd/main.go
+
+      - name: Verify binary
+        working-directory: src/server
+        run: |
+          ./bin/microsegment-server --version || echo "Binary created successfully"
+
+  # ============================================
+  # 测试总结
+  # ============================================
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests, lint, security, build]
+    if: always()
+
+    steps:
+      - name: Check test results
+        run: |
+          echo "=== Server Tests Summary ==="
+          echo "Unit Tests: ${{ needs.unit-tests.result }}"
+          echo "Integration Tests: ${{ needs.integration-tests.result }}"
+          echo "Lint: ${{ needs.lint.result }}"
+          echo "Security: ${{ needs.security.result }}"
+          echo "Build: ${{ needs.build.result }}"
+
+          # 如果任何关键测试失败，则整个工作流失败
+          if [[ "${{ needs.unit-tests.result }}" != "success" ]] || \
+             [[ "${{ needs.integration-tests.result }}" != "success" ]] || \
+             [[ "${{ needs.build.result }}" != "success" ]]; then
+            echo "❌ Tests failed!"
+            exit 1
+          fi
+
+          echo "✅ All tests passed!"

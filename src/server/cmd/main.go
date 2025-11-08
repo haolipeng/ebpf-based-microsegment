@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -22,6 +23,7 @@ import (
 	grpcserv "github.com/ebpf-microsegment/src/server/pkg/grpc"
 	"github.com/ebpf-microsegment/src/server/pkg/storage"
 	"github.com/ebpf-microsegment/src/server/pkg/api/handlers"
+	"github.com/ebpf-microsegment/src/server/pkg/api/middleware"
 	"github.com/ebpf-microsegment/src/server/pkg/aggregator"
 	ws "github.com/ebpf-microsegment/src/server/pkg/websocket"
 )
@@ -141,6 +143,20 @@ func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, wsHub *ws.Hub, flowAggregator *aggregator.FlowAggregator) *http.Server {
 	router := gin.Default()
 
+	// Global middleware
+	router.Use(middleware.ErrorHandlerMiddleware())
+	router.Use(middleware.RequestLoggerMiddleware())
+
+	// Configure CORS to allow frontend access
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:5173", "http://localhost:3000"}, // Vite and CRA default ports
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
@@ -153,15 +169,9 @@ func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 	// API routes
 	api := router.Group("/api/v1")
 	{
-		// Agent management
-		api.GET("/agents", func(c *gin.Context) {
-			agents, err := agentStorage.GetAllAgents(c.Request.Context())
-			if err != nil {
-				c.JSON(500, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(200, agents)
-		})
+		// Agent management - use dedicated handler
+		agentHandler := handlers.NewAgentHandler(agentStorage)
+		agentHandler.RegisterRoutes(api)
 
 		// Flow API - use dedicated handler
 		flowHandler := handlers.NewFlowHandler(flowStorage)
@@ -175,18 +185,9 @@ func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 		aggregatorHandler := handlers.NewAggregatorHandler(flowAggregator)
 		aggregatorHandler.RegisterRoutes(api)
 
-		// Policy management
-		api.GET("/policies", func(c *gin.Context) {
-			policies, version, err := policyStorage.GetAllPolicies(c.Request.Context())
-			if err != nil {
-				c.JSON(500, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(200, gin.H{
-				"policies": policies,
-				"version":  version,
-			})
-		})
+		// Policy management - use dedicated handler
+		policyHandler := handlers.NewPolicyHandler(policyStorage)
+		policyHandler.RegisterRoutes(api)
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

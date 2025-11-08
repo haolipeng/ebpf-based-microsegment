@@ -19,10 +19,15 @@ type Config struct {
 	// StatsInterval is the interval for printing statistics (seconds)
 	StatsInterval int `mapstructure:"stats_interval"`
 
+	// Mode specifies the agent operation mode: "agent-server" or "standalone"
+	// - agent-server: Agent connects to Server, reports flows, syncs policies
+	// - standalone: Agent runs independently without Server connection
+	Mode string `mapstructure:"mode"`
+
 	// API server configuration
 	API APIConfig `mapstructure:"api"`
 
-	// AgentServer configuration (required)
+	// AgentServer configuration (required in agent-server mode)
 	AgentServer *AgentServerConfig `mapstructure:"server"`
 
 	// Flow collection configuration
@@ -79,6 +84,11 @@ type AgentServerConfig struct {
 
 	// ReconnectInterval is the time to wait before reconnecting on failure
 	ReconnectInterval time.Duration `mapstructure:"reconnect_interval"`
+
+	// Retry configuration for flow reporting
+	MaxRetries      int           `mapstructure:"max_retries"`        // Maximum number of retries (default: 3)
+	RetryBaseDelay  time.Duration `mapstructure:"retry_base_delay"`   // Base delay for exponential backoff (default: 1s)
+	RetryMaxDelay   time.Duration `mapstructure:"retry_max_delay"`    // Maximum retry delay (default: 30s)
 }
 
 // LoadConfig loads configuration from file or returns defaults
@@ -120,6 +130,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("interface", "eth0")
 	v.SetDefault("log_level", "info")
 	v.SetDefault("stats_interval", 30)
+	v.SetDefault("mode", "agent-server") // Default to agent-server mode
 
 	// API defaults
 	v.SetDefault("api.enabled", true)
@@ -131,6 +142,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.batch_size", 100)
 	v.SetDefault("server.batch_timeout", "5s")
 	v.SetDefault("server.reconnect_interval", "30s")
+	v.SetDefault("server.max_retries", 3)
+	v.SetDefault("server.retry_base_delay", "1s")
+	v.SetDefault("server.retry_max_delay", "30s")
 
 	// Flow collection defaults
 	v.SetDefault("flow.enabled", true)
@@ -158,29 +172,48 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid log_level: %s (must be debug, info, warn, or error)", c.LogLevel)
 	}
 
-	// Validate server configuration
-	if c.AgentServer == nil {
-		return fmt.Errorf("server configuration is required")
+	// Validate mode
+	if c.Mode == "" {
+		c.Mode = "agent-server" // Default mode
+	}
+	if c.Mode != "agent-server" && c.Mode != "standalone" {
+		return fmt.Errorf("invalid mode: %s (must be 'agent-server' or 'standalone')", c.Mode)
 	}
 
-	if c.AgentServer.ServerAddr == "" {
-		return fmt.Errorf("server.server_addr is required")
-	}
+	// Validate server configuration (only required in agent-server mode)
+	if c.Mode == "agent-server" {
+		if c.AgentServer == nil {
+			return fmt.Errorf("server configuration is required in agent-server mode")
+		}
 
-	// Auto-generate agent ID if not provided
-	if c.AgentServer.AgentID == "" {
-		c.AgentServer.AgentID = generateAgentID()
-	}
+		if c.AgentServer.ServerAddr == "" {
+			return fmt.Errorf("server.server_addr is required in agent-server mode")
+		}
 
-	// Set defaults if not specified
-	if c.AgentServer.BatchSize == 0 {
-		c.AgentServer.BatchSize = 100
-	}
-	if c.AgentServer.BatchTimeout == 0 {
-		c.AgentServer.BatchTimeout = 5 * time.Second
-	}
-	if c.AgentServer.ReconnectInterval == 0 {
-		c.AgentServer.ReconnectInterval = 30 * time.Second
+		// Auto-generate agent ID if not provided
+		if c.AgentServer.AgentID == "" {
+			c.AgentServer.AgentID = generateAgentID()
+		}
+
+		// Set defaults if not specified
+		if c.AgentServer.BatchSize == 0 {
+			c.AgentServer.BatchSize = 100
+		}
+		if c.AgentServer.BatchTimeout == 0 {
+			c.AgentServer.BatchTimeout = 5 * time.Second
+		}
+		if c.AgentServer.ReconnectInterval == 0 {
+			c.AgentServer.ReconnectInterval = 30 * time.Second
+		}
+		if c.AgentServer.MaxRetries == 0 {
+			c.AgentServer.MaxRetries = 3
+		}
+		if c.AgentServer.RetryBaseDelay == 0 {
+			c.AgentServer.RetryBaseDelay = 1 * time.Second
+		}
+		if c.AgentServer.RetryMaxDelay == 0 {
+			c.AgentServer.RetryMaxDelay = 30 * time.Second
+		}
 	}
 
 	return nil
@@ -201,6 +234,7 @@ func DefaultConfig() *Config {
 		Interface:     "eth0",
 		LogLevel:      "info",
 		StatsInterval: 30,
+		Mode:          "agent-server", // Default to agent-server mode
 		API: APIConfig{
 			Enabled:    true,
 			Host:       "127.0.0.1",
@@ -213,6 +247,9 @@ func DefaultConfig() *Config {
 			BatchSize:         100,
 			BatchTimeout:      5 * time.Second,
 			ReconnectInterval: 30 * time.Second,
+			MaxRetries:        3,
+			RetryBaseDelay:    1 * time.Second,
+			RetryMaxDelay:     30 * time.Second,
 		},
 		Flow: FlowConfig{
 			Enabled:         true,
@@ -222,4 +259,14 @@ func DefaultConfig() *Config {
 			RetentionDays:   7,
 		},
 	}
+}
+
+// IsStandaloneMode returns true if agent is in standalone mode
+func (c *Config) IsStandaloneMode() bool {
+	return c.Mode == "standalone"
+}
+
+// IsAgentServerMode returns true if agent is in agent-server mode
+func (c *Config) IsAgentServerMode() bool {
+	return c.Mode == "agent-server"
 }

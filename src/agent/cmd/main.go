@@ -28,7 +28,9 @@ var rootCmd = &cobra.Command{
 	Short: "eBPF-based microsegmentation agent",
 	Long: `A high-performance microsegmentation agent using eBPF for packet filtering and policy enforcement.
 
-Reports flows to central control plane server via gRPC for centralized policy management and visibility.`,
+Supports two operation modes:
+  - agent-server: Connects to control plane server for centralized policy management
+  - standalone: Runs independently with local API for debugging and monitoring`,
 	Run: runAgent,
 }
 
@@ -47,6 +49,7 @@ func runAgent(cmd *cobra.Command, args []string) {
 	setupLogging(cfg.LogLevel)
 
 	log.Info("Starting microsegmentation agent")
+	log.Infof("Mode: %s", cfg.Mode)
 	log.Infof("Interface: %s", cfg.Interface)
 
 	// Create data plane
@@ -76,15 +79,21 @@ func runAgent(cmd *cobra.Command, args []string) {
 
 	log.Info("✓ Policy manager initialized")
 
-	// Initialize agent-server components
-	log.Info("Connecting to control plane server...")
-	rep, agentClient := initAgentServerMode(cfg, pm)
+	// Initialize agent-server components (only in agent-server mode)
+	var rep reporter.Reporter
+	var agentClient *client.AgentClient
+	if cfg.IsAgentServerMode() {
+		log.Info("Connecting to control plane server...")
+		rep, agentClient = initAgentServerMode(cfg, pm)
 
-	// Start reporter
-	if err := rep.Start(); err != nil {
-		log.Fatalf("Failed to start reporter: %v", err)
+		// Start reporter
+		if err := rep.Start(); err != nil {
+			log.Fatalf("Failed to start reporter: %v", err)
+		}
+		defer rep.Stop()
+	} else {
+		log.Info("Running in standalone mode (no server connection)")
 	}
-	defer rep.Stop()
 
 	// Initialize flow collection if enabled
 	var flowCollector *flow.Collector
@@ -208,12 +217,18 @@ func initAgentServerMode(cfg *config.Config, pm *policy.PolicyManager) (reporter
 
 	agentCfg := cfg.AgentServer
 
-	// Create GRPCReporter
-	rep := reporter.NewGRPCReporter(
+	// Create GRPCReporter with retry configuration
+	rep := reporter.NewGRPCReporterWithRetry(
 		agentCfg.ServerAddr,
 		agentCfg.AgentID,
 		agentCfg.BatchSize,
+		agentCfg.MaxRetries,
+		agentCfg.RetryBaseDelay,
+		agentCfg.RetryMaxDelay,
 	)
+
+	log.Infof("Flow reporter configured with retry: max_retries=%d, base_delay=%v, max_delay=%v",
+		agentCfg.MaxRetries, agentCfg.RetryBaseDelay, agentCfg.RetryMaxDelay)
 
 	// Create AgentClient
 	hostname, _ := os.Hostname()

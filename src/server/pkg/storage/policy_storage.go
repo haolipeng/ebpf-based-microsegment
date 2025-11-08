@@ -102,6 +102,39 @@ func (s *PolicyStorage) CreatePolicy(ctx context.Context, policy *policypb.Polic
 	return nil
 }
 
+// UpdatePolicy updates an existing policy
+func (s *PolicyStorage) UpdatePolicy(ctx context.Context, policy *policypb.Policy) error {
+	sourceLabelsJSON, _ := json.Marshal(policy.SourceLabels)
+	destLabelsJSON, _ := json.Marshal(policy.DestLabels)
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE policies
+		SET src_ip = $2, dst_ip = $3, src_port = $4, dst_port = $5,
+		    protocol = $6, action = $7, priority = $8,
+		    source_labels = $9, dest_labels = $10, description = $11,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE rule_id = $1
+	`, policy.RuleId, policy.SrcIp, policy.DstIp, policy.SrcPort, policy.DstPort,
+		policy.Protocol, policy.Action, policy.Priority,
+		sourceLabelsJSON, destLabelsJSON, policy.Description)
+
+	if err != nil {
+		return fmt.Errorf("failed to update policy: %w", err)
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("policy not found")
+	}
+
+	// Increment version
+	if err := s.incrementPolicyVersion(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // DeletePolicy deletes a policy by rule ID
 func (s *PolicyStorage) DeletePolicy(ctx context.Context, ruleID uint32) error {
 	result, err := s.db.ExecContext(ctx, "DELETE FROM policies WHERE rule_id = $1", ruleID)

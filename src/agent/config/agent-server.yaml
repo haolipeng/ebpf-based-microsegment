@@ -1,0 +1,52 @@
+# Microsegment Agent - Agent-Server Mode Configuration
+# In this mode, agent connects to centralized server for:
+# - Flow reporting and aggregation
+# - Centralized policy management
+# - Agent health monitoring
+
+# Operation mode: "standalone" or "agent-server"
+mode: agent-server
+
+# Network interface to monitor
+interface: eth0
+
+# Logging configuration
+log_level: info  # debug, info, warn, error
+
+# Statistics reporting interval (seconds)
+stats_interval: 30
+
+# API Server Configuration (optional in agent-server mode)
+api:
+  enabled: true  # Enable for local debugging
+  host: 127.0.0.1  # Only localhost access by default
+  port: 8080
+  enable_cors: true
+
+# Server Configuration (required in agent-server mode)
+server:
+  # Server gRPC address
+  server_addr: localhost:9090
+
+  # Agent unique ID (auto-generated from hostname if not specified)
+  agent_id: ""
+
+  # Flow batching configuration
+  batch_size: 100
+  batch_timeout: 5s
+
+  # Reconnection interval on failure
+  reconnect_interval: 30s
+
+  # Retry configuration for flow reporting
+  max_retries: 3         # Maximum number of retry attempts (0 = no retry)
+  retry_base_delay: 1s   # Base delay for exponential backoff
+  retry_max_delay: 30s   # Maximum retry delay cap
+
+# Flow Collection Configuration
+flow:
+  enabled: true
+  storage_path: ./data/flows.db
+  flow_timeout: 5m
+  cleanup_interval: 1m
+  retention_days: 7

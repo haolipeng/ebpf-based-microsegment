@@ -1,5 +1,9 @@
 # Microsegmentation Server (MVP)
 
+[![Tests](https://github.com/ebpf-microsegment/microsegment-server/actions/workflows/server-tests.yml/badge.svg)](https://github.com/ebpf-microsegment/microsegment-server/actions/workflows/server-tests.yml)
+[![codecov](https://codecov.io/gh/ebpf-microsegment/microsegment-server/branch/master/graph/badge.svg)](https://codecov.io/gh/ebpf-microsegment/microsegment-server)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ebpf-microsegment/microsegment-server)](https://goreportcard.com/report/github.com/ebpf-microsegment/microsegment-server)
+
 The central server component for the eBPF-based microsegmentation system. This is a **Minimum Viable Product (MVP)** implementation that provides core functionality for Agent-Server architecture.
 
 ## Overview
@@ -78,7 +82,14 @@ GRANT ALL PRIVILEGES ON DATABASE microsegment TO microsegment_user;
 EOF
 ```
 
-The server will automatically create tables on first run.
+**Option A: Run migrations manually** (recommended):
+```bash
+cd src/server
+./scripts/migrate.sh up
+```
+
+**Option B: Auto-create on server start**:
+The server will automatically create tables on first run via `InitSchema()`.
 
 ### 2. Configure Server
 
@@ -178,7 +189,9 @@ See [proto definitions](../../proto/README.md) for details:
 
 ## Database Schema
 
-The server automatically creates the following tables:
+See [migrations/README.md](migrations/README.md) for detailed migration documentation.
+
+The server uses the following tables:
 
 ### flows
 Stores flow events from agents:
@@ -304,6 +317,133 @@ For production deployment, consider:
 8. **Implement rate limiting**
 9. **Add request validation**
 10. **Setup log aggregation** (ELK, Loki)
+
+## Testing
+
+The server has comprehensive automated testing coverage.
+
+### Running Tests
+
+**All tests**:
+```bash
+cd src/server
+go test ./...
+```
+
+**Unit tests only**:
+```bash
+go test ./pkg/storage/... ./pkg/grpc/... ./pkg/api/...
+```
+
+**Integration tests** (requires PostgreSQL):
+```bash
+# Using testcontainers (automatic)
+go test -tags=integration ./pkg/integration/...
+
+# Or with local PostgreSQL
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_USER=test_user
+export DB_PASSWORD=test_password
+export DB_NAME=test_microsegment
+go test -tags=integration ./pkg/integration/...
+```
+
+**With coverage report**:
+```bash
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
+
+**Benchmarks**:
+```bash
+go test -bench=. -benchmem ./...
+```
+
+### Test Structure
+
+```
+pkg/
+├── testutil/              # 测试工具和辅助函数
+│   ├── fixtures.go        # Mock 数据工厂
+│   ├── database.go        # 数据库测试辅助
+│   └── assertions.go      # 自定义断言
+├── storage/
+│   └── *_test.go          # 存储层单元测试
+├── grpc/
+│   └── *_test.go          # gRPC 服务单元测试
+├── api/
+│   └── *_test.go          # HTTP API 单元测试
+└── integration/
+    └── *_test.go          # 集成测试
+```
+
+### Test Utilities
+
+The `pkg/testutil` package provides:
+
+**Mock Factories**:
+```go
+// 创建模拟流事件
+event := testutil.MockFlowEvent(
+    testutil.WithAgentID("agent-001"),
+    testutil.WithSourceIP("10.0.1.10"),
+)
+
+// 创建模拟策略
+policy := testutil.MockPolicy(
+    testutil.WithRuleID(100),
+    testutil.WithPolicyAction(commonpb.PolicyAction_ALLOW),
+)
+
+// 批量创建测试数据
+events := testutil.BatchMockFlowEvents(1000, "agent-001")
+```
+
+**Database Helpers**:
+```go
+func TestWithDatabase(t *testing.T) {
+    // 自动创建 PostgreSQL 容器
+    db := testutil.SetupTestDB(t)
+
+    // 插入测试数据
+    db.InsertTestFlow(t, "10.0.1.10", "10.0.2.20", 8080, 443)
+
+    // 断言
+    count := db.CountRows(t, "flows")
+    assert.Equal(t, 1, count)
+
+    // 自动清理（t.Cleanup）
+}
+```
+
+**Custom Assertions**:
+```go
+testutil.AssertFlowEventEqual(t, expected, actual)
+testutil.AssertPolicyEqual(t, expected, actual)
+testutil.AssertEventually(t, condition, 5*time.Second, 100*time.Millisecond)
+```
+
+### CI/CD Integration
+
+Tests run automatically on:
+- Every push to `master`, `main`, `develop` branches
+- Every pull request
+- Only when `src/server/` files change
+
+See [`.github/workflows/server-tests.yml`](../../.github/workflows/server-tests.yml) for CI configuration.
+
+### Coverage Requirements
+
+- **Unit tests**: ≥70% coverage for `storage`, `grpc`, `api` packages
+- **Integration tests**: All critical workflows validated
+- **Overall**: ≥60% total coverage required for merge
+
+Check current coverage:
+```bash
+go test -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out | grep total
+```
 
 ## Troubleshooting
 

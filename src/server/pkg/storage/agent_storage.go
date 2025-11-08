@@ -133,6 +133,52 @@ func (s *AgentStorage) GetAllAgents(ctx context.Context) ([]*Agent, error) {
 	return agents, nil
 }
 
+// GetAgentByID retrieves a single agent by ID
+func (s *AgentStorage) GetAgentByID(ctx context.Context, agentID string) (*Agent, error) {
+	var agent Agent
+	var ipAddresses pq.StringArray
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT a.agent_id, a.hostname, a.version, a.interface, a.ip_addresses, a.os, a.kernel_version,
+		       EXTRACT(EPOCH FROM a.start_time)*1000000000 as start_time,
+		       EXTRACT(EPOCH FROM a.last_heartbeat)*1000000000 as last_heartbeat,
+		       a.status,
+		       COALESCE(m.cpu_usage, 0), COALESCE(m.memory_usage, 0),
+		       COALESCE(m.packets_processed, 0), COALESCE(m.active_sessions, 0),
+		       COALESCE(m.flows_reported, 0), COALESCE(m.active_policies, 0)
+		FROM agents a
+		LEFT JOIN agent_metrics m ON a.agent_id = m.agent_id
+		WHERE a.agent_id = $1
+	`, agentID).Scan(
+		&agent.AgentID,
+		&agent.Hostname,
+		&agent.Version,
+		&agent.Interface,
+		&ipAddresses,
+		&agent.OS,
+		&agent.KernelVersion,
+		&agent.StartTime,
+		&agent.LastHeartbeat,
+		&agent.Status,
+		&agent.CPUUsage,
+		&agent.MemoryUsage,
+		&agent.PacketsProcessed,
+		&agent.ActiveSessions,
+		&agent.FlowsReported,
+		&agent.ActivePolicies,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("agent not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query agent: %w", err)
+	}
+
+	agent.IPAddresses = []string(ipAddresses)
+	return &agent, nil
+}
+
 // Agent represents an agent with metrics
 type Agent struct {
 	AgentID          string

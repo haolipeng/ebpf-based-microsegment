@@ -25,12 +25,12 @@ func NewSQLiteStorage(dbPath string) (*SQLiteStorage, error) {
 
 	// Configure SQLite for better performance
 	pragmas := []string{
-		"PRAGMA journal_mode=WAL",           // Write-Ahead Logging for better concurrency
-		"PRAGMA synchronous=NORMAL",         // Faster writes (still safe)
-		"PRAGMA cache_size=-64000",          // 64MB cache
-		"PRAGMA temp_store=MEMORY",          // Use memory for temp tables
-		"PRAGMA foreign_keys=ON",            // Enable foreign keys
-		"PRAGMA busy_timeout=5000",          // 5s timeout for locks
+		"PRAGMA journal_mode=WAL",   // Write-Ahead Logging for better concurrency
+		"PRAGMA synchronous=NORMAL", // Faster writes (still safe)
+		"PRAGMA cache_size=-64000",  // 64MB cache
+		"PRAGMA temp_store=MEMORY",  // Use memory for temp tables
+		"PRAGMA foreign_keys=ON",    // Enable foreign keys
+		"PRAGMA busy_timeout=5000",  // 5s timeout for locks
 	}
 
 	for _, pragma := range pragmas {
