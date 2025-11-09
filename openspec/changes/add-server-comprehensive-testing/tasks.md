@@ -13,11 +13,11 @@
 | Phase 1: Test Infrastructure | 3 tasks | ✅ COMPLETED | 0.5 day |
 | Phase 2: Storage Unit Tests | 4 tasks | ✅ COMPLETED | 1 day |
 | Phase 3: gRPC Service Tests | 3 tasks | ✅ COMPLETED | 1 day |
-| Phase 4: HTTP API Tests | 3 tasks | ⏳ PENDING | 0.5 day |
+| Phase 4: HTTP API Tests | 3 tasks | 🔄 IN PROGRESS | 0.5 day |
 | Phase 5: Integration Tests | 3 tasks | ⏳ PENDING | 1 day |
 | Phase 6: E2E Tests | 2 tasks | ⏳ PENDING | 0.5 day |
 | Phase 7: Performance Tests | 2 tasks | ⏳ PENDING | 0.5 day |
-| **Total** | **20 tasks** | **50% Complete** | **5 days** |
+| **Total** | **20 tasks** | **60% Complete** | **5 days** |
 
 ---
 
@@ -156,28 +156,40 @@
 
 ---
 
-## Phase 4: HTTP API Tests (0.5 day)
+## Phase 4: HTTP API Tests (0.5 day) 🔄 **IN PROGRESS**
 
-### Task 4.1: Test Flow Handlers
-- [ ] Create `pkg/api/handlers/flow_test.go`
-- [ ] Test `ListFlows()` returns paginated results
-- [ ] Test `ListFlows()` handles query parameters
-- [ ] Test `GetFlow()` returns single flow
-- [ ] Test `GetFlow()` returns 404 for missing flow
-- [ ] Test `GetFlowSummary()` returns aggregated stats
-- [ ] Test `GetFlowDependencies()` returns dependencies
+### Task 4.1: Test Flow Handlers ✅
+- [x] Create `pkg/api/handlers/flow_test.go`
+- [x] Test `ListFlows()` returns paginated results
+- [x] Test `ListFlows()` handles query parameters
+- [x] Test `GetFlow()` returns single flow
+- [x] Test `GetFlow()` returns 404 for missing flow
+- [x] Test `GetFlowSummary()` returns aggregated stats
+- [x] Test `GetFlowDependencies()` returns dependencies
+- **Coverage**: flow.go: 61.5%-100% (functions ranging from 61.5% to 100%)
+- **Tests**: 11 tests
 
-### Task 4.2: Test Aggregator Handlers
-- [ ] Create `pkg/api/handlers/aggregator_test.go`
-- [ ] Test `GetDependencies()` returns dependency graph
-- [ ] Test `GetTopTalkers()` returns ranked endpoints
-- [ ] Test `GetAggregatedStats()` returns statistics
+### Task 4.2: Test Aggregator Handlers ✅
+- [x] Create `pkg/api/handlers/aggregator_test.go`
+- [x] Test `GetDependencies()` returns dependency graph
+- [x] Test `GetTopTalkers()` returns ranked endpoints
+- [x] Test `GetAggregatedStats()` returns statistics
+- [x] Test query parameter parsing (time range, group_by, top_n)
+- [x] Test error handling for all endpoints
+- **Coverage**: aggregator.go: 80%-100% (all main functions 100%, parser 80%)
+- **Tests**: 12 tests
 
-### Task 4.3: Test WebSocket Handlers
+### Task 4.3: Test WebSocket Handlers ⏳
 - [ ] Create `pkg/api/handlers/flow_stream_test.go`
 - [ ] Test WebSocket connection upgrade
 - [ ] Test real-time flow broadcasting
 - [ ] Test client disconnection handling
+
+**Phase 4 Summary (Tasks 4.1-4.2)**:
+- **Total Test Files Created**: 2 (flow_test.go, aggregator_test.go)
+- **Total Tests Written**: 24 HTTP handler tests
+- **Overall Handlers Package Coverage**: 51.4%
+- **Commits**: 17059d2 (flow tests), 452040c (aggregator tests)
 
 ---
 
