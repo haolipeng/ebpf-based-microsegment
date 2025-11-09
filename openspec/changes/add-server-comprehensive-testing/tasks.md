@@ -13,11 +13,11 @@
 | Phase 1: Test Infrastructure | 3 tasks | ✅ COMPLETED | 0.5 day |
 | Phase 2: Storage Unit Tests | 4 tasks | ✅ COMPLETED | 1 day |
 | Phase 3: gRPC Service Tests | 3 tasks | ✅ COMPLETED | 1 day |
-| Phase 4: HTTP API Tests | 3 tasks | 🔄 IN PROGRESS | 0.5 day |
+| Phase 4: HTTP API Tests | 3 tasks | ✅ COMPLETED | 0.5 day |
 | Phase 5: Integration Tests | 3 tasks | ⏳ PENDING | 1 day |
 | Phase 6: E2E Tests | 2 tasks | ⏳ PENDING | 0.5 day |
 | Phase 7: Performance Tests | 2 tasks | ⏳ PENDING | 0.5 day |
-| **Total** | **20 tasks** | **60% Complete** | **5 days** |
+| **Total** | **20 tasks** | **65% Complete** | **5 days** |
 
 ---
 
@@ -156,7 +156,7 @@
 
 ---
 
-## Phase 4: HTTP API Tests (0.5 day) 🔄 **IN PROGRESS**
+## Phase 4: HTTP API Tests (0.5 day) ✅ **COMPLETED**
 
 ### Task 4.1: Test Flow Handlers ✅
 - [x] Create `pkg/api/handlers/flow_test.go`
@@ -179,17 +179,22 @@
 - **Coverage**: aggregator.go: 80%-100% (all main functions 100%, parser 80%)
 - **Tests**: 12 tests
 
-### Task 4.3: Test WebSocket Handlers ⏳
-- [ ] Create `pkg/api/handlers/flow_stream_test.go`
-- [ ] Test WebSocket connection upgrade
-- [ ] Test real-time flow broadcasting
-- [ ] Test client disconnection handling
+### Task 4.3: Test WebSocket Handlers ✅
+- [x] Create `pkg/api/handlers/flow_stream_test.go`
+- [x] Test WebSocket connection upgrade
+- [x] Test real-time flow broadcasting
+- [x] Test client disconnection handling
+- [x] Test message filtering
+- [x] Test multiple clients
+- [x] Test hub statistics
+- **Coverage**: flow_stream.go: 100% (all functions)
+- **Tests**: 9 tests (handler creation, route registration, stats, upgrade, broadcast, filtering, multiple clients, invalid upgrade)
 
-**Phase 4 Summary (Tasks 4.1-4.2)**:
-- **Total Test Files Created**: 2 (flow_test.go, aggregator_test.go)
-- **Total Tests Written**: 24 HTTP handler tests
-- **Overall Handlers Package Coverage**: 51.4%
-- **Commits**: 17059d2 (flow tests), 452040c (aggregator tests)
+**Phase 4 Summary (Tasks 4.1-4.3 COMPLETE)**:
+- **Total Test Files Created**: 3 (flow_test.go, aggregator_test.go, flow_stream_test.go)
+- **Total Tests Written**: 33 HTTP handler tests
+- **Overall Handlers Package Coverage**: 58.3%
+- **Commits**: 17059d2 (flow tests), 452040c (aggregator tests), [pending] (WebSocket tests)
 
 ---
 
