@@ -19,15 +19,15 @@ func MockFlowEvent(opts ...FlowEventOption) *flowpb.FlowEvent {
 		DstIp:        IPToFixed32("10.0.2.20"),
 		SrcPort:      8080,
 		DstPort:      443,
-		Protocol:     commonpb.Protocol_TCP,
-		EventType:    commonpb.FlowEventType_FLOW_NEW,
-		Direction:    commonpb.FlowDirection_EGRESS,
+		Protocol:     commonpb.Protocol(6),      // TCP
+		EventType:    commonpb.FlowEventType(0), // NEW
+		Direction:    commonpb.FlowDirection(1), // EGRESS
 		PacketCount:  100,
 		ByteCount:    15000,
 		TimestampNs:  uint64(time.Now().UnixNano()),
 		PolicyId:     1,
-		PolicyAction: commonpb.PolicyAction_ALLOW,
-		State:        commonpb.FlowState_ESTABLISHED,
+		PolicyAction: commonpb.PolicyAction(1),  // ALLOW
+		State:        commonpb.FlowState(2),     // ESTABLISHED
 		AgentId:      "test-agent-001",
 		SourceLabels: map[string]string{
 			"app":  "web",
@@ -112,8 +112,8 @@ func MockPolicy(opts ...PolicyOption) *policypb.Policy {
 		DstIp:       "10.0.2.0/24",
 		SrcPort:     0, // any
 		DstPort:     443,
-		Protocol:    commonpb.Protocol_TCP,
-		Action:      commonpb.PolicyAction_ALLOW,
+		Protocol:    commonpb.Protocol(6),     // TCP
+		Action:      commonpb.PolicyAction(1), // ALLOW
 		Priority:    10,
 		CreatedAt:   now,
 		UpdatedAt:   now,
