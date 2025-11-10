@@ -70,7 +70,7 @@ export default function TopTalkersChart({
     return {
       ...baseOption,
       title: {
-        text: activeTab === 'source' ? 'Top 源 IP' : 'Top 目标 IP',
+        text: activeTab === 'source' ? 'Top Source IPs' : 'Top Destination IPs',
         left: 'center',
         textStyle: {
           fontSize: 16,
@@ -93,13 +93,13 @@ export default function TopTalkersChart({
               <div style="padding: 8px;">
                 <div style="margin-bottom: 8px; font-weight: bold;">${ipData.ip}</div>
                 <div style="margin: 4px 0;">
-                  <strong>流数量:</strong> ${formatNumber(ipData.flowCount)}
+                  <strong>Flow Count:</strong> ${formatNumber(ipData.flowCount)}
                 </div>
                 <div style="margin: 4px 0;">
-                  <strong>包数量:</strong> ${formatNumber(ipData.packetCount)}
+                  <strong>Packet Count:</strong> ${formatNumber(ipData.packetCount)}
                 </div>
                 <div style="margin: 4px 0;">
-                  <strong>字节数:</strong> ${formatBytes(ipData.byteCount)}
+                  <strong>Bytes:</strong> ${formatBytes(ipData.byteCount)}
                 </div>
               </div>
             `
@@ -116,7 +116,7 @@ export default function TopTalkersChart({
       },
       xAxis: {
         type: 'value',
-        name: sortBy === 'flows' ? '流数量' : '字节数',
+        name: sortBy === 'flows' ? 'Flow Count' : 'Bytes',
         axisLabel: {
           formatter: (value: number) => {
             return sortBy === 'flows' ? formatNumber(value) : formatBytes(value)
@@ -140,7 +140,7 @@ export default function TopTalkersChart({
       },
       series: [
         {
-          name: sortBy === 'flows' ? '流数量' : '字节数',
+          name: sortBy === 'flows' ? 'Flow Count' : 'Bytes',
           type: 'bar',
           data: sortedData.map(d => (sortBy === 'flows' ? d.flowCount : d.byteCount)),
           itemStyle: {
@@ -228,14 +228,14 @@ export default function TopTalkersChart({
         showToolbar && (
           <Space>
             <Radio.Group value={sortBy} onChange={e => setSortBy(e.target.value)} size="small">
-              <Radio.Button value="flows">按流量</Radio.Button>
-              <Radio.Button value="bytes">按字节</Radio.Button>
+              <Radio.Button value="flows">By Flows</Radio.Button>
+              <Radio.Button value="bytes">By Bytes</Radio.Button>
             </Radio.Group>
             <Button icon={<ReloadOutlined />} onClick={handleRefresh} size="small">
-              刷新
+              Refresh
             </Button>
             <Button icon={<DownloadOutlined />} onClick={handleExport} size="small">
-              导出
+              Export
             </Button>
           </Space>
         )
@@ -246,22 +246,22 @@ export default function TopTalkersChart({
         activeKey={activeTab}
         onChange={key => setActiveTab(key as TabType)}
         items={[
-          { key: 'source', label: '源 IP' },
-          { key: 'dest', label: '目标 IP' },
+          { key: 'source', label: 'Source IP' },
+          { key: 'dest', label: 'Dest IP' },
         ]}
         style={{ marginBottom: 16 }}
       />
 
       {isLoading && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <Spin size="large" tip="加载中..." />
+          <Spin size="large" tip="Loading..." />
         </div>
       )}
 
       {error && (
         <Alert
-          message="加载失败"
-          description={error instanceof Error ? error.message : '未知错误'}
+          message="Load Failed"
+          description={error instanceof Error ? error.message : 'Unknown error'}
           type="error"
           showIcon
         />
@@ -272,8 +272,8 @@ export default function TopTalkersChart({
           {(!data.topSourceIps.length && activeTab === 'source') ||
           (!data.topDestIps.length && activeTab === 'dest') ? (
             <Alert
-              message="暂无数据"
-              description="当前时间范围内没有流量数据"
+              message="No Data"
+              description="No flow data in the current time range"
               type="info"
               showIcon
             />

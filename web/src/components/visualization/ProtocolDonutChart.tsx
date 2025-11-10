@@ -50,7 +50,7 @@ export default function ProtocolDonutChart({
       ...baseOption,
       title: {
         text: formatBytes(totalBytes),
-        subtext: '总字节数',
+        subtext: 'Total Bytes',
         left: 'center',
         top: 'center',
         textStyle: {
@@ -77,10 +77,10 @@ export default function ProtocolDonutChart({
             <div style="padding: 8px;">
               <div style="margin-bottom: 4px; font-weight: bold;">${params.name}</div>
               <div style="margin: 4px 0;">
-                <strong>字节数:</strong> ${formatBytes(params.value)}
+                <strong>Bytes:</strong> ${formatBytes(params.value)}
               </div>
               <div style="margin: 4px 0;">
-                <strong>占比:</strong> ${percent}%
+                <strong>Percentage:</strong> ${percent}%
               </div>
             </div>
           `
@@ -93,7 +93,7 @@ export default function ProtocolDonutChart({
       },
       series: [
         {
-          name: '协议字节数分布',
+          name: 'Protocol Bytes Distribution',
           type: 'pie',
           radius: ['40%', '70%'],
           center: ['50%', '45%'],
@@ -156,15 +156,15 @@ export default function ProtocolDonutChart({
 
   return (
     <Card
-      title="协议字节数分布环形图"
+      title="Protocol Bytes Distribution Donut Chart"
       extra={
         showToolbar && (
           <Space>
             <Button icon={<ReloadOutlined />} onClick={handleRefresh} size="small">
-              刷新
+              Refresh
             </Button>
             <Button icon={<DownloadOutlined />} onClick={handleExport} size="small">
-              导出
+              Export
             </Button>
           </Space>
         )
@@ -173,14 +173,14 @@ export default function ProtocolDonutChart({
     >
       {isLoading && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <Spin size="large" tip="加载中..." />
+          <Spin size="large" tip="Loading..." />
         </div>
       )}
 
       {error && (
         <Alert
-          message="加载失败"
-          description={error instanceof Error ? error.message : '未知错误'}
+          message="Load Failed"
+          description={error instanceof Error ? error.message : 'Unknown error'}
           type="error"
           showIcon
         />
@@ -188,8 +188,8 @@ export default function ProtocolDonutChart({
 
       {!isLoading && !error && data && data.protocols.length === 0 && (
         <Alert
-          message="暂无数据"
-          description="当前时间范围内没有流量数据"
+          message="No Data"
+          description="No flow data in the current time range"
           type="info"
           showIcon
         />

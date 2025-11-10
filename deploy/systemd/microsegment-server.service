@@ -1,0 +1,52 @@
+[Unit]
+Description=eBPF Microsegment Control Plane Server
+Documentation=https://github.com/ebpf-microsegment/ebpf-based-microsegment
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+ConditionPathExists=/usr/local/bin/microsegment-server
+ConditionPathExists=/etc/microsegment/server.yaml
+
+[Service]
+Type=simple
+User=microsegment
+Group=microsegment
+WorkingDirectory=/var/lib/microsegment
+
+ExecStart=/usr/local/bin/microsegment-server --config /etc/microsegment/server.yaml
+ExecStop=/bin/kill -SIGTERM $MAINPID
+TimeoutStopSec=30s
+
+Restart=on-failure
+RestartSec=5s
+StartLimitBurst=5
+StartLimitInterval=60s
+
+Environment="MICROSEGMENT_ENV=production"
+EnvironmentFile=-/etc/microsegment/server.env
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# 文件系统权限
+ReadWritePaths=/var/lib/microsegment
+ReadOnlyPaths=/etc/microsegment
+
+# 资源限制
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# 日志配置
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=microsegment-server
+SyslogLevel=info
+
+[Install]
+WantedBy=multi-user.target

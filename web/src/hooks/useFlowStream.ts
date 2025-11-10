@@ -7,11 +7,12 @@ interface UseFlowStreamOptions {
   onError?: (error: Error) => void
 }
 
-export function useFlowStream({ enabled = true, onFlow, onError }: UseFlowStreamOptions = {}) {
+export function useFlowStream(options: UseFlowStreamOptions = {}) {
+  const { enabled = true, onFlow, onError } = options
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>()
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const reconnectAttemptsRef = useRef(0)
 
   const connect = useCallback(() => {

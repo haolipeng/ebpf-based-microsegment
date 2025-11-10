@@ -16,6 +16,11 @@ microsegment
 *.log
 *.txt
 
+# Test coverage files
+*.out
+coverage.html
+coverage.txt
+
 # IDE
 .vscode/
 .idea/

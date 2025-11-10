@@ -1,0 +1,23 @@
+server:
+  http:
+    host: 0.0.0.0
+    port: 8080
+  grpc:
+    host: 0.0.0.0
+    port: 9090
+
+database:
+  host: localhost
+  port: 5432
+  name: microsegment
+  user: microsegment_user
+  password: secret
+  sslmode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+
+log:
+  level: info
+  format: json
+  output: stdout

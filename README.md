@@ -106,6 +106,29 @@ Flags:
 - [Progress Report](docs/flow-implementation-progress.md) - Current status and roadmap
 - [OpenSpec Design](openspec/changes/add-flow-collection-api/design.md) - Detailed architecture design
 
+## 🚀 Deployment
+
+### Systemd Deployment (Linux Services)
+
+Deploy on traditional Linux environments using Systemd services:
+
+```bash
+# Quick installation
+sudo ./deploy/scripts/install-systemd.sh
+
+# Check service status
+systemctl status microsegment-server microsegment-agent
+
+# View logs
+journalctl -u microsegment-server -f
+```
+
+📚 [Full Systemd Deployment Guide](deploy/systemd/README.md)
+
+### Coming Soon
+- **Docker Deployment**: Container-based deployment with Docker Compose
+- **Kubernetes Deployment**: Production-grade orchestration for K8s clusters
+
 ## 🛠️ Development
 
 ### Project Structure

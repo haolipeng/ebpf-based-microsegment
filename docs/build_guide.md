@@ -135,7 +135,7 @@ sudo ./bin/microsegment-agent --interface eth0 --log-level info
 
 ```bash
 # 1. 克隆项目
-git clone <repo-url>
+git clone https://github.com/haolipeng/ebpf-based-microsegment.git
 cd ebpf-based-microsegment
 
 # 2. 安装系统依赖

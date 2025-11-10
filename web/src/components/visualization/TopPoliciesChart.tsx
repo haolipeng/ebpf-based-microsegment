@@ -47,12 +47,12 @@ export default function TopPoliciesChart({
     return {
       ...baseOption,
       title: {
-        text: 'Top 策略',
-        subtext: `命中次数最多的 ${sortedData.length} 个策略`,
+        text: 'Top Policies',
+        subtext: `Top ${sortedData.length} policies by hit count`,
         left: 'center',
         textStyle: {
           fontSize: 16,
-          fontWeight: 'bold',
+          fontWeight: 'bold' as const,
         },
         subtextStyle: {
           fontSize: 12,
@@ -61,9 +61,9 @@ export default function TopPoliciesChart({
       },
       tooltip: {
         ...baseOption.tooltip,
-        trigger: 'axis',
+        trigger: 'axis' as const,
         axisPointer: {
-          type: 'shadow',
+          type: 'shadow' as const,
         },
         formatter: (params: any) => {
           if (Array.isArray(params) && params.length > 0) {
@@ -84,10 +84,10 @@ export default function TopPoliciesChart({
                     : ''
                 }
                 <div style="margin: 4px 0;">
-                  <strong>命中次数:</strong> ${formatNumber(policyData.hitCount)}
+                  <strong>Hit Count:</strong> ${formatNumber(policyData.hitCount)}
                 </div>
                 <div style="margin-top: 8px; font-size: 12px; color: #999;">
-                  点击查看详情
+                  Click to view details
                 </div>
               </div>
             `
@@ -103,19 +103,19 @@ export default function TopPoliciesChart({
         containLabel: true,
       },
       xAxis: {
-        type: 'value',
-        name: '命中次数',
+        type: 'value' as const,
+        name: 'Hit Count',
         axisLabel: {
           formatter: (value: number) => formatNumber(value),
         },
         splitLine: {
           lineStyle: {
-            type: 'dashed',
+            type: 'dashed' as const,
           },
         },
       },
       yAxis: {
-        type: 'category',
+        type: 'category' as const,
         data: sortedData.map(d => `Rule ${d.ruleId}`),
         axisLabel: {
           formatter: (value: string) => {
@@ -125,12 +125,12 @@ export default function TopPoliciesChart({
       },
       series: [
         {
-          name: '命中次数',
-          type: 'bar',
+          name: 'Hit Count',
+          type: 'bar' as const,
           data: sortedData.map(d => d.hitCount),
           itemStyle: {
             color: {
-              type: 'linear',
+              type: 'linear' as const,
               x: 0,
               y: 0,
               x2: 1,
@@ -197,15 +197,15 @@ export default function TopPoliciesChart({
 
   return (
     <Card
-      title="Top 命中策略"
+      title="Top Hit Policies"
       extra={
         showToolbar && (
           <Space>
             <Button icon={<ReloadOutlined />} onClick={handleRefresh} size="small">
-              刷新
+              Refresh
             </Button>
             <Button icon={<DownloadOutlined />} onClick={handleExport} size="small">
-              导出
+              Export
             </Button>
           </Space>
         )
@@ -214,14 +214,14 @@ export default function TopPoliciesChart({
     >
       {isLoading && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <Spin size="large" tip="加载中..." />
+          <Spin size="large" tip="Loading..." />
         </div>
       )}
 
       {error && (
         <Alert
-          message="加载失败"
-          description={error instanceof Error ? error.message : '未知错误'}
+          message="Load Failed"
+          description={error instanceof Error ? error.message : 'Unknown error'}
           type="error"
           showIcon
         />
@@ -229,8 +229,8 @@ export default function TopPoliciesChart({
 
       {!isLoading && !error && data && data.length === 0 && (
         <Alert
-          message="暂无数据"
-          description="没有策略命中记录"
+          message="No Data"
+          description="No policy hit records"
           type="info"
           showIcon
         />
@@ -238,23 +238,23 @@ export default function TopPoliciesChart({
 
       {!isLoading && !error && data && data.length > 0 && (
         <>
-          {/* 数据摘要 */}
+          {/* Data Summary */}
           <div style={{ marginBottom: 16, padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
             <Space>
-              <Tag color="blue">总策略数: {data.length}</Tag>
+              <Tag color="blue">Total Policies: {data.length}</Tag>
               <Tag color="green">
-                总命中数: {formatNumber(data.reduce((sum, p) => sum + p.hitCount, 0))}
+                Total Hits: {formatNumber(data.reduce((sum, p) => sum + p.hitCount, 0))}
               </Tag>
               {data[0] && (
                 <Tag color="orange">
-                  最高命中: Rule {data[0].ruleId} ({formatNumber(data[0].hitCount)} 次)
+                  Top Hit: Rule {data[0].ruleId} ({formatNumber(data[0].hitCount)} hits)
                 </Tag>
               )}
             </Space>
           </div>
 
           <SafeECharts
-            option={option}
+            option={option as any}
             style={{ height: `${height}px` }}
             onChartReady={(chart: any) => {
               if (chart) {

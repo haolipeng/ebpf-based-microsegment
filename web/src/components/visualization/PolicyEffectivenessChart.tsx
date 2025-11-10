@@ -42,8 +42,8 @@ export default function PolicyEffectivenessChart({
     return {
       ...baseOption,
       title: {
-        text: '策略效果趋势',
-        subtext: '按策略动作分组的流量统计',
+        text: 'Policy Effectiveness Trend',
+        subtext: 'Flow statistics grouped by policy action',
         left: 'center',
         textStyle: {
           fontSize: 16,
@@ -88,7 +88,7 @@ export default function PolicyEffectivenessChart({
 
             html += `
               <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd;">
-                <strong>总计: ${formatNumber(total)}</strong>
+                <strong>Total: ${formatNumber(total)}</strong>
               </div>
             </div>`
             return html
@@ -105,7 +105,7 @@ export default function PolicyEffectivenessChart({
       },
       yAxis: {
         type: 'value',
-        name: '流数量',
+        name: 'Flow Count',
         axisLabel: {
           formatter: (value: number) => formatNumber(value),
         },
@@ -200,20 +200,20 @@ export default function PolicyEffectivenessChart({
 
   return (
     <Card
-      title="策略效果趋势图"
+      title="Policy Effectiveness Trend Chart"
       extra={
         showToolbar && (
           <Space>
             <Radio.Group value={granularity} onChange={e => setGranularity(e.target.value)} size="small">
-              <Radio.Button value="minute">1分钟</Radio.Button>
-              <Radio.Button value="hour">1小时</Radio.Button>
-              <Radio.Button value="day">1天</Radio.Button>
+              <Radio.Button value="minute">1 Min</Radio.Button>
+              <Radio.Button value="hour">1 Hour</Radio.Button>
+              <Radio.Button value="day">1 Day</Radio.Button>
             </Radio.Group>
             <Button icon={<ReloadOutlined />} onClick={handleRefresh} size="small">
-              刷新
+              Refresh
             </Button>
             <Button icon={<DownloadOutlined />} onClick={handleExport} size="small">
-              导出
+              Export
             </Button>
           </Space>
         )
@@ -222,14 +222,14 @@ export default function PolicyEffectivenessChart({
     >
       {isLoading && (
         <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <Spin size="large" tip="加载中..." />
+          <Spin size="large" tip="Loading..." />
         </div>
       )}
 
       {error && (
         <Alert
-          message="加载失败"
-          description={error instanceof Error ? error.message : '未知错误'}
+          message="Load Failed"
+          description={error instanceof Error ? error.message : 'Unknown error'}
           type="error"
           showIcon
         />
@@ -237,8 +237,8 @@ export default function PolicyEffectivenessChart({
 
       {!isLoading && !error && data && data.length === 0 && (
         <Alert
-          message="暂无数据"
-          description="当前时间范围内没有策略数据"
+          message="No Data"
+          description="No policy data in the current time range"
           type="info"
           showIcon
         />

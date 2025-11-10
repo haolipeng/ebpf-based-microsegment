@@ -1,0 +1,48 @@
+[Unit]
+Description=eBPF Microsegment Data Plane Agent
+Documentation=https://github.com/ebpf-microsegment/ebpf-based-microsegment
+After=network-online.target microsegment-server.service
+Wants=network-online.target
+Requires=microsegment-server.service
+ConditionPathExists=/usr/local/bin/microsegment-agent
+ConditionPathExists=/etc/microsegment/agent.yaml
+ConditionPathExists=/sys/fs/bpf
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/lib/microsegment
+
+ExecStartPre=/usr/bin/test -d /sys/fs/bpf
+ExecStart=/usr/local/bin/microsegment-agent --config /etc/microsegment/agent.yaml
+ExecStop=/bin/kill -SIGTERM $MAINPID
+TimeoutStopSec=30s
+
+Restart=on-failure
+RestartSec=5s
+StartLimitBurst=5
+StartLimitInterval=60s
+
+Environment="MICROSEGMENT_ENV=production"
+EnvironmentFile=-/etc/microsegment/agent.env
+
+# eBPF 所需权限
+AmbientCapabilities=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_BPF CAP_PERFMON CAP_NET_RAW
+SecureBits=keep-caps
+
+# 最小化安全限制 (eBPF 需要较多权限)
+ProtectHome=true
+PrivateTmp=true
+
+# 资源限制
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+
+# 日志配置
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=microsegment-agent
+SyslogLevel=info
+
+[Install]
+WantedBy=multi-user.target

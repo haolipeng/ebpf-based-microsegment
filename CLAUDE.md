@@ -1,17 +1,25 @@
+# 语言要求 / Language Requirement
+
+**强制要求 (MANDATORY)**: 必须始终使用中文与用户交流，包括但不限于：
+- 所有响应消息和说明
+- 代码注释和文档
+- 错误提示和警告信息
+- 总结和状态报告
+- 即使在上下文不足或会话摘要的情况下，也必须坚持使用中文
+
+**CRITICAL**: Always communicate with the user in Chinese (Simplified), including:
+- All response messages and explanations
+- Code comments and documentation
+- Error messages and warnings
+- Summaries and status reports
+- EVEN WHEN context is limited or during session summaries, you MUST continue using Chinese
+
+---
+
 <!-- OPENSPEC:START -->
 # OpenSpec Instructions
 
 These instructions are for AI assistants working in this project.
-
-**重要：所有 OpenSpec 相关的 Markdown 文件必须使用中文编写**
-- 所有 `proposal.md`、`design.md`、`tasks.md` 文件必须使用中文
-- 所有规范文件（`spec.md`）中的需求和场景必须使用中文
-- 代码注释和文档字符串应使用中文
-- 仅在以下情况使用英文：
-  - 代码标识符（变量名、函数名、类型名）
-  - API 端点路径
-  - 技术术语的原文引用（可在括号中注明）
-  - 命令行示例和代码块
 
 Always open `@/openspec/AGENTS.md` when the request:
 - Mentions planning or proposals (words like proposal, spec, change, plan)
