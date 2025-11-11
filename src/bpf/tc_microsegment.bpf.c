@@ -78,56 +78,22 @@ static __always_inline void update_stats(__u32 key) {
 // Include policy matching logic (requires update_stats to be defined first)
 #include "headers/policy_match.h"
 
+// Include flow processing logic (packet parsing)
+#include "headers/flow_processing.h"
+
 // Helper: Get current timestamp in nanoseconds
 static __always_inline __u64 get_timestamp_ns() {
     return bpf_ktime_get_ns();
 }
 
-// Helper: Extract flow key from packet
+// Helper: Extract flow key from packet (TC-specific wrapper)
+// TC 使用 struct __sk_buff,提供 data 和 data_end 指针
 static __always_inline int extract_flow_key(struct __sk_buff *skb, struct flow_key *key) {
     void *data = (void *)(long)skb->data;
     void *data_end = (void *)(long)skb->data_end;
-    
-    // Parse Ethernet header
-    struct ethhdr *eth = data;
-    if ((void *)(eth + 1) > data_end)
-        return -1;
-    
-    // Only handle IPv4 for now
-    if (eth->h_proto != bpf_htons(ETH_P_IP))
-        return -1;
-    
-    // Parse IP header
-    struct iphdr *iph = (void *)(eth + 1);
-    if ((void *)(iph + 1) > data_end)
-        return -1;
-    
-    key->src_ip = iph->saddr;
-    key->dst_ip = iph->daddr;
-    key->protocol = iph->protocol;
-    
-    // Parse transport layer
-    void *l4 = (void *)iph + (iph->ihl * 4);
-    
-    if (iph->protocol == IPPROTO_TCP) {
-        struct tcphdr *tcph = l4;
-        if ((void *)(tcph + 1) > data_end)
-            return -1;
-        key->src_port = tcph->source;
-        key->dst_port = tcph->dest;
-    } else if (iph->protocol == IPPROTO_UDP) {
-        struct udphdr *udph = l4;
-        if ((void *)(udph + 1) > data_end)
-            return -1;
-        key->src_port = udph->source;
-        key->dst_port = udph->dest;
-    } else {
-        // ICMP or other protocols
-        key->src_port = 0;
-        key->dst_port = 0;
-    }
-    
-    return 0;
+
+    // 调用通用的流键提取函数 (在 flow_processing.h 中定义)
+    return extract_flow_key_from_packet(data, data_end, key);
 }
 
 // Helper: Push flow event to user-space via Ring Buffer

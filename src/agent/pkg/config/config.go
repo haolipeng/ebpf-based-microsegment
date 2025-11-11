@@ -32,6 +32,9 @@ type Config struct {
 
 	// Flow collection configuration
 	Flow FlowConfig `mapstructure:"flow"`
+
+	// DataPlane configuration
+	DataPlane DataPlaneConfig `mapstructure:"dataplane"`
 }
 
 // APIConfig holds API server configuration
@@ -89,6 +92,22 @@ type AgentServerConfig struct {
 	MaxRetries     int           `mapstructure:"max_retries"`      // Maximum number of retries (default: 3)
 	RetryBaseDelay time.Duration `mapstructure:"retry_base_delay"` // Base delay for exponential backoff (default: 1s)
 	RetryMaxDelay  time.Duration `mapstructure:"retry_max_delay"`  // Maximum retry delay (default: 30s)
+}
+
+// DataPlaneConfig holds data plane (eBPF) configuration
+type DataPlaneConfig struct {
+	// Mode specifies the dataplane mode:
+	// - "auto": Automatically select best mode (default)
+	// - "xdp-native": Force Native XDP (requires driver support)
+	// - "xdp-generic": Force Generic XDP (kernel fallback)
+	// - "tc": Force TC (TCX or Legacy)
+	Mode string `mapstructure:"mode"`
+
+	// PreferXDP controls whether to prefer XDP over TC in auto mode
+	PreferXDP bool `mapstructure:"prefer_xdp"`
+
+	// AllowGenericXDP controls whether Generic XDP fallback is allowed
+	AllowGenericXDP bool `mapstructure:"allow_generic_xdp"`
 }
 
 // LoadConfig loads configuration from file or returns defaults
@@ -152,6 +171,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("flow.flow_timeout", "5m")
 	v.SetDefault("flow.cleanup_interval", "1m")
 	v.SetDefault("flow.retention_days", 7)
+
+	// DataPlane defaults
+	v.SetDefault("dataplane.mode", "auto")                // Auto-select best mode
+	v.SetDefault("dataplane.prefer_xdp", true)            // Prefer XDP for better performance
+	v.SetDefault("dataplane.allow_generic_xdp", true)     // Allow Generic XDP fallback
 }
 
 // Validate validates the configuration
@@ -214,6 +238,17 @@ func (c *Config) Validate() error {
 		if c.AgentServer.RetryMaxDelay == 0 {
 			c.AgentServer.RetryMaxDelay = 30 * time.Second
 		}
+	}
+
+	// Validate DataPlane configuration
+	validModes := map[string]bool{
+		"auto":        true,
+		"xdp-native":  true,
+		"xdp-generic": true,
+		"tc":          true,
+	}
+	if !validModes[c.DataPlane.Mode] {
+		return fmt.Errorf("invalid dataplane.mode: %s (must be auto, xdp-native, xdp-generic, or tc)", c.DataPlane.Mode)
 	}
 
 	return nil
