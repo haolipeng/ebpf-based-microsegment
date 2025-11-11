@@ -40,3 +40,10 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 # Git Repository Instructions
 
 **IMPORTANT**: Do NOT automatically push commits to GitHub repository. Only create local commits. The user will manually push changes to the remote repository when ready.
+
+**Commit Message Format**:
+- Do NOT add emoji markers (like 🤖) to commit messages
+- Do NOT add "Generated with Claude Code" footer
+- Do NOT add "Co-Authored-By: Claude" footer
+- Keep commit messages clean and professional
+- Use conventional commit format when appropriate
