@@ -21,6 +21,7 @@
 char LICENSE[] SEC("license") = "GPL";
 
 // Session tracking map - LRU_HASH for automatic eviction
+// NOTE: TC 和 XDP 各自维护独立的会话表,不使用 pinning
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, MAX_ENTRIES_SESSION);
@@ -29,28 +30,34 @@ struct {
 } session_map SEC(".maps");
 
 // Policy map for exact 5-tuple matching
+// PINNED: TC 和 XDP 共享策略数据
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, MAX_ENTRIES_POLICY);
     __type(key, struct policy_key);
     __type(value, struct policy_value);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
 } policy_map SEC(".maps");
 
 // Wildcard policy map for policies with wildcards (0 = any)
 // Uses ARRAY for linear search (slower but supports wildcards)
+// PINNED: TC 和 XDP 共享策略数据
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, MAX_ENTRIES_WILDCARD_POLICY);
     __type(key, __u32);  // index
     __type(value, struct wildcard_policy);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
 } wildcard_policy_map SEC(".maps");
 
 // Statistics map (Per-CPU for lock-free updates)
+// PINNED: TC 和 XDP 共享统计数据
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
     __uint(max_entries, STATS_MAX);
     __type(key, __u32);
     __type(value, __u64);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
 } stats_map SEC(".maps");
 
 // Ring buffer for flow events to user-space

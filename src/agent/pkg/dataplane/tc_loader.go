@@ -20,6 +20,7 @@ type TCLoader struct {
 	objs      *bpfObjects       // eBPF 对象
 	tcLink    link.Link         // TCX link (kernel >= 6.6)
 	tcFilter  *netlink.BpfFilter // Legacy TC filter (kernel < 6.6)
+	pinConfig *MapPinConfig     // Map pinning 配置
 }
 
 // NewTCLoader 创建一个新的 TC 加载器
@@ -29,24 +30,38 @@ func NewTCLoader(mode DataPlaneMode, iface string, ifaceIdx int) (*TCLoader, err
 	}
 
 	return &TCLoader{
-		mode:     mode,
-		iface:    iface,
-		ifaceIdx: ifaceIdx,
+		mode:      mode,
+		iface:     iface,
+		ifaceIdx:  ifaceIdx,
+		pinConfig: DefaultMapPinConfig(), // 使用默认 Map Pinning 配置
 	}, nil
 }
 
 // Load 加载并附加 TC eBPF 程序到网卡
 func (l *TCLoader) Load() error {
-	// 1. 加载 eBPF 对象
+	// 1. 确保 pin 目录存在
+	if err := EnsurePinPath(l.pinConfig.PinPath); err != nil {
+		log.Warnf("Failed to ensure pin path (continuing anyway): %v", err)
+	}
+
+	// 2. 加载 eBPF 对象,使用 Map Pinning
 	objs := &bpfObjects{}
-	if err := loadBpfObjects(objs, nil); err != nil {
+	opts := &ebpf.CollectionOptions{
+		Maps: ebpf.MapOptions{
+			// 设置 pin 路径,cilium/ebpf 会自动处理 LIBBPF_PIN_BY_NAME 的 map
+			PinPath: l.pinConfig.PinPath,
+		},
+	}
+
+	if err := loadBpfObjects(objs, opts); err != nil {
 		return fmt.Errorf("loading eBPF objects: %w", err)
 	}
 	l.objs = objs
 
-	log.Debugf("eBPF objects loaded successfully")
+	log.Debugf("eBPF objects loaded successfully (with Map Pinning)")
+	log.Infof("✓ Pinned maps to: %s", l.pinConfig.PinPath)
 
-	// 2. 根据模式附加 TC 程序
+	// 3. 根据模式附加 TC 程序
 	switch l.mode {
 	case ModeTCX:
 		return l.attachTCX()
@@ -168,6 +183,10 @@ func (l *TCLoader) Unload() error {
 		l.objs.Close()
 		l.objs = nil
 	}
+
+	// 注意: 我们不在这里取消 Map Pinning
+	// Pinned maps 需要保留以供 TC 和 XDP 程序共享
+	// 如果需要清理 pinned maps,使用 CleanupPinnedMaps() 函数
 
 	if len(errs) > 0 {
 		return errors.Join(errs...)
