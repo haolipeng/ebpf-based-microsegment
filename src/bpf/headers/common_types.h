@@ -47,6 +47,13 @@ enum policy_action {
     POLICY_ACTION_LOG,
 };
 
+// Policy direction (for egress support)
+enum policy_direction {
+    POLICY_DIR_ANY = 0,       // Match both ingress and egress
+    POLICY_DIR_INGRESS = 1,   // Match only ingress traffic
+    POLICY_DIR_EGRESS = 2,    // Match only egress traffic
+};
+
 // Session value stored in LRU_HASH map
 struct session_value {
     __u64 created_ts;         // Session creation timestamp (nanoseconds)
@@ -63,13 +70,14 @@ struct session_value {
 };
 
 // Policy key for exact matching
+// Note: Removed src_port to make room for direction field
+// Policy matching typically doesn't need source port
 struct policy_key {
     __u32 src_ip;
     __u32 dst_ip;
-    __u16 src_port;
     __u16 dst_port;
     __u8  protocol;
-    __u8  pad[3];
+    __u8  direction;      // enum policy_direction
 } __attribute__((packed));
 
 // Policy value
@@ -93,9 +101,9 @@ struct wildcard_policy {
     __u8  protocol;           // 0 = any protocol
     __u8  action;             // Policy action
     __u8  log_enabled;        // Enable logging
-    __u8  pad1;               // Padding
+    __u8  direction;          // enum policy_direction
     __u16 priority;           // Policy priority (higher = more important)
-    __u16 pad2;               // Padding
+    __u16 pad;                // Padding
     __u32 rule_id;            // Rule ID (0 = empty slot)
 } __attribute__((packed));
 
@@ -109,6 +117,11 @@ enum stats_key {
     STATS_ACTIVE_SESSIONS,
     STATS_POLICY_HITS,
     STATS_POLICY_MISSES,
+    // Direction-specific statistics (for egress support)
+    STATS_INGRESS_PACKETS,
+    STATS_EGRESS_PACKETS,
+    STATS_INGRESS_DENIED,
+    STATS_EGRESS_DENIED,
     STATS_MAX,
 };
 
