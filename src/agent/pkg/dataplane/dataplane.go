@@ -16,13 +16,10 @@ import (
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall" -target amd64 xdpbpf ../../../bpf/xdp_microsegment.bpf.c -- -I../../../bpf -I../../../../vmlinux/x86
 
 // DataPlane 管理 eBPF 数据平面
+// 高级 API，封装了统计、监控等功能
 type DataPlane struct {
-	iface    string          // 网卡名称
-	ifaceIdx int             // 网卡索引
-	mode     DataPlaneMode   // 数据平面模式
-	tcLoader *TCLoader       // TC 加载器
-	maps     *DataPlaneMaps  // eBPF Map 引用
-	rbReader *ringbuf.Reader // Ring buffer reader
+	manager  *Manager         // 数据平面管理器 (底层)
+	rbReader *ringbuf.Reader  // Ring buffer reader
 }
 
 // Statistics 保存数据包处理统计信息
@@ -38,78 +35,58 @@ type Statistics struct {
 }
 
 // New 创建一个新的数据平面实例
-// 自动检测系统能力并选择最佳模式 (TCX 或 Legacy TC)
+// 自动检测系统能力并选择最佳模式
+//
+// 默认配置：优先 TC 模式（更稳定），支持自动选择 TCX 或 Legacy TC
+// 如果需要 XDP，请使用 NewWithConfig() 并设置 PreferXDP: true
 func New(iface string) (*DataPlane, error) {
-	// 获取网卡索引
-	ifaceObj, err := net.InterfaceByName(iface)
-	if err != nil {
-		return nil, fmt.Errorf("interface %s not found: %w", iface, err)
-	}
-
-	// 检测系统能力
-	caps, err := DetectCapabilities(iface)
-	if err != nil {
-		return nil, fmt.Errorf("detecting capabilities: %w", err)
-	}
-
-	// 选择模式 (目前只支持 TC,优先 TCX)
+	// 使用默认配置 (TC 优先，保持向后兼容)
 	config := &ModeConfig{
 		ForceMode:       ModeUnknown, // 自动选择
-		PreferXDP:       false,       // 目前不使用 XDP
-		AllowGenericXDP: false,
+		PreferXDP:       false,       // 默认使用 TC (更稳定)
+		AllowGenericXDP: true,        // 允许 Generic XDP 回退
 	}
 
-	// 选择最佳模式
-	mode := SelectBestMode(caps, config)
+	return NewWithConfig(iface, config)
+}
 
-	// 如果选择了 XDP 模式,暂时回退到 TC (因为 XDP 还未实现)
-	if IsXDPMode(mode) {
-		log.Warn("XDP mode selected but not yet implemented, falling back to TC")
-		if caps.SupportsTCX {
-			mode = ModeTCX
-		} else {
-			mode = ModeLegacyTC
-		}
-	}
-
-	// 验证选择的模式
-	if !IsTCMode(mode) {
-		return nil, fmt.Errorf("no suitable TC mode available (mode=%v)", mode)
-	}
-
-	log.Infof("Selected dataplane mode: %v", mode)
-
-	// 创建 TC 加载器
-	tcLoader, err := NewTCLoader(mode, iface, ifaceObj.Index)
+// NewWithConfig 使用自定义配置创建数据平面实例
+//
+// 参数:
+//   - iface: 网卡名称
+//   - config: 模式配置（传 nil 使用默认配置）
+//
+// 返回:
+//   - *DataPlane: 数据平面实例
+//   - error: 错误信息
+func NewWithConfig(iface string, config *ModeConfig) (*DataPlane, error) {
+	// 1. 创建 Manager
+	manager, err := NewManager(iface, config)
 	if err != nil {
-		return nil, fmt.Errorf("creating TC loader: %w", err)
+		return nil, fmt.Errorf("creating manager: %w", err)
 	}
 
-	// 加载 TC 程序
-	if err := tcLoader.Load(); err != nil {
-		return nil, fmt.Errorf("loading TC program: %w", err)
+	// 2. 加载数据平面
+	if err := manager.Load(); err != nil {
+		return nil, fmt.Errorf("loading dataplane: %w", err)
 	}
 
-	// 获取 Map 引用
-	maps, err := tcLoader.GetMaps()
+	// 3. 获取 Maps
+	maps, err := manager.GetMaps()
 	if err != nil {
-		tcLoader.Unload()
+		manager.Unload()
 		return nil, fmt.Errorf("getting maps: %w", err)
 	}
 
-	// 创建 Ring Buffer Reader
+	// 4. 创建 Ring Buffer Reader
 	rbReader, err := ringbuf.NewReader(maps.FlowEventsRB)
 	if err != nil {
-		tcLoader.Unload()
+		manager.Unload()
 		return nil, fmt.Errorf("creating ring buffer reader: %w", err)
 	}
 
 	dp := &DataPlane{
-		iface:    iface,
-		ifaceIdx: ifaceObj.Index,
-		mode:     mode,
-		tcLoader: tcLoader,
-		maps:     maps,
+		manager:  manager,
 		rbReader: rbReader,
 	}
 
@@ -128,10 +105,10 @@ func (dp *DataPlane) Close() error {
 		}
 	}
 
-	// 卸载 TC 程序
-	if dp.tcLoader != nil {
-		if err := dp.tcLoader.Unload(); err != nil {
-			errs = append(errs, fmt.Errorf("unloading TC loader: %w", err))
+	// 卸载数据平面
+	if dp.manager != nil {
+		if err := dp.manager.Unload(); err != nil {
+			errs = append(errs, fmt.Errorf("unloading dataplane: %w", err))
 		}
 	}
 
@@ -147,10 +124,17 @@ func (dp *DataPlane) Close() error {
 func (dp *DataPlane) GetStatistics() Statistics {
 	stats := Statistics{}
 
+	// 获取 maps
+	maps, err := dp.manager.GetMaps()
+	if err != nil {
+		log.Debugf("Failed to get maps: %v", err)
+		return stats
+	}
+
 	// Helper function to read per-CPU array and sum values
 	readStat := func(key uint32) uint64 {
 		var values []uint64
-		if err := dp.maps.StatsMap.Lookup(&key, &values); err != nil {
+		if err := maps.StatsMap.Lookup(&key, &values); err != nil {
 			log.Debugf("Failed to lookup stat key %d: %v", key, err)
 			return 0
 		}
@@ -226,20 +210,40 @@ func (dp *DataPlane) GetFlowRingBuffer() *ringbuf.Reader {
 
 // GetSessionMap 返回会话 map 供外部访问
 func (dp *DataPlane) GetSessionMap() *ebpf.Map {
-	return dp.maps.SessionMap
+	maps, err := dp.manager.GetMaps()
+	if err != nil {
+		log.Debugf("Failed to get maps: %v", err)
+		return nil
+	}
+	return maps.SessionMap
 }
 
 // GetPolicyMap 返回策略 map 供外部访问
 func (dp *DataPlane) GetPolicyMap() *ebpf.Map {
-	return dp.maps.PolicyMap
+	maps, err := dp.manager.GetMaps()
+	if err != nil {
+		log.Debugf("Failed to get maps: %v", err)
+		return nil
+	}
+	return maps.PolicyMap
 }
 
 // GetWildcardPolicyMap 返回通配符策略 map 供外部访问
 func (dp *DataPlane) GetWildcardPolicyMap() *ebpf.Map {
-	return dp.maps.WildcardPolicyMap
+	maps, err := dp.manager.GetMaps()
+	if err != nil {
+		log.Debugf("Failed to get maps: %v", err)
+		return nil
+	}
+	return maps.WildcardPolicyMap
 }
 
 // GetMode 返回当前数据平面模式
 func (dp *DataPlane) GetMode() DataPlaneMode {
-	return dp.mode
+	return dp.manager.GetMode()
+}
+
+// GetManager 返回底层的 Manager (用于高级操作)
+func (dp *DataPlane) GetManager() *Manager {
+	return dp.manager
 }
