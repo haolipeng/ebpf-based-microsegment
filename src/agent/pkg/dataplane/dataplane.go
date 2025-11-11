@@ -8,27 +8,23 @@ import (
 	"net"
 
 	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 	log "github.com/sirupsen/logrus"
-	"github.com/vishvananda/netlink"
-	"golang.org/x/sys/unix"
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall" -target amd64 bpf ../../../bpf/tc_microsegment.bpf.c -- -I../../../bpf -I../../../../vmlinux/x86
 
-// DataPlane manages the eBPF data plane
+// DataPlane 管理 eBPF 数据平面
 type DataPlane struct {
-	objs      *bpfObjects
-	iface     string
-	ifaceIdx  int
-	tcLink    link.Link
-	tcFilter  *netlink.BpfFilter // For legacy TC cleanup
-	rbReader  *ringbuf.Reader
-	useLegacy bool // Track if using legacy TC attachment
+	iface    string          // 网卡名称
+	ifaceIdx int             // 网卡索引
+	mode     DataPlaneMode   // 数据平面模式
+	tcLoader *TCLoader       // TC 加载器
+	maps     *DataPlaneMaps  // eBPF Map 引用
+	rbReader *ringbuf.Reader // Ring buffer reader
 }
 
-// Statistics holds packet processing statistics
+// Statistics 保存数据包处理统计信息
 type Statistics struct {
 	TotalPackets   uint64
 	AllowedPackets uint64
@@ -40,168 +36,102 @@ type Statistics struct {
 	PolicyMisses   uint64
 }
 
-// New creates a new data plane instance
+// New 创建一个新的数据平面实例
+// 自动检测系统能力并选择最佳模式 (TCX 或 Legacy TC)
 func New(iface string) (*DataPlane, error) {
-	// Get interface index
+	// 获取网卡索引
 	ifaceObj, err := net.InterfaceByName(iface)
 	if err != nil {
 		return nil, fmt.Errorf("interface %s not found: %w", iface, err)
 	}
 
-	// Load eBPF objects
-	objs := &bpfObjects{}
-	if err := loadBpfObjects(objs, nil); err != nil {
-		return nil, fmt.Errorf("loading eBPF objects: %w", err)
+	// 检测系统能力
+	caps, err := DetectCapabilities(iface)
+	if err != nil {
+		return nil, fmt.Errorf("detecting capabilities: %w", err)
 	}
 
-	log.Debugf("eBPF objects loaded successfully")
+	// 选择模式 (目前只支持 TC,优先 TCX)
+	config := &ModeConfig{
+		ForceMode:       ModeUnknown, // 自动选择
+		PreferXDP:       false,       // 目前不使用 XDP
+		AllowGenericXDP: false,
+	}
 
-	// Attach TC program to interface
-	// Try TCX first (kernel >= 6.6), fallback to legacy TC hook if not supported
-	var tcLink link.Link
-	tcLink, err = link.AttachTCX(link.TCXOptions{
-		Interface: ifaceObj.Index,
-		Program:   objs.TcMicrosegmentFilter,
-		Attach:    ebpf.AttachTCXIngress,
-	})
-	if err != nil {
-		// TCX not supported (kernel < 6.6), fallback to legacy netlink-based TC hook
-		log.Warnf("TCX attach failed (requires kernel >= 6.6), falling back to legacy TC hook: %v", err)
+	// 选择最佳模式
+	mode := SelectBestMode(caps, config)
 
-		// Attach using netlink (compatible with kernel >= 4.18)
-		nlLink, err := netlink.LinkByIndex(ifaceObj.Index)
-		if err != nil {
-			objs.Close()
-			return nil, fmt.Errorf("getting netlink interface: %w", err)
-		}
-
-		// Create clsact qdisc if not exists
-		qdisc := &netlink.GenericQdisc{
-			QdiscAttrs: netlink.QdiscAttrs{
-				LinkIndex: ifaceObj.Index,
-				Handle:    netlink.MakeHandle(0xffff, 0),
-				Parent:    netlink.HANDLE_CLSACT,
-			},
-			QdiscType: "clsact",
-		}
-
-		// Try to add qdisc, ignore "file exists" error
-		if err := netlink.QdiscAdd(qdisc); err != nil {
-			// Check if it's "file exists" error (qdisc already present)
-			if !isFileExistsError(err) {
-				objs.Close()
-				return nil, fmt.Errorf("adding clsact qdisc: %w", err)
-			}
-			log.Debugf("clsact qdisc already exists on %s", iface)
+	// 如果选择了 XDP 模式,暂时回退到 TC (因为 XDP 还未实现)
+	if IsXDPMode(mode) {
+		log.Warn("XDP mode selected but not yet implemented, falling back to TC")
+		if caps.SupportsTCX {
+			mode = ModeTCX
 		} else {
-			log.Debugf("Added clsact qdisc to %s", iface)
+			mode = ModeLegacyTC
 		}
-
-		// Clean up any existing filters first (from previous runs)
-		existingFilters, err := netlink.FilterList(nlLink, netlink.HANDLE_MIN_INGRESS)
-		if err == nil {
-			for _, f := range existingFilters {
-				if bpfFilter, ok := f.(*netlink.BpfFilter); ok {
-					if bpfFilter.Name == "tc_microsegment_filter" {
-						netlink.FilterDel(bpfFilter)
-						log.Debugf("Removed old BPF filter from %s", iface)
-					}
-				}
-			}
-		}
-
-		// Attach BPF filter
-		filter := &netlink.BpfFilter{
-			FilterAttrs: netlink.FilterAttrs{
-				LinkIndex: ifaceObj.Index,
-				Parent:    netlink.HANDLE_MIN_INGRESS,
-				Handle:    1,
-				Protocol:  unix.ETH_P_ALL,
-				Priority:  1,
-			},
-			Fd:           objs.TcMicrosegmentFilter.FD(),
-			Name:         "tc_microsegment_filter",
-			DirectAction: true,
-		}
-
-		if err := netlink.FilterAdd(filter); err != nil {
-			objs.Close()
-			return nil, fmt.Errorf("attaching TC filter: %w", err)
-		}
-
-		log.Infof("✓ TC program attached to %s ingress (legacy netlink mode, kernel < 6.6)", iface)
-
-		// Setup ring buffer reader for flow events
-		rbReader, err := ringbuf.NewReader(objs.FlowEvents)
-		if err != nil {
-			netlink.FilterDel(filter)
-			objs.Close()
-			return nil, fmt.Errorf("creating ring buffer reader: %w", err)
-		}
-
-		dp := &DataPlane{
-			objs:      objs,
-			iface:     iface,
-			ifaceIdx:  ifaceObj.Index,
-			tcLink:    nil,
-			tcFilter:  filter,
-			rbReader:  rbReader,
-			useLegacy: true,
-		}
-
-		return dp, nil
-	} else {
-		log.Infof("✓ TC program attached to %s ingress (TCX mode, kernel >= 6.6)", iface)
 	}
 
-	// Setup ring buffer reader for flow events
-	rbReader, err := ringbuf.NewReader(objs.FlowEvents)
+	// 验证选择的模式
+	if !IsTCMode(mode) {
+		return nil, fmt.Errorf("no suitable TC mode available (mode=%v)", mode)
+	}
+
+	log.Infof("Selected dataplane mode: %v", mode)
+
+	// 创建 TC 加载器
+	tcLoader, err := NewTCLoader(mode, iface, ifaceObj.Index)
 	if err != nil {
-		tcLink.Close()
-		objs.Close()
+		return nil, fmt.Errorf("creating TC loader: %w", err)
+	}
+
+	// 加载 TC 程序
+	if err := tcLoader.Load(); err != nil {
+		return nil, fmt.Errorf("loading TC program: %w", err)
+	}
+
+	// 获取 Map 引用
+	maps, err := tcLoader.GetMaps()
+	if err != nil {
+		tcLoader.Unload()
+		return nil, fmt.Errorf("getting maps: %w", err)
+	}
+
+	// 创建 Ring Buffer Reader
+	rbReader, err := ringbuf.NewReader(maps.FlowEventsRB)
+	if err != nil {
+		tcLoader.Unload()
 		return nil, fmt.Errorf("creating ring buffer reader: %w", err)
 	}
 
 	dp := &DataPlane{
-		objs:      objs,
-		iface:     iface,
-		ifaceIdx:  ifaceObj.Index,
-		tcLink:    tcLink,
-		tcFilter:  nil,
-		rbReader:  rbReader,
-		useLegacy: false,
+		iface:    iface,
+		ifaceIdx: ifaceObj.Index,
+		mode:     mode,
+		tcLoader: tcLoader,
+		maps:     maps,
+		rbReader: rbReader,
 	}
 
+	log.Info("✓ Data plane initialized")
 	return dp, nil
 }
 
-// Close cleans up the data plane resources
+// Close 清理数据平面资源
 func (dp *DataPlane) Close() error {
 	var errs []error
 
+	// 关闭 Ring Buffer Reader
 	if dp.rbReader != nil {
 		if err := dp.rbReader.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("closing ring buffer reader: %w", err))
 		}
 	}
 
-	// Clean up TC attachment (TCX or legacy)
-	if dp.useLegacy && dp.tcFilter != nil {
-		// Legacy netlink-based TC cleanup
-		if err := netlink.FilterDel(dp.tcFilter); err != nil {
-			errs = append(errs, fmt.Errorf("removing TC filter: %w", err))
-		} else {
-			log.Debugf("TC filter removed from %s", dp.iface)
+	// 卸载 TC 程序
+	if dp.tcLoader != nil {
+		if err := dp.tcLoader.Unload(); err != nil {
+			errs = append(errs, fmt.Errorf("unloading TC loader: %w", err))
 		}
-	} else if dp.tcLink != nil {
-		// TCX cleanup
-		if err := dp.tcLink.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("detaching TC program: %w", err))
-		}
-	}
-
-	if dp.objs != nil {
-		dp.objs.Close()
 	}
 
 	if len(errs) > 0 {
@@ -212,14 +142,14 @@ func (dp *DataPlane) Close() error {
 	return nil
 }
 
-// GetStatistics retrieves current packet processing statistics
+// GetStatistics 获取当前数据包处理统计信息
 func (dp *DataPlane) GetStatistics() Statistics {
 	stats := Statistics{}
 
 	// Helper function to read per-CPU array and sum values
 	readStat := func(key uint32) uint64 {
 		var values []uint64
-		if err := dp.objs.StatsMap.Lookup(&key, &values); err != nil {
+		if err := dp.maps.StatsMap.Lookup(&key, &values); err != nil {
 			log.Debugf("Failed to lookup stat key %d: %v", key, err)
 			return 0
 		}
@@ -243,7 +173,7 @@ func (dp *DataPlane) GetStatistics() Statistics {
 	return stats
 }
 
-// MonitorFlowEvents continuously reads and processes flow events from ring buffer
+// MonitorFlowEvents 持续读取和处理 ring buffer 中的流事件
 func (dp *DataPlane) MonitorFlowEvents() {
 	log.Info("Starting flow event monitoring")
 
@@ -258,14 +188,14 @@ func (dp *DataPlane) MonitorFlowEvents() {
 			continue
 		}
 
-		// Parse flow event - simple struct parsing
+		// 解析流事件 - 简单的结构体解析
 		if len(record.RawSample) < 32 {
 			log.Warn("Received incomplete flow event")
 			continue
 		}
 
-		// Manual parsing of flow event structure
-		// Parse flow key (5-tuple)
+		// 手动解析流事件结构
+		// 解析流键 (5-tuple)
 		srcIP := binary.LittleEndian.Uint32(record.RawSample[0:4])
 		dstIP := binary.LittleEndian.Uint32(record.RawSample[4:8])
 		srcPort := binary.LittleEndian.Uint16(record.RawSample[8:10])
@@ -282,39 +212,33 @@ func (dp *DataPlane) MonitorFlowEvents() {
 	}
 }
 
-// Helper: Convert uint32 IP to net.IP
+// intToIP 将 uint32 IP 转换为 net.IP
 func intToIP(ip uint32) net.IP {
 	return net.IPv4(byte(ip), byte(ip>>8), byte(ip>>16), byte(ip>>24))
 }
 
-// GetFlowRingBuffer returns the ring buffer reader for flow events
-// This allows external components (like flow.Collector) to read flow events
+// GetFlowRingBuffer 返回流事件的 ring buffer reader
+// 这允许外部组件 (如 flow.Collector) 读取流事件
 func (dp *DataPlane) GetFlowRingBuffer() *ringbuf.Reader {
 	return dp.rbReader
 }
 
-// GetSessionMap returns the session map for external access
+// GetSessionMap 返回会话 map 供外部访问
 func (dp *DataPlane) GetSessionMap() *ebpf.Map {
-	return dp.objs.SessionMap
+	return dp.maps.SessionMap
 }
 
-// GetPolicyMap returns the policy map for external access
+// GetPolicyMap 返回策略 map 供外部访问
 func (dp *DataPlane) GetPolicyMap() *ebpf.Map {
-	return dp.objs.PolicyMap
+	return dp.maps.PolicyMap
 }
 
-// GetWildcardPolicyMap returns the wildcard policy map for external access
+// GetWildcardPolicyMap 返回通配符策略 map 供外部访问
 func (dp *DataPlane) GetWildcardPolicyMap() *ebpf.Map {
-	return dp.objs.WildcardPolicyMap
+	return dp.maps.WildcardPolicyMap
 }
 
-// isFileExistsError checks if an error is due to "file exists"
-func isFileExistsError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Check for EEXIST error (file exists)
-	return err.Error() == "file exists" ||
-		err.Error() == unix.EEXIST.Error() ||
-		errors.Is(err, unix.EEXIST)
+// GetMode 返回当前数据平面模式
+func (dp *DataPlane) GetMode() DataPlaneMode {
+	return dp.mode
 }

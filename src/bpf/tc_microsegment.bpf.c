@@ -68,6 +68,9 @@ static __always_inline void update_stats(__u32 key) {
     }
 }
 
+// Include policy matching logic (requires update_stats to be defined first)
+#include "headers/policy_match.h"
+
 // Helper: Get current timestamp in nanoseconds
 static __always_inline __u64 get_timestamp_ns() {
     return bpf_ktime_get_ns();
@@ -118,91 +121,6 @@ static __always_inline int extract_flow_key(struct __sk_buff *skb, struct flow_k
     }
     
     return 0;
-}
-
-// Helper: Check if flow matches wildcard policy
-static __always_inline bool matches_wildcard(
-    struct flow_key *key,
-    struct wildcard_policy *wildcard)
-{
-    // IP matching with masks
-    if ((key->src_ip & wildcard->src_ip_mask) !=
-        (wildcard->src_ip & wildcard->src_ip_mask))
-        return false;
-
-    if ((key->dst_ip & wildcard->dst_ip_mask) !=
-        (wildcard->dst_ip & wildcard->dst_ip_mask))
-        return false;
-
-    // Port matching (0 = wildcard, matches any)
-    if (wildcard->src_port != 0 && key->src_port != wildcard->src_port)
-        return false;
-
-    if (wildcard->dst_port != 0 && key->dst_port != wildcard->dst_port)
-        return false;
-
-    // Protocol matching (0 = wildcard, matches any)
-    if (wildcard->protocol != 0 && key->protocol != wildcard->protocol)
-        return false;
-
-    return true;
-}
-
-// Helper: Lookup policy with wildcard support
-// Fast path: Try exact match first (most common)
-// Slow path: Linear search wildcard policies (only for first packet)
-static __always_inline __u8 lookup_policy_action(struct flow_key *key, __u32 *rule_id) {
-    // FAST PATH: Try exact match first (O(1) hash lookup)
-    struct policy_value *policy = bpf_map_lookup_elem(&policy_map, key);
-    if (policy) {
-        // Increment hit count (simple increment, not atomic for speed)
-        policy->hit_count += 1;
-        update_stats(STATS_POLICY_HITS);
-        *rule_id = policy->rule_id;
-        return policy->action;
-    }
-
-    // SLOW PATH: Linear search wildcard policies
-    // Use #pragma unroll to help verifier, limit iterations
-    struct wildcard_policy *wildcard = NULL;
-    struct wildcard_policy *best_match = NULL;
-    __u16 best_priority = 0;
-
-    // Search for matching wildcard policies
-    // Limit to reasonable number to pass verifier
-    #pragma unroll
-    for (__u32 i = 0; i < 100; i++) {
-        __u32 idx = i;
-        if (idx >= MAX_ENTRIES_WILDCARD_POLICY)
-            break;
-
-        wildcard = bpf_map_lookup_elem(&wildcard_policy_map, &idx);
-        if (!wildcard)
-            continue;
-
-        // Skip empty slots (rule_id == 0)
-        if (wildcard->rule_id == 0)
-            continue;
-
-        // Check if this policy matches
-        if (matches_wildcard(key, wildcard)) {
-            // Select highest priority match
-            if (!best_match || wildcard->priority > best_priority) {
-                best_match = wildcard;
-                best_priority = wildcard->priority;
-            }
-        }
-    }
-
-    if (best_match) {
-        update_stats(STATS_POLICY_HITS);
-        *rule_id = best_match->rule_id;
-        return best_match->action;
-    }
-
-    update_stats(STATS_POLICY_MISSES);
-    *rule_id = 0;
-    return POLICY_ACTION_ALLOW;  // Default allow if no policy matches
 }
 
 // Helper: Push flow event to user-space via Ring Buffer
