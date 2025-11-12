@@ -11,6 +11,13 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// Policy Direction constants
+const (
+	DirectionAny     = "any"
+	DirectionIngress = "ingress"
+	DirectionEgress  = "egress"
+)
+
 // Policy represents a network policy rule
 type Policy struct {
 	RuleID   uint32
@@ -18,8 +25,9 @@ type Policy struct {
 	DstIP    string // CIDR notation
 	SrcPort  uint16
 	DstPort  uint16
-	Protocol string // "tcp", "udp", "icmp", "any"
-	Action   string // "allow", "deny", "log"
+	Protocol string    // "tcp", "udp", "icmp", "any"
+	Action   string    // "allow", "deny", "log"
+	Direction string   // ✅ New: "any", "ingress", "egress" (default: "any")
 	Priority uint16
 }
 
@@ -88,6 +96,12 @@ func (pm *PolicyManager) LoadPersisted() error {
 
 // AddPolicy adds a new policy rule
 func (pm *PolicyManager) AddPolicy(p *Policy) error {
+	// ✅ New: Validate and normalize direction
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("policy validation failed: %w", err)
+	}
+	p.NormalizeDirection()
+
 	// Add to eBPF map
 	if err := pm.addPolicyToMap(p); err != nil {
 		return err
@@ -160,20 +174,23 @@ func (pm *PolicyManager) addExactPolicy(p *Policy) error {
 		return fmt.Errorf("invalid action: %w", err)
 	}
 
-	// Build policy key
+	// Build policy key (6-tuple with direction)
 	key := struct {
-		SrcIp    uint32
-		DstIp    uint32
-		SrcPort  uint16
-		DstPort  uint16
-		Protocol uint8
-		Pad      [3]uint8
+		SrcIp     uint32
+		DstIp     uint32
+		SrcPort   uint16
+		DstPort   uint16
+		Protocol  uint8
+		Direction uint8  // ✅ New: direction field
+		Pad       uint16 // Updated padding for 16-byte alignment
 	}{
-		SrcIp:    ipToUint32(srcIP),
-		DstIp:    ipToUint32(dstIP),
-		SrcPort:  htons(p.SrcPort),
-		DstPort:  htons(p.DstPort),
-		Protocol: proto,
+		SrcIp:     ipToUint32(srcIP),
+		DstIp:     ipToUint32(dstIP),
+		SrcPort:   htons(p.SrcPort),
+		DstPort:   htons(p.DstPort),
+		Protocol:  proto,
+		Direction: p.GetDirectionValue(), // ✅ New: add direction
+		Pad:       0,
 	}
 
 	// Build policy value
@@ -196,8 +213,8 @@ func (pm *PolicyManager) addExactPolicy(p *Policy) error {
 		return fmt.Errorf("failed to add policy to map: %w", err)
 	}
 
-	log.Infof("Policy added: rule_id=%d %s:%d -> %s:%d proto=%s action=%s",
-		p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Protocol, p.Action)
+	log.Infof("Policy added: rule_id=%d %s:%d -> %s:%d proto=%s action=%s dir=%s",
+		p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Protocol, p.Action, p.Direction)
 
 	// Note: For CIDR matching, we need to implement LPM trie
 	// For now, we only support exact IP matching
@@ -209,7 +226,12 @@ func (pm *PolicyManager) addExactPolicy(p *Policy) error {
 
 // DeletePolicy removes a policy rule based on its 5-tuple
 func (pm *PolicyManager) DeletePolicy(p *Policy) error {
-	// Parse IPs and protocol
+	// Check if this is a wildcard policy
+	if hasWildcard(p) {
+		return pm.deleteWildcardPolicy(p)
+	}
+
+	// Parse IPs and protocol for exact policy
 	srcIP, _, err := parseCIDR(p.SrcIP)
 	if err != nil {
 		return fmt.Errorf("invalid source IP: %w", err)
@@ -225,20 +247,23 @@ func (pm *PolicyManager) DeletePolicy(p *Policy) error {
 		return fmt.Errorf("invalid protocol: %w", err)
 	}
 
-	// Build policy key
+	// Build policy key (6-tuple with direction)
 	key := struct {
-		SrcIp    uint32
-		DstIp    uint32
-		SrcPort  uint16
-		DstPort  uint16
-		Protocol uint8
-		Pad      [3]uint8
+		SrcIp     uint32
+		DstIp     uint32
+		SrcPort   uint16
+		DstPort   uint16
+		Protocol  uint8
+		Direction uint8  // ✅ New: direction field
+		Pad       uint16 // Updated padding for 16-byte alignment
 	}{
-		SrcIp:    ipToUint32(srcIP),
-		DstIp:    ipToUint32(dstIP),
-		SrcPort:  htons(p.SrcPort),
-		DstPort:  htons(p.DstPort),
-		Protocol: proto,
+		SrcIp:     ipToUint32(srcIP),
+		DstIp:     ipToUint32(dstIP),
+		SrcPort:   htons(p.SrcPort),
+		DstPort:   htons(p.DstPort),
+		Protocol:  proto,
+		Direction: p.GetDirectionValue(), // ✅ New: add direction
+		Pad:       0,
 	}
 
 	// Delete from eBPF map
@@ -246,8 +271,8 @@ func (pm *PolicyManager) DeletePolicy(p *Policy) error {
 		return fmt.Errorf("failed to delete policy from map: %w", err)
 	}
 
-	log.Infof("Policy deleted: rule_id=%d %s:%d -> %s:%d proto=%s",
-		p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Protocol)
+	log.Infof("Policy deleted: rule_id=%d %s:%d -> %s:%d proto=%s dir=%s",
+		p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Protocol, p.Direction)
 
 	// Delete from persistent storage if configured
 	if pm.storage != nil {
@@ -266,12 +291,13 @@ func (pm *PolicyManager) ListPolicies() ([]Policy, error) {
 
 	// Iterate through eBPF policy map
 	var key struct {
-		SrcIp    uint32
-		DstIp    uint32
-		SrcPort  uint16
-		DstPort  uint16
-		Protocol uint8
-		Pad      [3]uint8
+		SrcIp     uint32
+		DstIp     uint32
+		SrcPort   uint16
+		DstPort   uint16
+		Protocol  uint8
+		Direction uint8  // ✅ New: direction field
+		Pad       uint16 // Updated padding
 	}
 
 	var value struct {
@@ -286,14 +312,15 @@ func (pm *PolicyManager) ListPolicies() ([]Policy, error) {
 	for iter.Next(&key, &value) {
 		// Convert back to Policy struct
 		policy := Policy{
-			RuleID:   value.RuleID,
-			SrcIP:    uint32ToIP(key.SrcIp),
-			DstIP:    uint32ToIP(key.DstIp),
-			SrcPort:  ntohs(key.SrcPort),
-			DstPort:  ntohs(key.DstPort),
-			Protocol: protoToString(key.Protocol),
-			Action:   actionToString(value.Action),
-			Priority: value.Priority,
+			RuleID:    value.RuleID,
+			SrcIP:     uint32ToIP(key.SrcIp),
+			DstIP:     uint32ToIP(key.DstIp),
+			SrcPort:   ntohs(key.SrcPort),
+			DstPort:   ntohs(key.DstPort),
+			Protocol:  protoToString(key.Protocol),
+			Action:    actionToString(value.Action),
+			Direction: directionToString(key.Direction), // ✅ New: convert direction
+			Priority:  value.Priority,
 		}
 		policies = append(policies, policy)
 	}
@@ -312,6 +339,67 @@ func (pm *PolicyManager) GetPolicyCount() int {
 		return 0
 	}
 	return len(policies)
+}
+
+// Clear clears all policies from both exact and wildcard policy maps
+func (pm *PolicyManager) Clear() error {
+	// 1. Clear exact policy map (hash map)
+	// Delete all entries by iterating
+	var key struct {
+		SrcIp     uint32
+		DstIp     uint32
+		SrcPort   uint16
+		DstPort   uint16
+		Protocol  uint8
+		Direction uint8
+		Pad       uint16
+	}
+
+	var value struct {
+		Action     uint8
+		LogEnabled uint8
+		Priority   uint16
+		RuleID     uint32
+		HitCount   uint64
+	}
+
+	iter := pm.policyMap.Iterate()
+	for iter.Next(&key, &value) {
+		if err := pm.policyMap.Delete(&key); err != nil {
+			// Continue even if delete fails
+			continue
+		}
+	}
+
+	// 2. Clear wildcard policy map (array map)
+	// Zero out all slots up to MAX_ENTRIES_WILDCARD_POLICY
+	zeroPolicy := struct {
+		SrcIP      uint32
+		SrcIPMask  uint32
+		DstIP      uint32
+		DstIPMask  uint32
+		SrcPort    uint16
+		DstPort    uint16
+		Protocol   uint8
+		Action     uint8
+		LogEnabled uint8
+		Direction  uint8
+		Priority   uint16
+		Pad        uint16
+		RuleID     uint32
+	}{
+		// All fields zero
+	}
+
+	// Clear up to 1000 slots (MAX_ENTRIES_WILDCARD_POLICY)
+	for i := uint32(0); i < 1000; i++ {
+		if err := pm.wildcardPolicyMap.Put(&i, &zeroPolicy); err != nil {
+			// Continue even if put fails
+			continue
+		}
+	}
+
+	return nil
 }
 
 // Helper functions
@@ -421,23 +509,25 @@ func (pm *PolicyManager) addWildcardPolicy(p *Policy) error {
 		SrcPort    uint16
 		DstPort    uint16
 		Protocol   uint8
-		Action     uint8
+		Action     uint8      // 注意: 必须与 eBPF 结构体顺序一致
 		LogEnabled uint8
-		Pad1       uint8
+		Direction  uint8      // ✅ New: direction field (顺序很重要!)
 		Priority   uint16
-		Pad2       uint16
+		Pad        uint16     // Updated padding for alignment
 		RuleID     uint32
 	}{
 		SrcIP:      ipToUint32(srcIP),
 		SrcIPMask:  maskToUint32(srcMask),
 		DstIP:      ipToUint32(dstIP),
 		DstIPMask:  maskToUint32(dstMask),
-		SrcPort:    htons(p.SrcPort), // 0 = wildcard
-		DstPort:    htons(p.DstPort), // 0 = wildcard
-		Protocol:   proto,             // 0 = wildcard
+		SrcPort:    htons(p.SrcPort),         // 0 = wildcard
+		DstPort:    htons(p.DstPort),         // 0 = wildcard
+		Protocol:   proto,                    // 0 = wildcard
 		Action:     action,
 		LogEnabled: boolToUint8(p.Action == "log"),
+		Direction:  p.GetDirectionValue(),    // ✅ New: add direction
 		Priority:   p.Priority,
+		Pad:        0,
 		RuleID:     p.RuleID,
 	}
 
@@ -453,11 +543,11 @@ func (pm *PolicyManager) addWildcardPolicy(p *Policy) error {
 			SrcPort    uint16
 			DstPort    uint16
 			Protocol   uint8
-			Action     uint8
+			Action     uint8      // 必须与 eBPF 顺序一致
 			LogEnabled uint8
-			Pad1       uint8
+			Direction  uint8      // ✅ New: direction field
 			Priority   uint16
-			Pad2       uint16
+			Pad        uint16     // Updated padding
 			RuleID     uint32
 		}
 
@@ -471,8 +561,8 @@ func (pm *PolicyManager) addWildcardPolicy(p *Policy) error {
 				return fmt.Errorf("failed to add wildcard policy to map slot %d: %w", i, err)
 			}
 
-			log.Infof("Wildcard policy added to slot %d: rule_id=%d %s:%d -> %s:%d proto=%s action=%s (priority=%d)",
-				i, p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Protocol, p.Action, p.Priority)
+			log.Infof("Wildcard policy added to slot %d: rule_id=%d %s:%d -> %s:%d proto=%s action=%s dir=%s (priority=%d)",
+				i, p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Protocol, p.Action, p.Direction, p.Priority)
 			return nil
 		}
 
@@ -489,6 +579,77 @@ func (pm *PolicyManager) addWildcardPolicy(p *Policy) error {
 	}
 
 	return fmt.Errorf("wildcard policy map is full (max 1000 entries)")
+}
+
+// deleteWildcardPolicy removes a wildcard policy from the array map
+func (pm *PolicyManager) deleteWildcardPolicy(p *Policy) error {
+	// Search for the policy by RuleID in all slots
+	for i := uint32(0); i < 1000; i++ {
+		var existing struct {
+			SrcIP      uint32
+			SrcIPMask  uint32
+			DstIP      uint32
+			DstIPMask  uint32
+			SrcPort    uint16
+			DstPort    uint16
+			Protocol   uint8
+			Action     uint8
+			LogEnabled uint8
+			Direction  uint8
+			Priority   uint16
+			Pad        uint16
+			RuleID     uint32
+		}
+
+		// Read the existing entry
+		err := pm.wildcardPolicyMap.Lookup(&i, &existing)
+		if err != nil {
+			// Slot might be uninitialized, continue
+			continue
+		}
+
+		// Check if this slot has our target RuleID
+		if existing.RuleID == p.RuleID {
+			// Found the policy, zero it out
+			zeroPolicy := struct {
+				SrcIP      uint32
+				SrcIPMask  uint32
+				DstIP      uint32
+				DstIPMask  uint32
+				SrcPort    uint16
+				DstPort    uint16
+				Protocol   uint8
+				Action     uint8
+				LogEnabled uint8
+				Direction  uint8
+				Priority   uint16
+				Pad        uint16
+				RuleID     uint32
+			}{
+				// All fields zero
+			}
+
+			if err := pm.wildcardPolicyMap.Put(&i, &zeroPolicy); err != nil {
+				return fmt.Errorf("failed to delete wildcard policy from slot %d: %w", i, err)
+			}
+
+			log.Infof("Wildcard policy deleted from slot %d: rule_id=%d %s:%d -> %s:%d proto=%s dir=%s",
+				i, p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Protocol, p.Direction)
+
+			// Delete from persistent storage if configured
+			if pm.storage != nil {
+				if err := pm.storage.DeletePolicy(p.RuleID); err != nil {
+					log.Warnf("Failed to delete policy from storage rule_id=%d: %v", p.RuleID, err)
+					// Continue even if persistence fails
+				}
+			}
+
+			return nil
+		}
+	}
+
+	// Policy not found
+	return fmt.Errorf("wildcard policy with rule_id=%d not found in map", p.RuleID)
 }
 
 func uint32ToIP(ip uint32) string {
@@ -724,4 +885,83 @@ func (pm *PolicyManager) RecompileAllPolicyRules() error {
 
 	log.Infof("Recompilation complete: %d/%d rules recompiled successfully", successCount, len(rules))
 	return nil
+}
+
+// ========== Direction Helper Methods ==========
+
+// GetDirectionValue 将字符串 direction 转换为 eBPF 数值
+// 返回值对应 eBPF 中的 enum policy_direction
+func (p *Policy) GetDirectionValue() uint8 {
+	switch strings.ToLower(p.Direction) {
+	case DirectionIngress:
+		return 1 // POLICY_DIR_INGRESS
+	case DirectionEgress:
+		return 2 // POLICY_DIR_EGRESS
+	default:
+		return 0 // POLICY_DIR_ANY (default)
+	}
+}
+
+// NormalizeDirection 规范化 Direction 字段
+// 如果为空或无效,设置为 DirectionAny
+func (p *Policy) NormalizeDirection() {
+	p.Direction = strings.ToLower(p.Direction)
+	if p.Direction != DirectionIngress && p.Direction != DirectionEgress {
+		p.Direction = DirectionAny
+	}
+}
+
+// Validate 验证策略的有效性
+func (p *Policy) Validate() error {
+	// Validate direction
+	if p.Direction != "" &&
+		p.Direction != DirectionAny &&
+		p.Direction != DirectionIngress &&
+		p.Direction != DirectionEgress {
+		return fmt.Errorf("invalid direction: %s (must be 'any', 'ingress', or 'egress')", p.Direction)
+	}
+
+	// Validate protocol
+	validProtocols := map[string]bool{
+		"tcp": true, "udp": true, "icmp": true, "any": true, "": true,
+	}
+	if !validProtocols[strings.ToLower(p.Protocol)] {
+		return fmt.Errorf("invalid protocol: %s", p.Protocol)
+	}
+
+	// Validate action
+	validActions := map[string]bool{
+		"allow": true, "deny": true, "log": true,
+	}
+	if !validActions[strings.ToLower(p.Action)] {
+		return fmt.Errorf("invalid action: %s", p.Action)
+	}
+
+	// Validate IPs
+	if p.SrcIP != "" {
+		if _, _, err := parseCIDR(p.SrcIP); err != nil {
+			return fmt.Errorf("invalid source IP: %w", err)
+		}
+	}
+	if p.DstIP != "" {
+		if _, _, err := parseCIDR(p.DstIP); err != nil {
+			return fmt.Errorf("invalid destination IP: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// directionToString 将 eBPF 数值转换为字符串 direction
+func directionToString(direction uint8) string {
+	switch direction {
+	case 1:
+		return DirectionIngress
+	case 2:
+		return DirectionEgress
+	case 0:
+		return DirectionAny
+	default:
+		return DirectionAny
+	}
 }

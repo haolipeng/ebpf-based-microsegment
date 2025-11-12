@@ -14,48 +14,48 @@
 ## Requirements
 ### Requirement: 5 元组精确匹配
 
-系统必须(SHALL)支持基于 5 元组的精确匹配：
+系统必须(SHALL)支持基于 **6 元组**的精确匹配（扩展为包含方向）：
 - 源 IP 地址（IPv4）
 - 目标 IP 地址（IPv4）
 - 源端口（0-65535）
 - 目标端口（0-65535）
 - 协议（TCP、UDP、ICMP、ANY）
+- **方向（INGRESS、EGRESS、ANY）** ✅ 新增
 
-#### Scenario: SSH 流量的精确匹配
+**变更说明**: 从 5 元组扩展为 6 元组，添加方向维度。
 
-**Given** 存在策略：src=192.168.1.0、dst=10.0.0.5、sport=ANY、dport=22、proto=TCP
-**When** 到达数据包：src=192.168.1.100、dst=10.0.0.5、sport=45678、dport=22、proto=TCP
-**Then** 如果 src 和 dst 完全匹配（或是通配符），策略查找必须(SHALL)匹配
+#### Scenario: SSH 流量的方向感知精确匹配
 
-#### Scenario: 协议特定匹配
+**Given** 存在策略：src=192.168.1.0、dst=10.0.0.5、sport=ANY、dport=22、proto=TCP、direction=INGRESS
+**When** ingress 数据包到达：src=192.168.1.100、dst=10.0.0.5、sport=45678、dport=22、proto=TCP
+**Then** 策略查找必须(SHALL)匹配该策略（因为方向为 INGRESS）
+**When** egress 数据包到达：src=10.0.0.5、dst=192.168.1.100、sport=22、dport=45678、proto=TCP
+**Then** 策略查找必须(SHALL)不匹配该策略（因为方向为 EGRESS 而策略要求 INGRESS）
 
-**Given** 存在策略：dst=10.0.0.10、dport=80、proto=TCP，action=ALLOW
-**And** 存在另一个策略：dst=10.0.0.10、dport=80、proto=UDP，action=DENY
-**When** TCP 数据包到达 10.0.0.10:80
-**Then** 系统必须(SHALL)匹配 TCP 策略（ALLOW）
-**When** UDP 数据包到达 10.0.0.10:80
-**Then** 系统必须(SHALL)匹配 UDP 策略（DENY）
+#### Scenario: 方向通配符匹配（direction=ANY）
+
+**Given** 存在策略：dst=10.0.0.10、dport=80、proto=TCP、direction=ANY、action=ALLOW
+**When** ingress 数据包到达 10.0.0.10:80
+**Then** 系统必须(SHALL)匹配该策略（ANY 包含 INGRESS）
+**When** egress 数据包到达 10.0.0.10:80
+**Then** 系统必须(SHALL)匹配该策略（ANY 包含 EGRESS）
 
 ### Requirement: 策略存储
 
-系统必须(SHALL)在具有以下特征的 eBPF HASH 映射中存储策略：
+系统必须(SHALL)在 eBPF HASH 映射中存储策略，键结构更新为包含方向：
 - 最大条目数：10,000 个策略
-- 键：策略 5 元组（struct policy_key）
+- 键：策略 6 元组（struct policy_key，包含 direction 字段）
 - 值：策略操作和元数据（struct policy_value）
 - O(1) 查找复杂度
 
-#### Scenario: 策略映射容量
+**变更说明**: `policy_key` 结构添加 `direction` 字段（uint8）。
 
-**Given** 策略映射的容量为 10,000 个条目
-**When** 系统尝试添加第 10,001 个策略
-**Then** 操作必须(SHALL)失败并返回错误
-**And** 用户空间代理必须(SHALL)收到通知
+#### Scenario: 方向感知策略插入
 
-#### Scenario: 策略插入
-
-**Given** 具有 5 元组和操作的新策略规则
+**Given** 具有 6 元组（包含 direction）和操作的新策略规则
 **When** 用户空间代理调用 AddPolicy()
 **Then** 策略必须(SHALL)插入到 eBPF 策略映射中
+**And** 策略的 direction 字段必须(SHALL)正确设置（1=INGRESS, 2=EGRESS, 0=ANY）
 **And** 策略必须(SHALL)立即对新流生效
 
 ### Requirement: 策略操作
@@ -452,6 +452,46 @@
 **When** 流键为：src=10.0.0.2:12345、dst=10.0.0.100:8080、proto=TCP
 **Then** IP 检查失败：10.0.0.2 ≠ 10.0.0.1
 **And** 必须(SHALL)返回 false（不匹配）
+
+### Requirement: 双向策略独立性
+
+Ingress 和 Egress 策略必须(SHALL)独立执行：
+- 同一个 5 元组可以有不同的 ingress 和 egress 策略
+- Ingress 策略不影响 egress 流量，反之亦然
+
+#### Scenario: 同一 5 元组的双向不同策略
+
+**Given** 存在两个策略：
+  - 策略 1: dst=10.0.0.10、dport=80、direction=INGRESS、action=ALLOW
+  - 策略 2: src=10.0.0.10、dport=ANY、direction=EGRESS、action=DENY
+**When** ingress 数据包到达 10.0.0.10:80
+**Then** 必须(SHALL)应用策略 1，数据包被允许
+**When** egress 数据包从 10.0.0.10 发出
+**Then** 必须(SHALL)应用策略 2，数据包被拒绝
+**And** 两个方向的决策必须(SHALL)完全独立
+
+### Requirement: 默认策略与方向
+
+默认策略（当没有匹配的策略时）必须(SHALL)考虑方向：
+- 如果配置了默认 DENY，必须(SHALL)分别拒绝 ingress 和 egress
+- 统计必须(SHALL)分别记录 ingress 和 egress 的默认拒绝
+
+#### Scenario: 默认拒绝 Egress
+
+**Given** 配置了默认策略为 DENY
+**And** 不存在匹配的 egress 策略
+**When** egress 数据包发出
+**Then** 数据包必须(SHALL)被拒绝
+**And** STAT_EGRESS_DENIED 必须(SHALL)递增
+**And** 流事件必须(SHALL)标记 direction=EGRESS
+
+#### Scenario: 默认允许 Ingress
+
+**Given** 配置了默认策略为 ALLOW
+**And** 不存在匹配的 ingress 策略
+**When** ingress 数据包到达
+**Then** 数据包必须(SHALL)被允许
+**And** STAT_INGRESS_PACKETS 必须(SHALL)递增
 
 ## Data Structures
 

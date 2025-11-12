@@ -24,14 +24,19 @@ type DataPlane struct {
 
 // Statistics 保存数据包处理统计信息
 type Statistics struct {
-	TotalPackets   uint64
-	AllowedPackets uint64
-	DeniedPackets  uint64
-	NewSessions    uint64
-	ClosedSessions uint64
-	ActiveSessions uint64
-	PolicyHits     uint64
-	PolicyMisses   uint64
+	TotalPackets    uint64
+	AllowedPackets  uint64
+	DeniedPackets   uint64
+	NewSessions     uint64
+	ClosedSessions  uint64
+	ActiveSessions  uint64
+	PolicyHits      uint64
+	PolicyMisses    uint64
+	// Direction-specific statistics (for egress support)
+	IngressPackets  uint64
+	EgressPackets   uint64
+	IngressDenied   uint64
+	EgressDenied    uint64
 }
 
 // New 创建一个新的数据平面实例
@@ -154,6 +159,11 @@ func (dp *DataPlane) GetStatistics() Statistics {
 	stats.ActiveSessions = readStat(5)
 	stats.PolicyHits = readStat(6)
 	stats.PolicyMisses = readStat(7)
+	// Direction-specific statistics (for egress support)
+	stats.IngressPackets = readStat(8)  // STATS_INGRESS_PACKETS
+	stats.EgressPackets = readStat(9)   // STATS_EGRESS_PACKETS
+	stats.IngressDenied = readStat(10)  // STATS_INGRESS_DENIED
+	stats.EgressDenied = readStat(11)   // STATS_EGRESS_DENIED
 
 	return stats
 }

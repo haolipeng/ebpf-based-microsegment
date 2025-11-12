@@ -143,7 +143,7 @@ static __always_inline int push_flow_event(
 }
 
 // Helper: Create new session (optimized - minimal initialization)
-static __always_inline int create_session(struct flow_key *key, __u8 action, __u64 ts, __u32 packet_len, __u32 rule_id) {
+static __always_inline int create_session(struct flow_key *key, __u8 action, __u64 ts, __u32 packet_len, __u32 rule_id, __u8 direction) {
     struct session_value new_session = {
         .created_ts = ts,
         .last_seen_ts = ts,
@@ -172,7 +172,7 @@ static __always_inline int create_session(struct flow_key *key, __u8 action, __u
             action,                 // Policy action
             rule_id,                // Matched rule ID
             FLOW_STATE_ACTIVE,      // Initial state
-            FLOW_DIRECTION_EGRESS   // Assume egress by default (can be enhanced)
+            direction               // Actual packet direction (ingress/egress)
         );
     }
 
@@ -183,75 +183,106 @@ static __always_inline int create_session(struct flow_key *key, __u8 action, __u
 SEC("tc")
 int tc_microsegment_filter(struct __sk_buff *skb) {
     struct flow_key key = {0};
-    
+
     // Extract flow key from packet (fast path)
     if (extract_flow_key(skb, &key) < 0) {
         return TC_ACT_OK;  // Pass non-IP packets
     }
-    
+
+    // 检测数据包方向
+    // ingress_ifindex != 0 表示 ingress (从外部进入)
+    // ingress_ifindex == 0 表示 egress (从内部发出)
+    __u8 direction = (skb->ingress_ifindex != 0) ? POLICY_DIR_INGRESS : POLICY_DIR_EGRESS;
+
     // Update total packets counter
     update_stats(STATS_TOTAL_PACKETS);
-    
+
+    // Update direction-specific counters
+    if (direction == POLICY_DIR_INGRESS) {
+        update_stats(STATS_INGRESS_PACKETS);
+    } else {
+        update_stats(STATS_EGRESS_PACKETS);
+    }
+
     // Fast path: Lookup existing session (most common case)
     struct session_value *session = bpf_map_lookup_elem(&session_map, &key);
-    
+
     if (session) {
         // HOT PATH: Existing session - use cached policy decision
         // This is the most performance-critical path (>99% of packets)
-        
+
         __u8 action = session->policy_action;
-        
+
         // Update session stats (inline for speed)
         session->last_seen_ts = get_timestamp_ns();
         session->packets_to_server += 1;
         session->bytes_to_server += skb->len;
-        
+
         // Fast enforcement check
         if (action == POLICY_ACTION_DENY) {
             update_stats(STATS_DENIED_PACKETS);
+
+            // Update direction-specific deny counters
+            if (direction == POLICY_DIR_INGRESS) {
+                update_stats(STATS_INGRESS_DENIED);
+            } else {
+                update_stats(STATS_EGRESS_DENIED);
+            }
+
 #if DEBUG_MODE
-            bpf_printk("DENY: %pI4:%d -> %pI4:%d (cached)\n",
+            bpf_printk("DENY: %pI4:%d -> %pI4:%d (cached, dir=%d)\n",
                        &key.src_ip, bpf_ntohs(key.src_port),
-                       &key.dst_ip, bpf_ntohs(key.dst_port));
+                       &key.dst_ip, bpf_ntohs(key.dst_port),
+                       direction);
 #endif
             return TC_ACT_SHOT;  // Drop packet
         }
-        
+
         update_stats(STATS_ALLOWED_PACKETS);
         return TC_ACT_OK;  // Allow packet
     }
-    
+
     // SLOW PATH: New session - lookup policy with wildcard support
     // This happens less frequently, so more overhead is acceptable
 
     __u64 now = get_timestamp_ns();
     __u32 matched_rule_id = 0;
-    __u8 action = lookup_policy_action(&key, &matched_rule_id);
+    __u8 action = lookup_policy_action(&key, direction, &matched_rule_id);
 
 #if DEBUG_MODE
     if (matched_rule_id != 0) {
-        bpf_printk("Policy %d matched: %pI4:%d -> %pI4:%d action=%d\n",
+        bpf_printk("Policy %d matched: %pI4:%d -> %pI4:%d action=%d dir=%d\n",
                    matched_rule_id,
                    &key.src_ip, bpf_ntohs(key.src_port),
                    &key.dst_ip, bpf_ntohs(key.dst_port),
-                   action);
+                   action,
+                   direction);
     }
 #endif
-    
+
     // Create new session with policy action (includes first packet stats)
-    create_session(&key, action, now, skb->len, matched_rule_id);
-    
+    create_session(&key, action, now, skb->len, matched_rule_id, direction);
+
     // Enforce policy
     if (action == POLICY_ACTION_DENY) {
         update_stats(STATS_DENIED_PACKETS);
+
+        // Update direction-specific deny counters
+        if (direction == POLICY_DIR_INGRESS) {
+            update_stats(STATS_INGRESS_DENIED);
+        } else {
+            update_stats(STATS_EGRESS_DENIED);
+        }
+
 #if DEBUG_MODE
-        bpf_printk("DENY: %pI4:%d -> %pI4:%d (new)\n",
+        bpf_printk("DENY: %pI4:%d -> %pI4:%d (new, dir=%d)\n",
                    &key.src_ip, bpf_ntohs(key.src_port),
-                   &key.dst_ip, bpf_ntohs(key.dst_port));
+                   &key.dst_ip, bpf_ntohs(key.dst_port),
+                   direction);
 #endif
         return TC_ACT_SHOT;  // Drop packet
     }
-    
+
     update_stats(STATS_ALLOWED_PACKETS);
     return TC_ACT_OK;  // Allow packet
 }

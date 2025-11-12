@@ -11,6 +11,8 @@ source-references/
 # Executables
 tc_microsegment
 microsegment
+microsegment-agent
+microsegment-server
 
 # Debug files
 *.log

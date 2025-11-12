@@ -14,13 +14,15 @@ import (
 
 // TCLoader 负责加载和管理 TC (Traffic Control) eBPF 程序
 type TCLoader struct {
-	mode      DataPlaneMode     // ModeTCX 或 ModeLegacyTC
-	iface     string            // 网卡名称
-	ifaceIdx  int               // 网卡索引
-	objs      *bpfObjects       // eBPF 对象
-	tcLink    link.Link         // TCX link (kernel >= 6.6)
-	tcFilter  *netlink.BpfFilter // Legacy TC filter (kernel < 6.6)
-	pinConfig *MapPinConfig     // Map pinning 配置
+	mode         DataPlaneMode      // ModeTCX 或 ModeLegacyTC
+	iface        string             // 网卡名称
+	ifaceIdx     int                // 网卡索引
+	objs         *bpfObjects        // eBPF 对象
+	ingressLink  link.Link          // TCX ingress link (kernel >= 6.6)
+	egressLink   link.Link          // TCX egress link (kernel >= 6.6) - 新增
+	ingressFilter *netlink.BpfFilter // Legacy TC ingress filter (kernel < 6.6)
+	egressFilter  *netlink.BpfFilter // Legacy TC egress filter (kernel < 6.6) - 新增
+	pinConfig    *MapPinConfig      // Map pinning 配置
 }
 
 // NewTCLoader 创建一个新的 TC 加载器
@@ -61,37 +63,95 @@ func (l *TCLoader) Load() error {
 	log.Debugf("eBPF objects loaded successfully (with Map Pinning)")
 	log.Infof("✓ Pinned maps to: %s", l.pinConfig.PinPath)
 
-	// 3. 根据模式附加 TC 程序
+	// 3. 根据模式附加 TC 程序 (双向: ingress + egress)
 	switch l.mode {
 	case ModeTCX:
-		return l.attachTCX()
+		// 先附加 ingress
+		if err := l.attachTCXIngress(); err != nil {
+			return err
+		}
+		// 再附加 egress (如果失败,清理 ingress)
+		if err := l.attachTCXEgress(); err != nil {
+			l.detachTCXIngress() // 清理已附加的 ingress
+			return err
+		}
+		return nil
 	case ModeLegacyTC:
-		return l.attachLegacyTC()
+		// 先附加 ingress
+		if err := l.attachLegacyTCIngress(); err != nil {
+			return err
+		}
+		// 再附加 egress (如果失败,清理 ingress)
+		if err := l.attachLegacyTCEgress(); err != nil {
+			l.detachLegacyTCIngress() // 清理已附加的 ingress
+			return err
+		}
+		return nil
 	default:
 		l.objs.Close()
 		return fmt.Errorf("unsupported TC mode: %v", l.mode)
 	}
 }
 
-// attachTCX 使用 TCX 附加 TC 程序 (kernel >= 6.6)
-func (l *TCLoader) attachTCX() error {
-	tcLink, err := link.AttachTCX(link.TCXOptions{
+// attachTCXIngress 使用 TCX 附加 Ingress 程序 (kernel >= 6.6)
+func (l *TCLoader) attachTCXIngress() error {
+	ingressLink, err := link.AttachTCX(link.TCXOptions{
 		Interface: l.ifaceIdx,
 		Program:   l.objs.TcMicrosegmentFilter,
 		Attach:    ebpf.AttachTCXIngress,
 	})
 	if err != nil {
 		l.objs.Close()
-		return fmt.Errorf("attaching TCX program: %w", err)
+		return fmt.Errorf("attaching TCX ingress: %w", err)
 	}
 
-	l.tcLink = tcLink
-	log.Infof("✓ TC program attached to %s ingress (TCX mode, kernel >= 6.6)", l.iface)
+	l.ingressLink = ingressLink
+	log.Infof("✓ TC ingress program attached to %s (TCX mode)", l.iface)
 	return nil
 }
 
-// attachLegacyTC 使用 netlink 附加 TC 程序 (kernel >= 4.18)
-func (l *TCLoader) attachLegacyTC() error {
+// attachTCXEgress 使用 TCX 附加 Egress 程序 (kernel >= 6.6)
+func (l *TCLoader) attachTCXEgress() error {
+	egressLink, err := link.AttachTCX(link.TCXOptions{
+		Interface: l.ifaceIdx,
+		Program:   l.objs.TcMicrosegmentFilter, // 使用同一个程序
+		Attach:    ebpf.AttachTCXEgress,         // Egress 方向
+	})
+	if err != nil {
+		return fmt.Errorf("attaching TCX egress: %w", err)
+	}
+
+	l.egressLink = egressLink
+	log.Infof("✓ TC egress program attached to %s (TCX mode)", l.iface)
+	return nil
+}
+
+// detachTCXIngress 分离 TCX Ingress hook
+func (l *TCLoader) detachTCXIngress() error {
+	if l.ingressLink != nil {
+		if err := l.ingressLink.Close(); err != nil {
+			return fmt.Errorf("detaching TCX ingress: %w", err)
+		}
+		l.ingressLink = nil
+		log.Debugf("TCX ingress link closed")
+	}
+	return nil
+}
+
+// detachTCXEgress 分离 TCX Egress hook
+func (l *TCLoader) detachTCXEgress() error {
+	if l.egressLink != nil {
+		if err := l.egressLink.Close(); err != nil {
+			return fmt.Errorf("detaching TCX egress: %w", err)
+		}
+		l.egressLink = nil
+		log.Debugf("TCX egress link closed")
+	}
+	return nil
+}
+
+// attachLegacyTCIngress 使用 netlink 附加 Ingress 程序 (kernel >= 4.18)
+func (l *TCLoader) attachLegacyTCIngress() error {
 	// 1. 获取 netlink interface
 	nlLink, err := netlink.LinkByIndex(l.ifaceIdx)
 	if err != nil {
@@ -120,21 +180,21 @@ func (l *TCLoader) attachLegacyTC() error {
 		log.Debugf("Added clsact qdisc to %s", l.iface)
 	}
 
-	// 3. 清理旧的 BPF filter (来自之前的运行)
+	// 3. 清理旧的 ingress filter (来自之前的运行)
 	existingFilters, err := netlink.FilterList(nlLink, netlink.HANDLE_MIN_INGRESS)
 	if err == nil {
 		for _, f := range existingFilters {
 			if bpfFilter, ok := f.(*netlink.BpfFilter); ok {
-				if bpfFilter.Name == "tc_microsegment_filter" {
+				if bpfFilter.Name == "tc_microsegment_ingress" {
 					netlink.FilterDel(bpfFilter)
-					log.Debugf("Removed old BPF filter from %s", l.iface)
+					log.Debugf("Removed old ingress BPF filter from %s", l.iface)
 				}
 			}
 		}
 	}
 
-	// 4. 附加 BPF filter
-	filter := &netlink.BpfFilter{
+	// 4. 附加 ingress BPF filter
+	ingressFilter := &netlink.BpfFilter{
 		FilterAttrs: netlink.FilterAttrs{
 			LinkIndex: l.ifaceIdx,
 			Parent:    netlink.HANDLE_MIN_INGRESS,
@@ -143,39 +203,116 @@ func (l *TCLoader) attachLegacyTC() error {
 			Priority:  1,
 		},
 		Fd:           l.objs.TcMicrosegmentFilter.FD(),
-		Name:         "tc_microsegment_filter",
+		Name:         "tc_microsegment_ingress",
 		DirectAction: true,
 	}
 
-	if err := netlink.FilterAdd(filter); err != nil {
+	if err := netlink.FilterAdd(ingressFilter); err != nil {
 		l.objs.Close()
-		return fmt.Errorf("attaching TC filter: %w", err)
+		return fmt.Errorf("attaching TC ingress filter: %w", err)
 	}
 
-	l.tcFilter = filter
-	log.Infof("✓ TC program attached to %s ingress (legacy netlink mode, kernel >= 4.18)", l.iface)
+	l.ingressFilter = ingressFilter
+	log.Infof("✓ TC ingress program attached to %s (legacy netlink mode)", l.iface)
 	return nil
 }
 
-// Unload 卸载 TC eBPF 程序
+// attachLegacyTCEgress 使用 netlink 附加 Egress 程序 (kernel >= 4.18)
+func (l *TCLoader) attachLegacyTCEgress() error {
+	// 1. 获取 netlink interface
+	nlLink, err := netlink.LinkByIndex(l.ifaceIdx)
+	if err != nil {
+		return fmt.Errorf("getting netlink interface: %w", err)
+	}
+
+	// 2. 确保 clsact qdisc 存在 (应该已在 attachLegacyTCIngress 中创建)
+	// 这里不重复创建,只是为了防御性编程
+
+	// 3. 清理旧的 egress filter (来自之前的运行)
+	existingFilters, err := netlink.FilterList(nlLink, netlink.HANDLE_MIN_EGRESS)
+	if err == nil {
+		for _, f := range existingFilters {
+			if bpfFilter, ok := f.(*netlink.BpfFilter); ok {
+				if bpfFilter.Name == "tc_microsegment_egress" {
+					netlink.FilterDel(bpfFilter)
+					log.Debugf("Removed old egress BPF filter from %s", l.iface)
+				}
+			}
+		}
+	}
+
+	// 4. 附加 egress BPF filter
+	egressFilter := &netlink.BpfFilter{
+		FilterAttrs: netlink.FilterAttrs{
+			LinkIndex: l.ifaceIdx,
+			Parent:    netlink.HANDLE_MIN_EGRESS, // Egress parent
+			Handle:    2,                         // 不同的 handle (避免冲突)
+			Protocol:  unix.ETH_P_ALL,
+			Priority:  1,
+		},
+		Fd:           l.objs.TcMicrosegmentFilter.FD(), // 使用同一个程序
+		Name:         "tc_microsegment_egress",
+		DirectAction: true,
+	}
+
+	if err := netlink.FilterAdd(egressFilter); err != nil {
+		return fmt.Errorf("attaching TC egress filter: %w", err)
+	}
+
+	l.egressFilter = egressFilter
+	log.Infof("✓ TC egress program attached to %s (legacy netlink mode)", l.iface)
+	return nil
+}
+
+// detachLegacyTCIngress 删除 Legacy TC Ingress filter
+func (l *TCLoader) detachLegacyTCIngress() error {
+	if l.ingressFilter != nil {
+		if err := netlink.FilterDel(l.ingressFilter); err != nil {
+			return fmt.Errorf("removing TC ingress filter: %w", err)
+		}
+		l.ingressFilter = nil
+		log.Debugf("TC ingress filter removed from %s", l.iface)
+	}
+	return nil
+}
+
+// detachLegacyTCEgress 删除 Legacy TC Egress filter
+func (l *TCLoader) detachLegacyTCEgress() error {
+	if l.egressFilter != nil {
+		if err := netlink.FilterDel(l.egressFilter); err != nil {
+			return fmt.Errorf("removing TC egress filter: %w", err)
+		}
+		l.egressFilter = nil
+		log.Debugf("TC egress filter removed from %s", l.iface)
+	}
+	return nil
+}
+
+// Unload 卸载 TC eBPF 程序 (双向: egress + ingress)
 func (l *TCLoader) Unload() error {
 	var errs []error
 
-	// 1. 清理 TC 附加 (TCX 或 legacy)
-	if l.mode == ModeLegacyTC && l.tcFilter != nil {
+	// 1. 清理 TC 附加 (TCX 或 legacy) - 分别卸载 egress 和 ingress
+	if l.mode == ModeLegacyTC {
 		// Legacy netlink-based TC cleanup
-		if err := netlink.FilterDel(l.tcFilter); err != nil {
-			errs = append(errs, fmt.Errorf("removing TC filter: %w", err))
-		} else {
-			log.Debugf("TC filter removed from %s", l.iface)
+		// 先卸载 egress
+		if err := l.detachLegacyTCEgress(); err != nil {
+			errs = append(errs, err)
 		}
-		l.tcFilter = nil
-	} else if l.mode == ModeTCX && l.tcLink != nil {
+		// 再卸载 ingress
+		if err := l.detachLegacyTCIngress(); err != nil {
+			errs = append(errs, err)
+		}
+	} else if l.mode == ModeTCX {
 		// TCX cleanup
-		if err := l.tcLink.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("detaching TCX program: %w", err))
+		// 先卸载 egress
+		if err := l.detachTCXEgress(); err != nil {
+			errs = append(errs, err)
 		}
-		l.tcLink = nil
+		// 再卸载 ingress
+		if err := l.detachTCXIngress(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	// 2. 关闭 eBPF 对象
@@ -192,7 +329,7 @@ func (l *TCLoader) Unload() error {
 		return errors.Join(errs...)
 	}
 
-	log.Debugf("TC loader unloaded successfully")
+	log.Debugf("TC loader unloaded successfully (ingress + egress)")
 	return nil
 }
 

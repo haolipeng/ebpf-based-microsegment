@@ -159,7 +159,8 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 	__u32 matched_rule_id = 0;
 
 	// 3. 查询策略 (使用共享的策略匹配逻辑)
-	__u8 action = lookup_policy_action(&key, &matched_rule_id);
+	// XDP 只能在 ingress 方向运行,所以方向固定为 INGRESS
+	__u8 action = lookup_policy_action(&key, POLICY_DIR_INGRESS, &matched_rule_id);
 
 #if DEBUG_MODE
 	if (matched_rule_id != 0) {

@@ -70,14 +70,15 @@ struct session_value {
 };
 
 // Policy key for exact matching
-// Note: Removed src_port to make room for direction field
-// Policy matching typically doesn't need source port
+// Added direction field for egress support while keeping full 5-tuple
 struct policy_key {
     __u32 src_ip;
     __u32 dst_ip;
+    __u16 src_port;       // Keep for full 5-tuple matching
     __u16 dst_port;
     __u8  protocol;
     __u8  direction;      // enum policy_direction
+    __u16 pad;            // Padding for alignment (16 bytes total)
 } __attribute__((packed));
 
 // Policy value

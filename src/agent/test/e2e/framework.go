@@ -114,6 +114,15 @@ func (env *E2ETestEnv) addCleanup(fn func()) {
 // Cleanup releases all resources created by the test environment.
 // It should be called with defer after creating the environment.
 func (env *E2ETestEnv) Cleanup() {
+	// First, clear all policies from eBPF maps to ensure clean state
+	// This prevents policy accumulation between tests
+	if env.PolicyManager != nil {
+		if err := env.PolicyManager.Clear(); err != nil {
+			// Log error but continue cleanup
+			env.T.Logf("Warning: failed to clear policies during cleanup: %v", err)
+		}
+	}
+
 	// Call cleanup functions in reverse order
 	for i := len(env.cleanupFuncs) - 1; i >= 0; i-- {
 		env.cleanupFuncs[i]()
@@ -215,6 +224,20 @@ func (env *E2ETestEnv) StartUDPServer(port int) (*testutil.TestServer, error) {
 	return server, nil
 }
 
+// StartTCPServerOnClient starts a TCP echo server on the client namespace.
+// This is used for testing Egress policies where the server initiates connections.
+func (env *E2ETestEnv) StartTCPServerOnClient(port int) (*testutil.TestServer, error) {
+	server, err := testutil.StartTCPServer(env.Network.ClientNS, port)
+	if err != nil {
+		return nil, err
+	}
+
+	env.addCleanup(server.Stop)
+	time.Sleep(100 * time.Millisecond)
+
+	return server, nil
+}
+
 // TryConnect attempts to connect from client to server.
 // Returns true if connection succeeds, false if it's blocked.
 func (env *E2ETestEnv) TryConnect(port int) bool {
@@ -226,6 +249,14 @@ func (env *E2ETestEnv) TryConnect(port int) bool {
 func (env *E2ETestEnv) TryConnectUDP(port int) bool {
 	serverIP := env.Network.GetServerIP()
 	return testutil.TryConnectUDP(env.Network.ClientNS, serverIP, port)
+}
+
+// TryConnectFromServer attempts to connect from server to client.
+// Returns true if connection succeeds, false if it's blocked.
+// This is used to test Egress policies (traffic leaving the server).
+func (env *E2ETestEnv) TryConnectFromServer(port int) bool {
+	clientIP := env.Network.GetClientIP()
+	return testutil.TryConnect(env.Network.ServerNS, clientIP, port)
 }
 
 // AssertTrafficAllowed asserts that traffic is allowed (connection succeeds).
@@ -262,6 +293,14 @@ func (env *E2ETestEnv) AssertStatistic(name string, expected uint64) {
 		actual = stats.PolicyHits
 	case "policy_misses":
 		actual = stats.PolicyMisses
+	case "ingress_packets":
+		actual = stats.IngressPackets
+	case "egress_packets":
+		actual = stats.EgressPackets
+	case "ingress_denied":
+		actual = stats.IngressDenied
+	case "egress_denied":
+		actual = stats.EgressDenied
 	default:
 		env.T.Fatalf("Unknown statistic: %s", name)
 	}
@@ -287,6 +326,14 @@ func (env *E2ETestEnv) WaitForStatistic(name string, expected uint64, timeout ti
 			actual = stats.DeniedPackets
 		case "new_sessions":
 			actual = stats.NewSessions
+		case "ingress_packets":
+			actual = stats.IngressPackets
+		case "egress_packets":
+			actual = stats.EgressPackets
+		case "ingress_denied":
+			actual = stats.IngressDenied
+		case "egress_denied":
+			actual = stats.EgressDenied
 		default:
 			env.T.Fatalf("Unknown statistic: %s", name)
 		}

@@ -22,6 +22,7 @@
  *
  * @key: 流的五元组键
  * @wildcard: 通配符策略规则
+ * @direction: 数据包方向 (POLICY_DIR_INGRESS 或 POLICY_DIR_EGRESS)
  *
  * 返回: true 如果流匹配策略,否则 false
  *
@@ -31,11 +32,19 @@
  * 3. 源端口匹配: port == 0 (任意) 或精确匹配
  * 4. 目标端口匹配: port == 0 (任意) 或精确匹配
  * 5. 协议匹配: protocol == 0 (任意) 或精确匹配
+ * 6. 方向匹配: direction == ANY 或匹配当前方向
  */
 static __always_inline bool matches_wildcard(
 	struct flow_key *key,
-	struct wildcard_policy *wildcard)
+	struct wildcard_policy *wildcard,
+	__u8 direction)
 {
+	// 方向匹配检查
+	// POLICY_DIR_ANY (0) 匹配所有方向
+	if (wildcard->direction != POLICY_DIR_ANY &&
+	    wildcard->direction != direction)
+		return false;
+
 	// 源 IP 匹配检查
 	// 使用掩码支持 CIDR 范围匹配 (例如 192.168.1.0/24)
 	if ((key->src_ip & wildcard->src_ip_mask) !=
@@ -65,23 +74,53 @@ static __always_inline bool matches_wildcard(
 /* lookup_policy_action - 查找流的策略动作
  *
  * @key: 流的五元组键
+ * @direction: 数据包方向 (POLICY_DIR_INGRESS 或 POLICY_DIR_EGRESS)
  * @rule_id: 输出参数 - 匹配的规则 ID
  *
  * 返回: 策略动作 (POLICY_ACTION_ALLOW 或 POLICY_ACTION_DENY)
  *
- * 查找策略:
+ * 查找策略 (支持方向感知):
  * 1. 快速路径: 精确匹配 - O(1) hash 查找 policy_map
+ *    a. 先尝试匹配方向特定的策略 (direction=INGRESS/EGRESS)
+ *    b. 如果没有匹配,回退到双向策略 (direction=ANY)
  * 2. 慢速路径: 通配符匹配 - 线性扫描 wildcard_policy_map
  *    - 如果有多个匹配,选择优先级最高的
  * 3. 默认策略: 如果都不匹配,允许通过 (POLICY_ACTION_ALLOW)
  */
-static __always_inline __u8 lookup_policy_action(struct flow_key *key, __u32 *rule_id)
+static __always_inline __u8 lookup_policy_action(
+	struct flow_key *key,
+	__u8 direction,
+	__u32 *rule_id)
 {
 	// ===== 快速路径: 精确匹配 =====
 	// O(1) hash 查找,处理绝大多数常见情况
-	struct policy_value *policy = bpf_map_lookup_elem(&policy_map, key);
+
+	// 构造 policy_key (包含方向)
+	struct policy_key pkey = {
+		.src_ip = key->src_ip,
+		.dst_ip = key->dst_ip,
+		.src_port = key->src_port,
+		.dst_port = key->dst_port,
+		.protocol = key->protocol,
+		.direction = direction,  // 先尝试方向特定的策略
+		.pad = 0,
+	};
+
+	// 1. 尝试匹配方向特定的策略 (INGRESS 或 EGRESS)
+	struct policy_value *policy = bpf_map_lookup_elem(&policy_map, &pkey);
 	if (policy) {
 		// 更新命中计数 (用于策略使用统计)
+		policy->hit_count += 1;
+		update_stats(STATS_POLICY_HITS);
+
+		*rule_id = policy->rule_id;
+		return policy->action;
+	}
+
+	// 2. 如果没有匹配,回退到双向策略 (direction=ANY)
+	pkey.direction = POLICY_DIR_ANY;
+	policy = bpf_map_lookup_elem(&policy_map, &pkey);
+	if (policy) {
 		policy->hit_count += 1;
 		update_stats(STATS_POLICY_HITS);
 
@@ -112,8 +151,8 @@ static __always_inline __u8 lookup_policy_action(struct flow_key *key, __u32 *ru
 		if (wildcard->rule_id == 0)
 			continue;
 
-		// 检查是否匹配
-		if (!matches_wildcard(key, wildcard))
+		// 检查是否匹配 (包含方向匹配)
+		if (!matches_wildcard(key, wildcard, direction))
 			continue;
 
 		// 如果匹配,选择优先级最高的策略

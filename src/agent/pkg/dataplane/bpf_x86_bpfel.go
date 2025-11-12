@@ -24,13 +24,14 @@ type bpfFlowKey struct {
 }
 
 type bpfPolicyKey struct {
-	_        structs.HostLayout
-	SrcIp    uint32
-	DstIp    uint32
-	SrcPort  uint16
-	DstPort  uint16
-	Protocol uint8
-	Pad      [3]uint8
+	_         structs.HostLayout
+	SrcIp     uint32
+	DstIp     uint32
+	SrcPort   uint16
+	DstPort   uint16
+	Protocol  uint8
+	Direction uint8
+	Pad       uint16
 }
 
 type bpfPolicyValue struct {
@@ -68,9 +69,9 @@ type bpfWildcardPolicy struct {
 	Protocol   uint8
 	Action     uint8
 	LogEnabled uint8
-	Pad1       uint8
+	Direction  uint8
 	Priority   uint16
-	Pad2       uint16
+	Pad        uint16
 	RuleId     uint32
 }
 

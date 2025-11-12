@@ -40,17 +40,18 @@ func (h *PolicyHandler) CreatePolicy(c *gin.Context) {
 
 	// Convert to internal policy format
 	p := &policy.Policy{
-		RuleID:   req.RuleID,
-		SrcIP:    req.SrcIP,
-		DstIP:    req.DstIP,
-		SrcPort:  req.SrcPort,
-		DstPort:  req.DstPort,
-		Protocol: req.Protocol,
-		Action:   req.Action,
-		Priority: req.Priority,
+		RuleID:    req.RuleID,
+		SrcIP:     req.SrcIP,
+		DstIP:     req.DstIP,
+		SrcPort:   req.SrcPort,
+		DstPort:   req.DstPort,
+		Protocol:  req.Protocol,
+		Action:    req.Action,
+		Direction: req.Direction, // ✅ New: add direction from request
+		Priority:  req.Priority,
 	}
 
-	// Add policy
+	// Add policy (will validate and normalize direction)
 	if err := h.policyManager.AddPolicy(p); err != nil {
 		log.Errorf("Failed to add policy: %v", err)
 		c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
@@ -64,14 +65,15 @@ func (h *PolicyHandler) CreatePolicy(c *gin.Context) {
 
 	// Return created policy
 	response := models.PolicyResponse{
-		RuleID:   p.RuleID,
-		SrcIP:    p.SrcIP,
-		DstIP:    p.DstIP,
-		SrcPort:  p.SrcPort,
-		DstPort:  p.DstPort,
-		Protocol: p.Protocol,
-		Action:   p.Action,
-		Priority: p.Priority,
+		RuleID:    p.RuleID,
+		SrcIP:     p.SrcIP,
+		DstIP:     p.DstIP,
+		SrcPort:   p.SrcPort,
+		DstPort:   p.DstPort,
+		Protocol:  p.Protocol,
+		Action:    p.Action,
+		Direction: p.Direction, // ✅ New: include direction in response
+		Priority:  p.Priority,
 	}
 
 	c.JSON(http.StatusCreated, response)
@@ -96,14 +98,15 @@ func (h *PolicyHandler) ListPolicies(c *gin.Context) {
 	var policyResponses []models.PolicyResponse
 	for _, p := range policies {
 		policyResponses = append(policyResponses, models.PolicyResponse{
-			RuleID:   p.RuleID,
-			SrcIP:    p.SrcIP,
-			DstIP:    p.DstIP,
-			SrcPort:  p.SrcPort,
-			DstPort:  p.DstPort,
-			Protocol: p.Protocol,
-			Action:   p.Action,
-			Priority: p.Priority,
+			RuleID:    p.RuleID,
+			SrcIP:     p.SrcIP,
+			DstIP:     p.DstIP,
+			SrcPort:   p.SrcPort,
+			DstPort:   p.DstPort,
+			Protocol:  p.Protocol,
+			Action:    p.Action,
+			Direction: p.Direction, // ✅ New: include direction
+			Priority:  p.Priority,
 		})
 	}
 
@@ -147,14 +150,15 @@ func (h *PolicyHandler) GetPolicy(c *gin.Context) {
 	for _, p := range policies {
 		if p.RuleID == uint32(ruleID) {
 			response := models.PolicyResponse{
-				RuleID:   p.RuleID,
-				SrcIP:    p.SrcIP,
-				DstIP:    p.DstIP,
-				SrcPort:  p.SrcPort,
-				DstPort:  p.DstPort,
-				Protocol: p.Protocol,
-				Action:   p.Action,
-				Priority: p.Priority,
+				RuleID:    p.RuleID,
+				SrcIP:     p.SrcIP,
+				DstIP:     p.DstIP,
+				SrcPort:   p.SrcPort,
+				DstPort:   p.DstPort,
+				Protocol:  p.Protocol,
+				Action:    p.Action,
+				Direction: p.Direction, // ✅ New: include direction
+				Priority:  p.Priority,
 			}
 			c.JSON(http.StatusOK, response)
 			return
@@ -211,17 +215,18 @@ func (h *PolicyHandler) UpdatePolicy(c *gin.Context) {
 
 	// Convert to internal policy format
 	p := &policy.Policy{
-		RuleID:   req.RuleID,
-		SrcIP:    req.SrcIP,
-		DstIP:    req.DstIP,
-		SrcPort:  req.SrcPort,
-		DstPort:  req.DstPort,
-		Protocol: req.Protocol,
-		Action:   req.Action,
-		Priority: req.Priority,
+		RuleID:    req.RuleID,
+		SrcIP:     req.SrcIP,
+		DstIP:     req.DstIP,
+		SrcPort:   req.SrcPort,
+		DstPort:   req.DstPort,
+		Protocol:  req.Protocol,
+		Action:    req.Action,
+		Direction: req.Direction, // ✅ New: add direction
+		Priority:  req.Priority,
 	}
 
-	// Delete old policy first
+	// Delete old policy first (includes direction in key)
 	if err := h.policyManager.DeletePolicy(p); err != nil {
 		// If delete fails, policy might not exist
 		log.Warnf("Failed to delete old policy during update: %v", err)
@@ -241,14 +246,15 @@ func (h *PolicyHandler) UpdatePolicy(c *gin.Context) {
 
 	// Return updated policy
 	response := models.PolicyResponse{
-		RuleID:   p.RuleID,
-		SrcIP:    p.SrcIP,
-		DstIP:    p.DstIP,
-		SrcPort:  p.SrcPort,
-		DstPort:  p.DstPort,
-		Protocol: p.Protocol,
-		Action:   p.Action,
-		Priority: p.Priority,
+		RuleID:    p.RuleID,
+		SrcIP:     p.SrcIP,
+		DstIP:     p.DstIP,
+		SrcPort:   p.SrcPort,
+		DstPort:   p.DstPort,
+		Protocol:  p.Protocol,
+		Action:    p.Action,
+		Direction: p.Direction, // ✅ New: include direction
+		Priority:  p.Priority,
 	}
 
 	c.JSON(http.StatusOK, response)
