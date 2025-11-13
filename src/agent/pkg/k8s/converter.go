@@ -6,6 +6,7 @@ import (
 
 	"github.com/ebpf-microsegment/src/agent/pkg/workload"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // PodToWorkload 将 Kubernetes Pod 转换为 Workload
@@ -59,24 +60,71 @@ func mapPodLabels(pod *corev1.Pod) map[string]string {
 		return result
 	}
 
-	// 标准 Kubernetes 标签映射
-	labelMappings := map[string]string{
-		"app.kubernetes.io/name":      "app",
-		"app.kubernetes.io/component": "role",
+	// 标准 Kubernetes 标签映射规则
+	// 优先级: 如果同一个目标标签有多个源标签,使用第一个找到的值
+	labelMappings := []struct {
+		source string // Kubernetes 标签
+		target string // Workload 标签
+	}{
+		// 应用名称
+		{"app.kubernetes.io/name", "app"},
+		{"app", "app"}, // 兼容简化标签
+		// 组件/角色
+		{"app.kubernetes.io/component", "role"},
+		{"component", "role"}, // 兼容简化标签
+		// 环境
+		{"environment", "env"},
+		{"env", "env"},
+		// 位置/区域
+		{"topology.kubernetes.io/zone", "loc"},
+		{"topology.kubernetes.io/region", "region"},
+		// 版本
+		{"app.kubernetes.io/version", "version"},
+		{"version", "version"},
+		// 实例标识
+		{"app.kubernetes.io/instance", "instance"},
 	}
 
-	for k8sLabel, workloadLabel := range labelMappings {
-		if value, ok := pod.Labels[k8sLabel]; ok {
-			result[workloadLabel] = value
+	// 跟踪已映射的目标标签,避免重复映射
+	mappedTargets := make(map[string]bool)
+	// 跟踪已处理的源标签,避免重复保留
+	processedSources := make(map[string]bool)
+
+	// 应用映射规则
+	for _, mapping := range labelMappings {
+		if value, ok := pod.Labels[mapping.source]; ok {
+			// 如果目标标签还没有被映射过,则映射
+			if !mappedTargets[mapping.target] {
+				result[mapping.target] = value
+				mappedTargets[mapping.target] = true
+			}
+			// 标记源标签已处理
+			processedSources[mapping.source] = true
 		}
 	}
 
-	// 保留其他所有标签（使用原始键名）
+	// 保留其他所有未处理的标签（使用原始键名）
 	for key, value := range pod.Labels {
-		if _, isMapped := labelMappings[key]; !isMapped {
+		if !processedSources[key] {
 			result[key] = value
 		}
 	}
 
 	return result
+}
+
+// MapPodLabels 导出版本的 mapPodLabels,供外部使用
+func MapPodLabels(labels map[string]string) map[string]string {
+	if labels == nil {
+		return make(map[string]string)
+	}
+
+	// 创建临时 Pod 对象用于复用映射逻辑
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: labels,
+		},
+	}
+
+	return mapPodLabels(pod)
 }
