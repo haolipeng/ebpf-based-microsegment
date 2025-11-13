@@ -32,7 +32,7 @@ echo "[2/4] 启动 Server 组件..."
 if pgrep -f microsegment-server > /dev/null; then
     echo "  Server 已在运行"
 else
-    nohup ./bin/microsegment-server -config src/server/config.yaml > /tmp/server.log 2>&1 &
+    nohup ./bin/microsegment-server -config config/server.yaml > /tmp/server.log 2>&1 &
     sleep 3
     if pgrep -f microsegment-server > /dev/null; then
         echo "  ✓ Server 启动成功 (PID: $(pgrep -f microsegment-server))"

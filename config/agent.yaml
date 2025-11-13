@@ -4,7 +4,7 @@
 # via gRPC for centralized policy management and monitoring.
 
 # Network interface to attach eBPF program
-interface: eth0
+interface: ens33
 
 # Log level: debug, info, warn, error
 log_level: info

@@ -128,13 +128,12 @@ This creates `bin/microsegment-server`.
 ### 4. Run Server
 
 ```bash
-./bin/microsegment-server --config src/server/config/server.yaml
+./bin/microsegment-server --config config/server.yaml
 ```
 
-Or with default config:
+Or with default config (from project root):
 ```bash
-cd src/server
-../../bin/microsegment-server
+./bin/microsegment-server
 ```
 
 ### 5. Verify Server
