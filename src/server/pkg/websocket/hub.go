@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	flowpb "github.com/ebpf-microsegment/src/proto/flow"
+	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
 	log "github.com/sirupsen/logrus"
 )
 

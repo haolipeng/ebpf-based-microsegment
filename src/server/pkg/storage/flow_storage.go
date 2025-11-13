@@ -8,7 +8,7 @@ import (
 	"net"
 	"time"
 
-	flowpb "github.com/ebpf-microsegment/src/proto/flow"
+	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
 	"github.com/sirupsen/logrus"
 )
 

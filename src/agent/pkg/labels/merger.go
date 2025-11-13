@@ -2,8 +2,8 @@
 package labels
 
 import (
-	"github.com/ebpf-microsegment/src/agent/pkg/runtime"
-	"github.com/ebpf-microsegment/src/agent/pkg/workload"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/runtime"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/workload"
 	log "github.com/sirupsen/logrus"
 )
 

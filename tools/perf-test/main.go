@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/dataplane"
-	"github.com/ebpf-microsegment/src/agent/pkg/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/src/agent/pkg/dataplane"
+	"github.com/haolipeng/ebpf-based-microsegment/src/agent/pkg/policy"
 
 	log "github.com/sirupsen/logrus"
 )

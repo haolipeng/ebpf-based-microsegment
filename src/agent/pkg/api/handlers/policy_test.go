@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/api/models"
-	"github.com/ebpf-microsegment/src/agent/pkg/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/api/models"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/policy"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

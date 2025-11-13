@@ -5,8 +5,8 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/api/models"
-	"github.com/ebpf-microsegment/src/agent/pkg/workload"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/api/models"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/workload"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )

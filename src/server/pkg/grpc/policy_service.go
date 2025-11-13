@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	commonpb "github.com/ebpf-microsegment/src/proto/common"
-	policypb "github.com/ebpf-microsegment/src/proto/policy"
-	"github.com/ebpf-microsegment/src/server/pkg/storage"
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
 	"github.com/sirupsen/logrus"
 )
 

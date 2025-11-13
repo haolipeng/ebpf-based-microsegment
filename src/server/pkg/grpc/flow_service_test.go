@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	commonpb "github.com/ebpf-microsegment/src/proto/common"
-	flowpb "github.com/ebpf-microsegment/src/proto/flow"
-	"github.com/ebpf-microsegment/src/server/pkg/storage"
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"

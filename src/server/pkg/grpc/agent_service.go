@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	agentpb "github.com/ebpf-microsegment/src/proto/agent"
-	"github.com/ebpf-microsegment/src/server/pkg/storage"
+	agentpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/agent"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
 	"github.com/sirupsen/logrus"
 )
 

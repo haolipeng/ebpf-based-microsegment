@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"

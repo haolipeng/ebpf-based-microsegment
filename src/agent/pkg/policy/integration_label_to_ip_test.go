@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/groups"
-	"github.com/ebpf-microsegment/src/agent/pkg/workload"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/groups"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/workload"
 )
 
 // TestE2E_LabelBasedPolicyToIPPolicies tests the complete label-to-IP compilation flow

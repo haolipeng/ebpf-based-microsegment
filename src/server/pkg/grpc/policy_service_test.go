@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	policypb "github.com/ebpf-microsegment/src/proto/policy"
-	"github.com/ebpf-microsegment/src/server/pkg/storage"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"

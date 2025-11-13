@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	agentpb "github.com/ebpf-microsegment/src/proto/agent"
+	agentpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/agent"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

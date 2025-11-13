@@ -5,9 +5,9 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	commonpb "github.com/ebpf-microsegment/src/proto/common"
-	policypb "github.com/ebpf-microsegment/src/proto/policy"
-	"github.com/ebpf-microsegment/src/server/pkg/storage"
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
 )
 
 // PolicyHandler 处理策略相关的 HTTP 请求

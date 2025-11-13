@@ -9,8 +9,8 @@ import (
 	"net"
 
 	"github.com/cilium/ebpf"
-	"github.com/ebpf-microsegment/src/agent/pkg/dataplane"
-	"github.com/ebpf-microsegment/src/agent/pkg/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/dataplane"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/policy"
 )
 
 func main() {

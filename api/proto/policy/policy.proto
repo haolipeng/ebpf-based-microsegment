@@ -1,0 +1,167 @@
+syntax = "proto3";
+
+package microsegment.policy;
+
+import "common/common.proto";
+
+option go_package = "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy";
+
+// PolicyService handles policy synchronization and statistics reporting
+service PolicyService {
+  // SyncPolicies performs a full policy synchronization
+  // Agents call this on startup or when they detect version mismatch
+  rpc SyncPolicies(SyncRequest) returns (SyncResponse);
+
+  // SubscribePolicies subscribes to policy updates (streaming)
+  // Agents receive incremental updates in real-time
+  rpc SubscribePolicies(SubscribeRequest) returns (stream PolicyUpdate);
+
+  // ReportPolicyStats reports policy enforcement statistics from agents
+  rpc ReportPolicyStats(PolicyStatsReport) returns (common.ReportResponse);
+}
+
+// SyncRequest is sent by agents to request full policy synchronization
+message SyncRequest {
+  // Agent ID requesting synchronization
+  string agent_id = 1;
+
+  // Last sync timestamp (Unix nanoseconds)
+  // 0 indicates first-time sync
+  int64 last_sync_time = 2;
+
+  // Current policy version on the agent (0 if none)
+  uint64 policy_version = 3;
+}
+
+// SyncResponse contains the complete policy set
+message SyncResponse {
+  // All active policies for this agent
+  repeated Policy policies = 1;
+
+  // Current policy version on the server
+  uint64 policy_version = 2;
+
+  // Server timestamp (Unix nanoseconds)
+  int64 server_time = 3;
+
+  // Number of policies in the response
+  uint32 policy_count = 4;
+}
+
+// SubscribeRequest initiates a policy update subscription
+message SubscribeRequest {
+  // Agent ID subscribing to updates
+  string agent_id = 1;
+
+  // Current policy version on the agent
+  uint64 current_version = 2;
+}
+
+// PolicyUpdate represents an incremental policy change
+message PolicyUpdate {
+  // Type of update (add, modify, delete)
+  PolicyUpdateType update_type = 1;
+
+  // The policy being updated (null for DELETE operations)
+  Policy policy = 2;
+
+  // New policy version after this update
+  uint64 policy_version = 3;
+
+  // Server timestamp (Unix nanoseconds)
+  int64 timestamp = 4;
+}
+
+// PolicyUpdateType indicates the type of policy change
+enum PolicyUpdateType {
+  // Unknown update type
+  UPDATE_UNKNOWN = 0;
+
+  // New policy added
+  UPDATE_ADD = 1;
+
+  // Existing policy modified
+  UPDATE_MODIFY = 2;
+
+  // Policy deleted
+  UPDATE_DELETE = 3;
+}
+
+// Policy represents a compiled network policy rule
+// This is the IP-based rule format that agents enforce in eBPF
+message Policy {
+  // Unique rule ID
+  uint32 rule_id = 1;
+
+  // Source IP address (CIDR notation, e.g., "10.0.1.10/32")
+  string src_ip = 2;
+
+  // Destination IP address (CIDR notation)
+  string dst_ip = 3;
+
+  // Source port (0 = any)
+  uint32 src_port = 4;
+
+  // Destination port (0 = any)
+  uint32 dst_port = 5;
+
+  // Network protocol
+  common.Protocol protocol = 6;
+
+  // Action to take (allow, deny, log)
+  common.PolicyAction action = 7;
+
+  // Rule priority (higher = more important, evaluated first)
+  uint32 priority = 8;
+
+  // Rule creation timestamp (Unix nanoseconds)
+  int64 created_at = 9;
+
+  // Rule last update timestamp (Unix nanoseconds)
+  int64 updated_at = 10;
+
+  // Source labels (for informational purposes and debugging)
+  map<string, string> source_labels = 11;
+
+  // Destination labels
+  map<string, string> dest_labels = 12;
+
+  // Human-readable description
+  string description = 13;
+}
+
+// PolicyStatsReport contains policy enforcement statistics from an agent
+message PolicyStatsReport {
+  // Agent ID reporting statistics
+  string agent_id = 1;
+
+  // Report timestamp (Unix nanoseconds)
+  int64 timestamp = 2;
+
+  // Time range covered by this report
+  common.TimeRange time_range = 3;
+
+  // Statistics for each policy rule
+  repeated PolicyStats policy_stats = 4;
+}
+
+// PolicyStats contains statistics for a single policy rule
+message PolicyStats {
+  // Policy rule ID
+  uint32 rule_id = 1;
+
+  // Number of packets matched
+  uint64 packet_count = 2;
+
+  // Number of bytes matched
+  uint64 byte_count = 3;
+
+  // Number of flows matched
+  uint64 flow_count = 4;
+
+  // Number of times rule was evaluated (hits)
+  uint64 hit_count = 5;
+
+  // Last match timestamp (Unix nanoseconds)
+  int64 last_match_time = 6;
+}

@@ -3,7 +3,7 @@ package k8s
 import (
 	"fmt"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/workload"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/workload"
 	log "github.com/sirupsen/logrus"
 )
 

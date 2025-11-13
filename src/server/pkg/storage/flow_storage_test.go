@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	commonpb "github.com/ebpf-microsegment/src/proto/common"
-	flowpb "github.com/ebpf-microsegment/src/proto/flow"
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/groups"
-	"github.com/ebpf-microsegment/src/agent/pkg/workload"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/groups"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/workload"
 )
 
 // setupCompilerTest creates test fixtures for compiler tests

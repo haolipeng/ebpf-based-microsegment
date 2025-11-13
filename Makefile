@@ -8,8 +8,8 @@ SERVER_BIN := $(BIN_DIR)/microsegment-server
 SRC_BPF := src/bpf
 SRC_AGENT := src/agent
 SRC_SERVER := src/server
-PROTO_DIR := proto
-PROTO_OUT := src/proto
+PROTO_DIR := api/proto
+PROTO_OUT := api/proto
 GO := go
 CLANG := clang
 

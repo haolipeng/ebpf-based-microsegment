@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	commonpb "github.com/ebpf-microsegment/src/proto/common"
-	policypb "github.com/ebpf-microsegment/src/proto/policy"
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -8,10 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/api/handlers"
-	"github.com/ebpf-microsegment/src/agent/pkg/api/models"
-	"github.com/ebpf-microsegment/src/agent/pkg/dataplane"
-	"github.com/ebpf-microsegment/src/agent/pkg/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/api/handlers"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/api/models"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/dataplane"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/policy"
 	"github.com/gin-gonic/gin"
 )
 

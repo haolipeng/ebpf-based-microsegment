@@ -4,8 +4,8 @@ package labels
 import (
 	"testing"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/runtime"
-	"github.com/ebpf-microsegment/src/agent/pkg/workload"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/runtime"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/workload"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )

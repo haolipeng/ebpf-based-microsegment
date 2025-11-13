@@ -2,7 +2,7 @@
 package groups
 
 import (
-	"github.com/ebpf-microsegment/src/agent/pkg/workload"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/workload"
 )
 
 // EvaluateSelector evaluates whether a workload matches a label selector

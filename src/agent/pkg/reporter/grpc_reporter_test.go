@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	commonpb "github.com/ebpf-microsegment/src/proto/common"
-	"github.com/ebpf-microsegment/src/agent/pkg/flow"
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
 )
 
 // Test_NewGRPCReporter tests constructor

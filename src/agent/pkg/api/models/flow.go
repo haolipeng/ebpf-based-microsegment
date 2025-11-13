@@ -3,7 +3,7 @@ package models
 import (
 	"time"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
 )
 
 // FlowListResponse represents the response for listing flows

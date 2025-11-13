@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	ws "github.com/ebpf-microsegment/src/server/pkg/websocket"
+	ws "github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/websocket"
 	log "github.com/sirupsen/logrus"
 )
 

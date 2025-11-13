@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"time"
 
-	agentpb "github.com/ebpf-microsegment/src/proto/agent"
-	policypb "github.com/ebpf-microsegment/src/proto/policy"
+	agentpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/agent"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

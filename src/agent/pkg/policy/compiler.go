@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/groups"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/groups"
 	log "github.com/sirupsen/logrus"
 )
 

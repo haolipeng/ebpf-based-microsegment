@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	agentpb "github.com/ebpf-microsegment/src/proto/agent"
-	commonpb "github.com/ebpf-microsegment/src/proto/common"
-	flowpb "github.com/ebpf-microsegment/src/proto/flow"
-	policypb "github.com/ebpf-microsegment/src/proto/policy"
+	agentpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/agent"
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
 )
 
 // MockFlowEvent 创建一个模拟的流事件

@@ -3,7 +3,7 @@ package reporter
 import (
 	"context"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
 )
 
 // Reporter is an interface for reporting flow data

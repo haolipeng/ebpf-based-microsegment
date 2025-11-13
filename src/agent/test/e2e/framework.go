@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/api/models"
-	"github.com/ebpf-microsegment/src/agent/pkg/dataplane"
-	"github.com/ebpf-microsegment/src/agent/pkg/policy"
-	"github.com/ebpf-microsegment/src/agent/pkg/testutil"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/api/models"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/dataplane"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/testutil"
 	"github.com/stretchr/testify/require"
 )
 

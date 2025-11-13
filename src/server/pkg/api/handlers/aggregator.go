@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ebpf-microsegment/src/server/pkg/aggregator"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/aggregator"
 )
 
 // AggregatorHandler handles aggregation and analysis requests

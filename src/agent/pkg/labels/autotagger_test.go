@@ -4,7 +4,7 @@ package labels
 import (
 	"testing"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/workload"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/workload"
 )
 
 // TestInferRoleFromImage tests role inference from container image names

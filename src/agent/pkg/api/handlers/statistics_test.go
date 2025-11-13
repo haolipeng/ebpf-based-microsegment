@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/api/models"
-	"github.com/ebpf-microsegment/src/agent/pkg/dataplane"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/api/models"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/dataplane"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )

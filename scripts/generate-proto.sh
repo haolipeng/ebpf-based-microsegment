@@ -46,8 +46,8 @@ protoc-gen-go-grpc --version 2>&1 | head -n 1 || echo "version unknown"
 
 # Project root directory
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROTO_DIR="${PROJECT_ROOT}/proto"
-OUTPUT_DIR="${PROJECT_ROOT}/src/proto"
+PROTO_DIR="${PROJECT_ROOT}/api/proto"
+OUTPUT_DIR="${PROJECT_ROOT}/api/proto"
 
 echo ""
 echo "Project root: ${PROJECT_ROOT}"
@@ -68,10 +68,10 @@ echo -e "${YELLOW}Generating Go code from proto files...${NC}"
 
 # List of proto files to compile
 PROTO_FILES=(
-    "common.proto"
-    "flow.proto"
-    "policy.proto"
-    "agent.proto"
+    "common/common.proto"
+    "flow/flow.proto"
+    "policy/policy.proto"
+    "agent/agent.proto"
 )
 
 for proto_file in "${PROTO_FILES[@]}"; do
@@ -83,25 +83,25 @@ for proto_file in "${PROTO_FILES[@]}"; do
         exit 1
     fi
 
-    # Determine output package directory
-    package_name="${proto_file%.proto}"
+    # Determine package directory from proto file path (e.g., common/common.proto -> common)
+    package_name=$(dirname "${proto_file}")
     output_package_dir="${OUTPUT_DIR}/${package_name}"
 
     # Run protoc
-    if [[ "${proto_file}" == "common.proto" ]]; then
+    if [[ "${proto_file}" == "common/common.proto" ]]; then
         # common.proto doesn't have gRPC services
         protoc \
             --proto_path="${PROTO_DIR}" \
-            --go_out="${OUTPUT_DIR}/${package_name}" \
+            --go_out="${OUTPUT_DIR}" \
             --go_opt=paths=source_relative \
             "${PROTO_DIR}/${proto_file}"
     else
         # flow, policy, agent have gRPC services
         protoc \
             --proto_path="${PROTO_DIR}" \
-            --go_out="${OUTPUT_DIR}/${package_name}" \
+            --go_out="${OUTPUT_DIR}" \
             --go_opt=paths=source_relative \
-            --go-grpc_out="${OUTPUT_DIR}/${package_name}" \
+            --go-grpc_out="${OUTPUT_DIR}" \
             --go-grpc_opt=paths=source_relative \
             "${PROTO_DIR}/${proto_file}"
     fi

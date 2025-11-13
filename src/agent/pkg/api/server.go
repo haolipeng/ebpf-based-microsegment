@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/dataplane"
-	"github.com/ebpf-microsegment/src/agent/pkg/groups"
-	"github.com/ebpf-microsegment/src/agent/pkg/policy"
-	"github.com/ebpf-microsegment/src/agent/pkg/workload"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/dataplane"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/groups"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/workload"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )

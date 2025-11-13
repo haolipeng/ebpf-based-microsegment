@@ -16,16 +16,16 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
-	agentpb "github.com/ebpf-microsegment/src/proto/agent"
-	flowpb "github.com/ebpf-microsegment/src/proto/flow"
-	policypb "github.com/ebpf-microsegment/src/proto/policy"
-	"github.com/ebpf-microsegment/src/server/pkg/config"
-	grpcserv "github.com/ebpf-microsegment/src/server/pkg/grpc"
-	"github.com/ebpf-microsegment/src/server/pkg/storage"
-	"github.com/ebpf-microsegment/src/server/pkg/api/handlers"
-	"github.com/ebpf-microsegment/src/server/pkg/api/middleware"
-	"github.com/ebpf-microsegment/src/server/pkg/aggregator"
-	ws "github.com/ebpf-microsegment/src/server/pkg/websocket"
+	agentpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/agent"
+	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/config"
+	grpcserv "github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/grpc"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/api/handlers"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/api/middleware"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/aggregator"
+	ws "github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/websocket"
 )
 
 func main() {

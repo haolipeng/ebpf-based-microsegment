@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	flowpb "github.com/ebpf-microsegment/src/proto/flow"
-	policypb "github.com/ebpf-microsegment/src/proto/policy"
+	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
 )
 
 // AssertFlowEventEqual 断言两个 FlowEvent 相等

@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/lib/pq"
-	agentpb "github.com/ebpf-microsegment/src/proto/agent"
+	agentpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/agent"
 )
 
 // AgentStorage handles agent data persistence

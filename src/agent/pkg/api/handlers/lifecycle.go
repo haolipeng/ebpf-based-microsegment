@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
 	"github.com/gin-gonic/gin"
 )
 

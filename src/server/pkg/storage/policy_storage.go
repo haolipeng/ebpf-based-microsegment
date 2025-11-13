@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	policypb "github.com/ebpf-microsegment/src/proto/policy"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
 )
 
 // PolicyStorage handles policy data persistence

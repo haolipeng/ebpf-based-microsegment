@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 
-	commonpb "github.com/ebpf-microsegment/src/proto/common"
-	flowpb "github.com/ebpf-microsegment/src/proto/flow"
-	"github.com/ebpf-microsegment/src/server/pkg/storage"
-	ws "github.com/ebpf-microsegment/src/server/pkg/websocket"
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
+	ws "github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/websocket"
 	"github.com/sirupsen/logrus"
 )
 

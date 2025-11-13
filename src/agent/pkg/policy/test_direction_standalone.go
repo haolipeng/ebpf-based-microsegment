@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/policy"
 )
 
 func main() {

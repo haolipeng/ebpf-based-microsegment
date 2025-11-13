@@ -15,10 +15,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	agentpb "github.com/ebpf-microsegment/src/proto/agent"
-	commonpb "github.com/ebpf-microsegment/src/proto/common"
-	flowpb "github.com/ebpf-microsegment/src/proto/flow"
-	policypb "github.com/ebpf-microsegment/src/proto/policy"
+	agentpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/agent"
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
 )
 
 const (

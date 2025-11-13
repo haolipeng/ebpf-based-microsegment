@@ -1,8 +1,8 @@
 package api
 
 import (
-	"github.com/ebpf-microsegment/src/agent/pkg/api/handlers"
-	"github.com/ebpf-microsegment/src/agent/pkg/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/api/handlers"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/flow"
-	"github.com/ebpf-microsegment/src/agent/pkg/reporter"
-	commonpb "github.com/ebpf-microsegment/src/proto/common"
-	flowpb "github.com/ebpf-microsegment/src/proto/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/reporter"
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
 	"google.golang.org/grpc"
 )
 

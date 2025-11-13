@@ -1,0 +1,257 @@
+syntax = "proto3";
+
+package microsegment.flow;
+
+import "common/common.proto";
+
+option go_package = "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow";
+
+// FlowService handles flow event reporting and querying
+service FlowService {
+  // ReportFlowEvents accepts a stream of flow events from agents
+  // Agents should batch events and send them periodically
+  rpc ReportFlowEvents(stream FlowEvent) returns (common.ReportResponse);
+
+  // QueryFlows returns flows matching the given criteria
+  rpc QueryFlows(FlowQuery) returns (FlowQueryResponse);
+
+  // GetFlowSummary returns aggregated statistics for flows
+  rpc GetFlowSummary(FlowSummaryRequest) returns (FlowSummary);
+}
+
+// FlowEvent represents a single network flow event
+// Optimized for compact serialization (~48 bytes base + variable labels)
+// Field numbers 1-15 use 1-byte tags (high frequency fields)
+message FlowEvent {
+  // Source IP address (4 bytes for IPv4, use fixed32 for optimization)
+  fixed32 src_ip = 1;
+
+  // Destination IP address (4 bytes for IPv4)
+  fixed32 dst_ip = 2;
+
+  // Source port (0 for ICMP)
+  uint32 src_port = 3;
+
+  // Destination port (0 for ICMP)
+  uint32 dst_port = 4;
+
+  // Network protocol
+  common.Protocol protocol = 5;
+
+  // Event type (new, update, closed, timeout)
+  common.FlowEventType event_type = 6;
+
+  // Flow direction (ingress/egress)
+  common.FlowDirection direction = 7;
+
+  // Number of packets in this flow
+  uint64 packet_count = 8;
+
+  // Number of bytes in this flow
+  uint64 byte_count = 9;
+
+  // Timestamp in nanoseconds (Unix epoch)
+  fixed64 timestamp_ns = 10;
+
+  // Policy rule ID that matched this flow (0 if no match)
+  uint32 policy_id = 11;
+
+  // Action taken by policy (allow, deny, log)
+  common.PolicyAction policy_action = 12;
+
+  // Current state of the flow
+  common.FlowState state = 13;
+
+  // Agent ID that reported this event
+  string agent_id = 14;
+
+  // Labels of the source workload
+  // Field numbers 16+ use 2-byte tags (lower frequency fields)
+  map<string, string> source_labels = 16;
+
+  // Labels of the destination workload
+  map<string, string> dest_labels = 17;
+}
+
+// FlowQuery specifies filtering criteria for flow queries
+message FlowQuery {
+  // Time range filter
+  common.TimeRange time_range = 1;
+
+  // Filter by source IP (CIDR notation, e.g., "10.0.1.0/24")
+  string src_ip = 2;
+
+  // Filter by destination IP (CIDR notation)
+  string dst_ip = 3;
+
+  // Filter by source port (0 = any)
+  uint32 src_port = 4;
+
+  // Filter by destination port (0 = any)
+  uint32 dst_port = 5;
+
+  // Filter by protocol
+  common.Protocol protocol = 6;
+
+  // Filter by agent ID
+  string agent_id = 7;
+
+  // Filter by policy action
+  common.PolicyAction policy_action = 8;
+
+  // Filter by source labels (all must match)
+  map<string, string> source_labels = 9;
+
+  // Filter by destination labels (all must match)
+  map<string, string> dest_labels = 10;
+
+  // Maximum number of results to return (0 = unlimited)
+  uint32 limit = 11;
+
+  // Offset for pagination
+  uint32 offset = 12;
+}
+
+// FlowQueryResponse contains the results of a flow query
+message FlowQueryResponse {
+  // Matching flows
+  repeated Flow flows = 1;
+
+  // Total count (before limit/offset)
+  uint64 total_count = 2;
+
+  // Whether there are more results available
+  bool has_more = 3;
+}
+
+// Flow represents a complete flow record (for query responses)
+message Flow {
+  // Flow ID (database primary key)
+  uint64 id = 1;
+
+  // Source IP address (human-readable, e.g., "10.0.1.10")
+  string src_ip = 2;
+
+  // Destination IP address
+  string dst_ip = 3;
+
+  // Source port
+  uint32 src_port = 4;
+
+  // Destination port
+  uint32 dst_port = 5;
+
+  // Network protocol
+  common.Protocol protocol = 6;
+
+  // Flow direction
+  common.FlowDirection direction = 7;
+
+  // Number of packets
+  uint64 packet_count = 8;
+
+  // Number of bytes
+  uint64 byte_count = 9;
+
+  // Flow start time (Unix nanoseconds)
+  int64 start_time = 10;
+
+  // Flow end time (Unix nanoseconds, 0 if still active)
+  int64 end_time = 11;
+
+  // Policy rule ID
+  uint32 policy_id = 12;
+
+  // Policy action
+  common.PolicyAction policy_action = 13;
+
+  // Flow state
+  common.FlowState state = 14;
+
+  // Agent ID
+  string agent_id = 15;
+
+  // Source workload labels
+  map<string, string> source_labels = 16;
+
+  // Destination workload labels
+  map<string, string> dest_labels = 17;
+}
+
+// FlowSummaryRequest specifies parameters for flow summary query
+message FlowSummaryRequest {
+  // Time range for aggregation
+  common.TimeRange time_range = 1;
+
+  // Group by agent ID
+  bool group_by_agent = 2;
+
+  // Group by protocol
+  bool group_by_protocol = 3;
+
+  // Optional filters (same as FlowQuery)
+  string agent_id = 4;
+  common.Protocol protocol = 5;
+  map<string, string> source_labels = 6;
+  map<string, string> dest_labels = 7;
+}
+
+// FlowSummary contains aggregated flow statistics
+message FlowSummary {
+  // Total number of flows
+  uint64 total_flows = 1;
+
+  // Total packets across all flows
+  uint64 total_packets = 2;
+
+  // Total bytes across all flows
+  uint64 total_bytes = 3;
+
+  // Number of unique source IPs
+  uint32 unique_src_ips = 4;
+
+  // Number of unique destination IPs
+  uint32 unique_dst_ips = 5;
+
+  // Protocol-level statistics
+  repeated ProtocolStats protocol_stats = 6;
+
+  // Top source IPs by traffic volume
+  repeated IPStats top_sources = 7;
+
+  // Top destination IPs by traffic volume
+  repeated IPStats top_destinations = 8;
+}
+
+// ProtocolStats contains statistics for a specific protocol
+message ProtocolStats {
+  // Protocol type
+  common.Protocol protocol = 1;
+
+  // Number of flows
+  uint64 flow_count = 2;
+
+  // Total packets
+  uint64 packet_count = 3;
+
+  // Total bytes
+  uint64 byte_count = 4;
+}
+
+// IPStats contains statistics for a specific IP address
+message IPStats {
+  // IP address (human-readable)
+  string ip_address = 1;
+
+  // Number of flows
+  uint64 flow_count = 2;
+
+  // Total packets
+  uint64 packet_count = 3;
+
+  // Total bytes
+  uint64 byte_count = 4;
+
+  // Associated workload labels (if available)
+  map<string, string> labels = 5;
+}

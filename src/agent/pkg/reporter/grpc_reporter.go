@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ebpf-microsegment/src/agent/pkg/flow"
-	commonpb "github.com/ebpf-microsegment/src/proto/common"
-	flowpb "github.com/ebpf-microsegment/src/proto/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
