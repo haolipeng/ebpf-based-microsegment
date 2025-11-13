@@ -37,9 +37,6 @@ func DefaultHealthCheckConfig() *HealthCheckConfig {
 // HealthCheck 执行单次健康检查
 // 通过调用 /api/v1 端点验证 API Server 连通性
 func (c *Client) HealthCheck() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	// 发送 GET /api/v1 请求
 	_, err := c.clientset.Discovery().ServerVersion()
 	if err != nil {

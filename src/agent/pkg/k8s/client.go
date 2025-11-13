@@ -51,7 +51,7 @@ type Config struct {
 
 // Client 封装 Kubernetes 客户端
 type Client struct {
-	clientset *kubernetes.Clientset
+	clientset kubernetes.Interface
 	config    *rest.Config
 }
 
@@ -185,7 +185,7 @@ func buildKubeconfigConfig(cfg *Config) (*rest.Config, error) {
 }
 
 // GetClientset 返回底层的 Kubernetes clientset
-func (c *Client) GetClientset() *kubernetes.Clientset {
+func (c *Client) GetClientset() kubernetes.Interface {
 	return c.clientset
 }
 
