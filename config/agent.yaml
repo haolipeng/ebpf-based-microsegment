@@ -4,7 +4,7 @@
 # via gRPC for centralized policy management and monitoring.
 
 # Network interface to attach eBPF program
-interface: ens33
+interface: ens37
 
 # Log level: debug, info, warn, error
 log_level: info
@@ -21,7 +21,7 @@ api:
   host: 127.0.0.1
 
   # API server port
-  port: 8080
+  port: 8081
 
   # Enable CORS support
   enable_cors: true
@@ -33,7 +33,7 @@ server:
 
   # Unique agent identifier
   # If not specified, will be auto-generated from hostname
-  # agent_id: "agent-node1"
+  agent_id: "agent-node1"
 
   # Number of flow events to batch before sending to server
   # Higher values reduce network overhead but increase latency
