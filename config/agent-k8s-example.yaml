@@ -1,0 +1,106 @@
+# Microsegment Agent Configuration Example with Kubernetes Integration
+# This file demonstrates how to configure the agent for Kubernetes environments
+
+# Basic Configuration
+interface: eth0
+log_level: info
+stats_interval: 30
+mode: agent-server  # Options: "agent-server" or "standalone"
+
+# API Server Configuration
+api:
+  enabled: true
+  host: 127.0.0.1
+  port: 8080
+  enable_cors: true
+
+# Server Connection (for agent-server mode)
+server:
+  server_addr: "10.107.12.201:9090"
+  agent_id: ""  # Auto-generated if empty
+  batch_size: 100
+  batch_timeout: 5s
+  reconnect_interval: 30s
+  max_retries: 3
+  retry_base_delay: 1s
+  retry_max_delay: 30s
+
+# Flow Collection
+flow:
+  enabled: true
+  storage_path: ./data/flows.db
+  flow_timeout: 5m
+  cleanup_interval: 1m
+  retention_days: 7
+
+# DataPlane Configuration
+dataplane:
+  mode: auto  # Options: "auto", "xdp-native", "xdp-generic", "tc"
+  prefer_xdp: true
+  allow_generic_xdp: true
+
+# Kubernetes Integration
+kubernetes:
+  # Enable/disable Kubernetes integration
+  enabled: true
+
+  # Configuration mode:
+  # - "auto": Auto-detect (try in-cluster first, then kubeconfig)
+  # - "in-cluster": Use ServiceAccount (for running in K8s Pod)
+  # - "kubeconfig": Use kubeconfig file (for development/testing)
+  config_mode: auto
+
+  # Kubeconfig path (only used in "kubeconfig" mode)
+  # If empty, uses ~/.kube/config
+  kubeconfig_path: ""
+
+  # Kubernetes API server address (optional, overrides kubeconfig)
+  api_server: ""
+
+  # API client rate limiting
+  qps: 5.0      # Queries per second
+  burst: 10     # Burst size
+  timeout: 30   # Request timeout in seconds
+
+  # Health check configuration
+  health_check:
+    enabled: true
+    interval: 30  # Check interval in seconds
+    timeout: 5    # Check timeout in seconds
+
+  # Namespace filtering
+  namespaces:
+    # Include specific namespaces (empty = all namespaces)
+    include: []
+    # Exclude namespaces (takes precedence over include)
+    # Default: exclude system namespaces
+    exclude:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+
+# Example configurations for different scenarios:
+
+# Scenario 1: In-cluster deployment (DaemonSet)
+# kubernetes:
+#   enabled: true
+#   config_mode: in-cluster
+
+# Scenario 2: Out-of-cluster development
+# kubernetes:
+#   enabled: true
+#   config_mode: kubeconfig
+#   kubeconfig_path: ~/.kube/config
+
+# Scenario 3: Monitor specific namespaces only
+# kubernetes:
+#   enabled: true
+#   config_mode: auto
+#   namespaces:
+#     include:
+#       - production
+#       - staging
+#     exclude:
+#       - kube-system
+#       - kube-public
+#       - kube-node-lease

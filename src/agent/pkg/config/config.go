@@ -35,6 +35,9 @@ type Config struct {
 
 	// DataPlane configuration
 	DataPlane DataPlaneConfig `mapstructure:"dataplane"`
+
+	// Kubernetes integration configuration
+	Kubernetes *KubernetesConfig `mapstructure:"kubernetes"`
 }
 
 // APIConfig holds API server configuration
@@ -110,6 +113,61 @@ type DataPlaneConfig struct {
 	AllowGenericXDP bool `mapstructure:"allow_generic_xdp"`
 }
 
+// KubernetesConfig holds Kubernetes integration configuration
+type KubernetesConfig struct {
+	// Enabled controls whether Kubernetes integration is enabled
+	Enabled bool `mapstructure:"enabled"`
+
+	// ConfigMode specifies how to connect to Kubernetes API server:
+	// - "auto": Auto-detect (in-cluster first, then kubeconfig) [default]
+	// - "in-cluster": Use ServiceAccount (for running in K8s Pod)
+	// - "kubeconfig": Use kubeconfig file (for development)
+	ConfigMode string `mapstructure:"config_mode"`
+
+	// KubeconfigPath is the path to kubeconfig file (only for "kubeconfig" mode)
+	// If empty, uses ~/.kube/config
+	KubeconfigPath string `mapstructure:"kubeconfig_path"`
+
+	// APIServer is the Kubernetes API server address (optional, overrides kubeconfig)
+	APIServer string `mapstructure:"api_server"`
+
+	// QPS is the maximum queries per second to the API server (default: 5)
+	QPS float32 `mapstructure:"qps"`
+
+	// Burst is the maximum burst for throttle (default: 10)
+	Burst int `mapstructure:"burst"`
+
+	// Timeout is the request timeout in seconds (default: 30)
+	Timeout int `mapstructure:"timeout"`
+
+	// HealthCheck configuration
+	HealthCheck KubernetesHealthCheckConfig `mapstructure:"health_check"`
+
+	// Namespaces configuration
+	Namespaces KubernetesNamespacesConfig `mapstructure:"namespaces"`
+}
+
+// KubernetesHealthCheckConfig holds Kubernetes health check configuration
+type KubernetesHealthCheckConfig struct {
+	// Enabled controls whether periodic health checks are enabled
+	Enabled bool `mapstructure:"enabled"`
+
+	// Interval is the health check interval in seconds (default: 30)
+	Interval int `mapstructure:"interval"`
+
+	// Timeout is the health check timeout in seconds (default: 5)
+	Timeout int `mapstructure:"timeout"`
+}
+
+// KubernetesNamespacesConfig holds namespace filtering configuration
+type KubernetesNamespacesConfig struct {
+	// Include is a list of namespaces to monitor (empty = all)
+	Include []string `mapstructure:"include"`
+
+	// Exclude is a list of namespaces to exclude (takes precedence over Include)
+	Exclude []string `mapstructure:"exclude"`
+}
+
 // LoadConfig loads configuration from file or returns defaults
 func LoadConfig(configPath string) (*Config, error) {
 	v := viper.New()
@@ -176,6 +234,18 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("dataplane.mode", "auto")                // Auto-select best mode
 	v.SetDefault("dataplane.prefer_xdp", true)            // Prefer XDP for better performance
 	v.SetDefault("dataplane.allow_generic_xdp", true)     // Allow Generic XDP fallback
+
+	// Kubernetes defaults
+	v.SetDefault("kubernetes.enabled", false)             // Disabled by default
+	v.SetDefault("kubernetes.config_mode", "auto")        // Auto-detect (in-cluster then kubeconfig)
+	v.SetDefault("kubernetes.qps", 5.0)                   // 5 QPS
+	v.SetDefault("kubernetes.burst", 10)                  // 10 burst
+	v.SetDefault("kubernetes.timeout", 30)                // 30 seconds timeout
+	v.SetDefault("kubernetes.health_check.enabled", true) // Enable health checks
+	v.SetDefault("kubernetes.health_check.interval", 30)  // Check every 30 seconds
+	v.SetDefault("kubernetes.health_check.timeout", 5)    // 5 seconds timeout
+	// Default namespace filtering: exclude system namespaces
+	v.SetDefault("kubernetes.namespaces.exclude", []string{"kube-system", "kube-public", "kube-node-lease"})
 }
 
 // Validate validates the configuration
@@ -251,6 +321,45 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid dataplane.mode: %s (must be auto, xdp-native, xdp-generic, or tc)", c.DataPlane.Mode)
 	}
 
+	// Validate Kubernetes configuration (if enabled)
+	if c.Kubernetes != nil && c.Kubernetes.Enabled {
+		// Validate ConfigMode
+		validK8sConfigModes := map[string]bool{
+			"auto":       true,
+			"in-cluster": true,
+			"kubeconfig": true,
+		}
+		if c.Kubernetes.ConfigMode == "" {
+			c.Kubernetes.ConfigMode = "auto" // Default to auto
+		}
+		if !validK8sConfigModes[c.Kubernetes.ConfigMode] {
+			return fmt.Errorf("invalid kubernetes.config_mode: %s (must be auto, in-cluster, or kubeconfig)", c.Kubernetes.ConfigMode)
+		}
+
+		// Set defaults for optional fields
+		if c.Kubernetes.QPS == 0 {
+			c.Kubernetes.QPS = 5.0
+		}
+		if c.Kubernetes.Burst == 0 {
+			c.Kubernetes.Burst = 10
+		}
+		if c.Kubernetes.Timeout == 0 {
+			c.Kubernetes.Timeout = 30
+		}
+		if c.Kubernetes.HealthCheck.Interval == 0 {
+			c.Kubernetes.HealthCheck.Interval = 30
+		}
+		if c.Kubernetes.HealthCheck.Timeout == 0 {
+			c.Kubernetes.HealthCheck.Timeout = 5
+		}
+
+		// Validate health check timeout < interval
+		if c.Kubernetes.HealthCheck.Timeout >= c.Kubernetes.HealthCheck.Interval {
+			return fmt.Errorf("kubernetes.health_check.timeout (%d) must be less than interval (%d)",
+				c.Kubernetes.HealthCheck.Timeout, c.Kubernetes.HealthCheck.Interval)
+		}
+	}
+
 	return nil
 }
 
@@ -293,6 +402,11 @@ func DefaultConfig() *Config {
 			CleanupInterval: 1 * time.Minute,
 			RetentionDays:   7,
 		},
+		DataPlane: DataPlaneConfig{
+			Mode:            "auto",
+			PreferXDP:       true,
+			AllowGenericXDP: true,
+		},
 	}
 }
 
@@ -304,4 +418,47 @@ func (c *Config) IsStandaloneMode() bool {
 // IsAgentServerMode returns true if agent is in agent-server mode
 func (c *Config) IsAgentServerMode() bool {
 	return c.Mode == "agent-server"
+}
+
+// ToK8sConfig converts KubernetesConfig to k8s.Config
+// Returns nil if Kubernetes integration is disabled
+func (kc *KubernetesConfig) ToK8sConfig() *K8sConfig {
+	if kc == nil || !kc.Enabled {
+		return nil
+	}
+
+	cfg := &K8sConfig{
+		Enabled:        kc.Enabled,
+		KubeconfigPath: kc.KubeconfigPath,
+		APIServer:      kc.APIServer,
+		QPS:            kc.QPS,
+		Burst:          kc.Burst,
+		Timeout:        kc.Timeout,
+	}
+
+	// Map config_mode to ConfigMode type
+	switch kc.ConfigMode {
+	case "auto":
+		cfg.ConfigMode = "auto"
+	case "in-cluster":
+		cfg.ConfigMode = "in-cluster"
+	case "kubeconfig":
+		cfg.ConfigMode = "kubeconfig"
+	default:
+		cfg.ConfigMode = "auto"
+	}
+
+	return cfg
+}
+
+// K8sConfig is an alias for the k8s package Config type to avoid import cycles
+// This will be imported from k8s package when used
+type K8sConfig struct {
+	Enabled        bool
+	ConfigMode     string
+	KubeconfigPath string
+	APIServer      string
+	QPS            float32
+	Burst          int
+	Timeout        int
 }
