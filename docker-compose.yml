@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: microsegment-postgres
+    environment:
+      POSTGRES_DB: microsegment
+      POSTGRES_USER: microsegment_user
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U microsegment_user -d microsegment"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Server 服务
+  server:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.server
+    container_name: microsegment-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"  # HTTP API
+      - "9090:9090"  # gRPC API
+    volumes:
+      - ./config:/etc/microsegment
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=microsegment_user
+      - DB_PASSWORD=secret
+      - DB_NAME=microsegment
+
+  # Agent 服务
+  agent:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.agent
+    container_name: microsegment-agent
+    depends_on:
+      - server
+    # Agent 需要特权模式来加载 eBPF 程序
+    privileged: true
+    # 使用主机网络模式以访问主机网络接口
+    network_mode: host
+    # 使用主机 PID 命名空间
+    pid: host
+    volumes:
+      - ./config:/etc/microsegment
+      # 挂载 BPF 文件系统 (读写模式)
+      - /sys/fs/bpf:/sys/fs/bpf:rw
+    environment:
+      - SERVER_ADDR=localhost:9090
+
+volumes:
+  postgres_data:

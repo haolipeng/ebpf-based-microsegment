@@ -1,0 +1,33 @@
+# 阶段 1: 构建阶段
+FROM golang:1.24 AS builder
+
+# 设置工作目录
+WORKDIR /build
+
+# 设置 Go 代理 (加速依赖下载)
+ENV GOPROXY=https://goproxy.cn,direct
+
+# 复制所有源代码 (因为 go.mod 中有 replace 指令需要本地路径)
+COPY . .
+
+# 构建 Server 二进制文件
+RUN CGO_ENABLED=0 GOOS=linux go build -o microsegment-server ./src/server/cmd
+
+# 阶段 2: 运行时阶段
+FROM ubuntu:22.04
+
+# 安装必要的运行时依赖
+RUN apt-get update && \
+    apt-get install -y ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# 从构建阶段复制二进制文件
+COPY --from=builder /build/microsegment-server /usr/local/bin/
+
+# 暴露端口
+# 8080: HTTP API
+# 9090: gRPC API
+EXPOSE 8080 9090
+
+# 启动命令
+CMD ["/usr/local/bin/microsegment-server", "--config", "/etc/microsegment/docker-server.yaml"]
