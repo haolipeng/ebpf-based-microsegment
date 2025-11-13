@@ -1,59 +1,64 @@
 # 实施任务
 
-## 阶段 1：Kubernetes API 客户端基础（第 1 周）
+## 阶段 1：Kubernetes API 客户端基础（第 1 周）✅ **已完成**
 
-### 任务 1.1：添加 client-go 依赖
-- 添加 `k8s.io/client-go` v0.31.0+ 到 go.mod
-- 添加 `k8s.io/api` v0.31.0+
-- 添加 `k8s.io/apimachinery` v0.31.0+
-- 运行 `go mod tidy` 并验证无冲突
+### 任务 1.1：添加 client-go 依赖 ✅
+- ✅ 添加 `k8s.io/client-go` v0.31.0+ 到 go.mod
+- ✅ 添加 `k8s.io/api` v0.31.0+
+- ✅ 添加 `k8s.io/apimachinery` v0.31.0+
+- ✅ 运行 `go mod tidy` 并验证无冲突
 
 **交付物**：更新的 go.mod 和 go.sum
 **预估时间**：30 分钟
+**状态**：✅ 已完成
 
-### 任务 1.2：实现 K8s 客户端初始化
-- 创建 `src/agent/pkg/k8s/client.go`
-- 实现 `NewClient(config *Config) (*Client, error)` 函数
-- 支持 in-cluster 配置（使用 `rest.InClusterConfig()`）
-- 支持 out-of-cluster 配置（使用 `clientcmd.BuildConfigFromFlags()`）
-- 实现自动检测模式（先尝试 in-cluster，失败则回退到 kubeconfig）
+### 任务 1.2：实现 K8s 客户端初始化 ✅
+- ✅ 创建 `src/agent/pkg/k8s/client.go`
+- ✅ 实现 `NewClient(config *Config) (*Client, error)` 函数
+- ✅ 支持 in-cluster 配置（使用 `rest.InClusterConfig()`）
+- ✅ 支持 out-of-cluster 配置（使用 `clientcmd.BuildConfigFromFlags()`）
+- ✅ 实现自动检测模式（先尝试 in-cluster，失败则回退到 kubeconfig）
 
 **文件**：`src/agent/pkg/k8s/client.go`
 **测试**：`src/agent/pkg/k8s/client_test.go`
 **规范**：[k8s-api-client](./specs/k8s-api-client/spec.md) - Kubernetes 客户端初始化
 **预估时间**：4 小时
+**状态**：✅ 已完成
 
-### 任务 1.3：实现健康检查
-- 添加 `HealthCheck() error` 方法到 Client
-- 发送 GET /api/v1 请求验证 API Server 连通性
-- 实现定期健康检查（可配置间隔，默认 30 秒）
-- 添加指数退避重连逻辑
+### 任务 1.3：实现健康检查 ✅
+- ✅ 添加 `HealthCheck() error` 方法到 Client
+- ✅ 发送 GET /api/v1 请求验证 API Server 连通性
+- ✅ 实现定期健康检查（可配置间隔，默认 30 秒）
+- ✅ 添加指数退避重连逻辑
 
 **文件**：`src/agent/pkg/k8s/health.go`
 **测试**：`src/agent/pkg/k8s/health_test.go`
 **规范**：[k8s-api-client](./specs/k8s-api-client/spec.md) - Kubernetes API 健康检查
 **预估时间**：3 小时
+**状态**：✅ 已完成
 
-### 任务 1.4：实现 RBAC 权限检查
-- 添加 `CheckPermissions() error` 方法
-- 使用 `SelfSubjectAccessReview` 验证 Pod.list 和 Pod.watch 权限
-- 检查 Service.list 和 Service.watch 权限
-- 返回清晰的错误消息和 RBAC 配置建议
+### 任务 1.4：实现 RBAC 权限检查 ✅
+- ✅ 添加 `CheckPermissions() error` 方法
+- ✅ 使用 `SelfSubjectAccessReview` 验证 Pod.list 和 Pod.watch 权限
+- ✅ 检查 Service.list 和 Service.watch 权限
+- ✅ 返回清晰的错误消息和 RBAC 配置建议
 
 **文件**：`src/agent/pkg/k8s/rbac.go`
 **测试**：`src/agent/pkg/k8s/rbac_test.go`
 **规范**：[k8s-api-client](./specs/k8s-api-client/spec.md) - RBAC 权限验证
 **预估时间**：3 小时
+**状态**：✅ 已完成
 
-### 任务 1.5：配置集成
-- 在 `src/agent/pkg/config/config.go` 创建 `K8sConfig` 结构体
-- 添加配置字段：enabled、config_mode、kubeconfig_path、api_server、timeout、qps、burst
-- 实现配置验证
-- 更新 Agent 初始化逻辑，条件性启用 K8s 集成
+### 任务 1.5：配置集成 ✅
+- ✅ 在 `src/agent/pkg/config/config.go` 创建 `K8sConfig` 结构体
+- ✅ 添加配置字段：enabled、config_mode、kubeconfig_path、api_server、timeout、qps、burst
+- ✅ 实现配置验证
+- ✅ 更新 Agent 初始化逻辑，条件性启用 K8s 集成
 
 **文件**：`src/agent/pkg/config/config.go`、`src/agent/cmd/agent/main.go`
 **规范**：[k8s-api-client](./specs/k8s-api-client/spec.md) - 客户端配置选项
 **预估时间**：2 小时
+**状态**：✅ 已完成
 
 ---
 
@@ -71,16 +76,17 @@
 **规范**：[k8s-workload-sync](./specs/k8s-workload-sync/spec.md) - Pod Informer 初始化
 **预估时间**：4 小时
 
-### 任务 2.2：实现 Namespace 过滤
-- 添加 namespace 过滤配置（include/exclude 列表）
-- 在 Informer 创建时实现过滤逻辑
-- 支持通配符模式（例如：`prod-*`）
-- 添加 namespace 过滤配置验证
+### 任务 2.2：实现 Namespace 过滤 ✅
+- ✅ 添加 namespace 过滤配置（include/exclude 列表）
+- ✅ 在 Informer 创建时实现过滤逻辑
+- ✅ 支持通配符模式（例如：`prod-*`）
+- ✅ 添加 namespace 过滤配置验证
 
 **文件**：`src/agent/pkg/k8s/namespace_filter.go`
 **测试**：`src/agent/pkg/k8s/namespace_filter_test.go`
 **规范**：[k8s-workload-sync](./specs/k8s-workload-sync/spec.md) - Namespace 过滤配置
 **预估时间**：3 小时
+**状态**：✅ 已完成
 
 ### 任务 2.3：实现 Pod 事件处理器
 - 创建 `src/agent/pkg/k8s/pod_handler.go`
@@ -110,22 +116,25 @@
 
 ## 阶段 3：标签映射和同步（第 2-3 周）
 
-### 任务 3.1：实现标签映射规则
-- 创建 `src/agent/pkg/k8s/label_mapper.go`
-- 实现标准 K8s 标签映射：
+### 任务 3.1：实现标签映射规则 ✅
+- ✅ 创建标签映射功能（在 `src/agent/pkg/k8s/converter.go` 中实现）
+- ✅ 实现标准 K8s 标签映射：
   - `app.kubernetes.io/name` → `app`
   - `app.kubernetes.io/component` → `role`
   - `app.kubernetes.io/version` → `version`
   - `app.kubernetes.io/instance` → `instance`
-- 实现环境和位置映射：
+- ✅ 实现环境和位置映射：
   - `environment`/`env` → `env`
   - `topology.kubernetes.io/zone` → `loc`
-- 处理自定义标签，添加前缀 `k8s.label.*`
+  - `topology.kubernetes.io/region` → `region`
+- ✅ 实现优先级机制和自定义标签保留
+- ✅ 导出 `MapPodLabels()` 函数供外部使用
 
-**文件**：`src/agent/pkg/k8s/label_mapper.go`
-**测试**：`src/agent/pkg/k8s/label_mapper_test.go`
+**文件**：`src/agent/pkg/k8s/converter.go`
+**测试**：`src/agent/pkg/k8s/converter_test.go`
 **规范**：[k8s-workload-sync](./specs/k8s-workload-sync/spec.md) - 标签映射规则
 **预估时间**：4 小时
+**状态**：✅ 已完成
 
 ### 任务 3.2：实现注解处理
 - 解析 `microsegment.io/labels` 注解（JSON 格式）
@@ -369,9 +378,19 @@
 - 在基本功能运作之前延后性能优化
 
 **成功标准**（来自 proposal.md）：
-- [ ] K8s API Client 成功连接（in-cluster 和 out-of-cluster）
+- [x] K8s API Client 成功连接（in-cluster 和 out-of-cluster）✅
 - [ ] 监听和同步 Pod 的 Add/Update/Delete 事件
-- [ ] K8s 标签正确映射到工作负载标签
-- [ ] 支持 Namespace 过滤
+- [x] K8s 标签正确映射到工作负载标签 ✅
+- [x] 支持 Namespace 过滤 ✅
 - [ ] 测试覆盖率 ≥ 70%
 - [ ] 完整文档（配置、RBAC、故障排查）
+
+**已完成任务汇总**：
+- ✅ 阶段 1：Kubernetes API 客户端基础（任务 1.1-1.5）
+- ✅ 任务 2.2：Namespace 过滤
+- ✅ 任务 3.1：标签映射规则
+
+**下一步任务**：
+- 任务 2.1：创建 Pod Informer
+- 任务 2.3：实现 Pod 事件处理器
+- 任务 2.4：Pod 到 Workload 转换（部分已完成，需集成）
