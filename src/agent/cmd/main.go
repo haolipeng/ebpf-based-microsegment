@@ -257,10 +257,13 @@ func initAgentServerMode(cfg *config.Config, pm *policy.PolicyManager) (reporter
 	currentVersion := uint64(0) // TODO: Get from policy manager
 	if policies, version, err := agentClient.SyncPolicies(currentVersion); err == nil {
 		log.Infof("✓ Synced %d policies (version %d)", len(policies), version)
-		// TODO: Apply policies to policy manager
-		// for _, p := range policies {
-		//     pm.AddPolicyFromProto(p)
-		// }
+
+		// Apply policies to policy manager
+		if err := pm.SyncPoliciesFromServer(policies, version); err != nil {
+			log.Errorf("Failed to apply synced policies: %v", err)
+		} else {
+			log.Infof("✓ Applied %d policies to data plane", len(policies))
+		}
 	} else {
 		log.Warnf("Failed to sync policies: %v", err)
 	}

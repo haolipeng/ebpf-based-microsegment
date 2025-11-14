@@ -7,6 +7,9 @@ import (
 	"net"
 	"strings"
 
+	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
+
 	"github.com/cilium/ebpf"
 	log "github.com/sirupsen/logrus"
 )
@@ -964,4 +967,105 @@ func directionToString(direction uint8) string {
 	default:
 		return DirectionAny
 	}
+}
+
+// ========== Protobuf Policy Conversion Methods ==========
+
+// protocolEnumToString converts protobuf Protocol enum to string
+func protocolEnumToString(proto commonpb.Protocol) string {
+	switch proto {
+	case commonpb.Protocol_PROTOCOL_TCP:
+		return "tcp"
+	case commonpb.Protocol_PROTOCOL_UDP:
+		return "udp"
+	case commonpb.Protocol_PROTOCOL_ICMP:
+		return "icmp"
+	case commonpb.Protocol_PROTOCOL_ANY:
+		return "any"
+	default:
+		return "any"
+	}
+}
+
+// actionEnumToString converts protobuf PolicyAction enum to string
+func actionEnumToString(action commonpb.PolicyAction) string {
+	switch action {
+	case commonpb.PolicyAction_ACTION_ALLOW:
+		return "allow"
+	case commonpb.PolicyAction_ACTION_DENY:
+		return "deny"
+	case commonpb.PolicyAction_ACTION_LOG:
+		return "log"
+	default:
+		return "allow"
+	}
+}
+
+// AddPolicyFromProto converts a protobuf Policy to internal Policy and adds it to eBPF map
+func (pm *PolicyManager) AddPolicyFromProto(pbPolicy *policypb.Policy) error {
+	if pbPolicy == nil {
+		return fmt.Errorf("protobuf policy is nil")
+	}
+
+	// Convert protobuf Policy to internal Policy
+	policy := &Policy{
+		RuleID:    pbPolicy.RuleId,
+		SrcIP:     pbPolicy.SrcIp,
+		DstIP:     pbPolicy.DstIp,
+		SrcPort:   uint16(pbPolicy.SrcPort),   // uint32 -> uint16
+		DstPort:   uint16(pbPolicy.DstPort),   // uint32 -> uint16
+		Protocol:  protocolEnumToString(pbPolicy.Protocol),
+		Action:    actionEnumToString(pbPolicy.Action),
+		Direction: DirectionAny, // Default: protobuf Policy doesn't have direction field
+		Priority:  uint16(pbPolicy.Priority),  // uint32 -> uint16
+	}
+
+	// Use existing AddPolicy method
+	return pm.AddPolicy(policy)
+}
+
+// SyncPoliciesFromServer synchronizes policies from server and applies them to eBPF map
+// It clears all existing policies and loads the new ones
+func (pm *PolicyManager) SyncPoliciesFromServer(policies []*policypb.Policy, version uint64) error {
+	log.Infof("Starting policy sync: %d policies, version=%d", len(policies), version)
+
+	// Step 1: Clear all existing policies
+	if err := pm.Clear(); err != nil {
+		return fmt.Errorf("failed to clear old policies: %w", err)
+	}
+	log.Debug("Cleared all old policies")
+
+	// Step 2: Add new policies (with partial failure handling)
+	if len(policies) == 0 {
+		log.Info("No policies to sync")
+		return nil
+	}
+
+	successCount := 0
+	var failedPolicies []string
+
+	for _, pbPolicy := range policies {
+		if err := pm.AddPolicyFromProto(pbPolicy); err != nil {
+			errMsg := fmt.Sprintf("rule_id=%d: %v", pbPolicy.RuleId, err)
+			log.Warnf("Failed to add policy: %s", errMsg)
+			failedPolicies = append(failedPolicies, errMsg)
+			continue
+		}
+		successCount++
+	}
+
+	// Step 3: Log results
+	log.Infof("Policy sync complete: %d/%d policies loaded successfully (version=%d)",
+		successCount, len(policies), version)
+
+	if len(failedPolicies) > 0 {
+		log.Warnf("Failed to load %d policies: %v", len(failedPolicies), failedPolicies)
+	}
+
+	// Only return error if ALL policies failed
+	if successCount == 0 && len(policies) > 0 {
+		return fmt.Errorf("all %d policies failed to load", len(policies))
+	}
+
+	return nil
 }

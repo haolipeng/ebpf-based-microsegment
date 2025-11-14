@@ -6,6 +6,9 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	agentpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/agent"
@@ -17,10 +20,10 @@ import (
 
 // AgentClient manages communication with the microsegmentation server
 type AgentClient struct {
-	agentID       string
-	hostname      string
-	version       string
-	serverAddr    string
+	agentID    string
+	hostname   string
+	version    string
+	serverAddr string
 
 	conn          *grpc.ClientConn
 	agentService  agentpb.AgentServiceClient
@@ -209,8 +212,8 @@ func (c *AgentClient) SyncPolicies(currentVersion uint64) ([]*policypb.Policy, u
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"policy_count":   resp.PolicyCount,
-		"policy_version": resp.PolicyVersion,
+		"policy_count":    resp.PolicyCount,
+		"policy_version":  resp.PolicyVersion,
 		"current_version": currentVersion,
 	}).Info("Policies synchronized")
 
@@ -249,11 +252,124 @@ func getOSInfo() string {
 	return fmt.Sprintf("%s %s (%s)", runtime.GOOS, runtime.GOARCH, runtime.Version())
 }
 
-// getCPUUsage returns current CPU usage percentage (placeholder)
+// cpuStats stores CPU statistics for calculating usage
+type cpuStats struct {
+	user    uint64
+	nice    uint64
+	system  uint64
+	idle    uint64
+	iowait  uint64
+	irq     uint64
+	softirq uint64
+	steal   uint64
+}
+
+var (
+	lastCPUStats cpuStats
+	lastCPUTime  time.Time
+	cpuMutex     sync.Mutex
+)
+
+// getCPUUsage returns current CPU usage percentage
+// Calculates CPU usage by reading /proc/stat and comparing with previous reading
 func getCPUUsage() float32 {
-	// TODO: Implement actual CPU usage calculation
-	// For now, return 0 as placeholder
-	return 0.0
+	cpuMutex.Lock()
+	defer cpuMutex.Unlock()
+
+	stats, err := readCPUStats()
+	if err != nil {
+		logrus.Debugf("Failed to read CPU stats: %v", err)
+		return 0.0
+	}
+
+	now := time.Now()
+
+	// First call, initialize baseline
+	if lastCPUTime.IsZero() {
+		lastCPUStats = stats
+		lastCPUTime = now
+		return 0.0
+	}
+
+	// Calculate deltas
+	totalDelta := stats.total() - lastCPUStats.total()
+	idleDelta := stats.idle - lastCPUStats.idle
+
+	// Update last stats
+	lastCPUStats = stats
+	lastCPUTime = now
+
+	// Avoid division by zero
+	if totalDelta == 0 {
+		return 0.0
+	}
+
+	// CPU usage = (totalDelta - idleDelta) / totalDelta * 100
+	usage := float32(totalDelta-idleDelta) / float32(totalDelta) * 100.0
+
+	return usage
+}
+
+// readCPUStats reads CPU statistics from /proc/stat
+func readCPUStats() (cpuStats, error) {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return cpuStats{}, fmt.Errorf("failed to read /proc/stat: %w", err)
+	}
+
+	// Find the first "cpu" line (aggregate across all CPUs)
+	content := string(data)
+	cpuPrefix := "cpu "
+
+	idx := strings.Index(content, cpuPrefix)
+	if idx == -1 {
+		return cpuStats{}, fmt.Errorf("cpu line not found in /proc/stat")
+	}
+
+	// Extract the cpu line (from "cpu " to newline)
+	lineStart := idx
+	lineEnd := strings.Index(content[lineStart:], "\n")
+	if lineEnd == -1 {
+		lineEnd = len(content)
+	} else {
+		lineEnd += lineStart
+	}
+
+	cpuLine := content[lineStart:lineEnd]
+	fields := strings.Fields(cpuLine)
+
+	if len(fields) < 9 {
+		return cpuStats{}, fmt.Errorf("invalid /proc/stat format: expected at least 9 fields, got %d", len(fields))
+	}
+
+	// Parse CPU time fields
+	// Format: cpu user nice system idle iowait irq softirq steal
+	stats := cpuStats{
+		user:    parseUint64(fields[1]),
+		nice:    parseUint64(fields[2]),
+		system:  parseUint64(fields[3]),
+		idle:    parseUint64(fields[4]),
+		iowait:  parseUint64(fields[5]),
+		irq:     parseUint64(fields[6]),
+		softirq: parseUint64(fields[7]),
+		steal:   parseUint64(fields[8]),
+	}
+
+	return stats, nil
+}
+
+// total returns total CPU time (sum of all fields)
+func (s cpuStats) total() uint64 {
+	return s.user + s.nice + s.system + s.idle + s.iowait + s.irq + s.softirq + s.steal
+}
+
+// parseUint64 parses a string to uint64, returns 0 on error
+func parseUint64(s string) uint64 {
+	val, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return val
 }
 
 // getMemoryUsage returns current memory usage in bytes (placeholder)
