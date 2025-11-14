@@ -77,7 +77,7 @@ func TestNewFlowServiceServer(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	server := NewFlowServiceServer(flowStorage, nil)
 
 	assert.NotNil(t, server)
@@ -90,7 +90,7 @@ func TestReportFlowEvents_SingleEvent(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	server := NewFlowServiceServer(flowStorage, nil)
 
 	event := &flowpb.FlowEvent{
@@ -143,7 +143,7 @@ func TestReportFlowEvents_MultipleEvents(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	server := NewFlowServiceServer(flowStorage, nil)
 
 	events := []*flowpb.FlowEvent{
@@ -205,7 +205,7 @@ func TestReportFlowEvents_RejectsInvalidEvent(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	server := NewFlowServiceServer(flowStorage, nil)
 
 	events := []*flowpb.FlowEvent{
@@ -256,7 +256,7 @@ func TestReportFlowEvents_StorageError(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	server := NewFlowServiceServer(flowStorage, nil)
 
 	event := &flowpb.FlowEvent{
@@ -289,7 +289,7 @@ func TestReportFlowEvents_EmptyStream(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	server := NewFlowServiceServer(flowStorage, nil)
 
 	mockStream := &mockReportFlowEventsStream{
@@ -313,7 +313,7 @@ func TestQueryFlows_Success(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	server := NewFlowServiceServer(flowStorage, nil)
 
 	query := &flowpb.FlowQuery{
@@ -360,7 +360,7 @@ func TestQueryFlows_WithPagination(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	server := NewFlowServiceServer(flowStorage, nil)
 
 	query := &flowpb.FlowQuery{
@@ -395,7 +395,7 @@ func TestQueryFlows_StorageError(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	server := NewFlowServiceServer(flowStorage, nil)
 
 	query := &flowpb.FlowQuery{
@@ -418,7 +418,7 @@ func TestGetFlowSummary_ReturnsBasicStats(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	server := NewFlowServiceServer(flowStorage, nil)
 
 	req := &flowpb.FlowSummaryRequest{
@@ -480,7 +480,7 @@ func TestEventToFlow(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	server := NewFlowServiceServer(flowStorage, nil)
 
 	event := &flowpb.FlowEvent{

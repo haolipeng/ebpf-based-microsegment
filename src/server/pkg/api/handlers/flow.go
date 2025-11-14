@@ -164,9 +164,9 @@ func (h *FlowHandler) GetFlow(c *gin.Context) {
 
 // GetFlowSummary handles GET /api/v1/flows/summary - Get flow statistics summary
 func (h *FlowHandler) GetFlowSummary(c *gin.Context) {
-	// Parse time range (default: last 1 hour)
+	// Parse time range (default: last 7 days)
 	endTime := time.Now()
-	startTime := endTime.Add(-1 * time.Hour)
+	startTime := endTime.Add(-7 * 24 * time.Hour)
 
 	if startTimeStr := c.Query("start_time"); startTimeStr != "" {
 		if t, err := time.Parse(time.RFC3339, startTimeStr); err == nil {

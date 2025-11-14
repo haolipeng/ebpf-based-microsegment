@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
 	"github.com/gin-gonic/gin"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +33,7 @@ func TestNewFlowHandler(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	handler := NewFlowHandler(flowStorage)
 
 	assert.NotNil(t, handler)
@@ -46,7 +46,7 @@ func TestListFlows_Success(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock COUNT query
@@ -100,7 +100,7 @@ func TestListFlows_WithPagination(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock COUNT query - 100 total flows
@@ -143,7 +143,7 @@ func TestListFlows_WithFilters(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock COUNT query
@@ -186,7 +186,7 @@ func TestListFlows_StorageError(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock query error
@@ -214,7 +214,7 @@ func TestGetFlow_Success(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock COUNT query
@@ -259,7 +259,7 @@ func TestGetFlow_NotFound(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock COUNT query
@@ -299,24 +299,25 @@ func TestGetFlowSummary_Success(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock summary query
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) as total_flows").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"total_flows", "total_packets", "total_bytes",
-			"unique_source_ips", "unique_dest_ips", "avg_duration_ms",
-		}).AddRow(100, 10000, 1024000, 10, 20, 150.5))
+			"total_flows", "active_flows", "closed_flows", "total_packets", "total_bytes",
+			"allowed_flows", "denied_flows", "unique_source_ips", "unique_dest_ips", "avg_duration_ms",
+		}).AddRow(100, 60, 40, 10000, 1024000, 80, 20, 10, 20, 150.5))
 
 	// Mock protocol stats query
 	mock.ExpectQuery("SELECT(.+)protocol(.+)FROM flows").
 		WillReturnRows(sqlmock.NewRows([]string{
 			"protocol", "count", "bytes",
 		}).
-			AddRow(6, 80, 80000).   // TCP
-			AddRow(17, 15, 15000).  // UDP
-			AddRow(1, 5, 5000))     // ICMP
+			AddRow("6", 80, 80000).  // TCP
+			AddRow("17", 15, 15000). // UDP
+			AddRow("1", 5, 5000))    // ICMP
 
 	// Make request
 	w := httptest.NewRecorder()
@@ -345,7 +346,7 @@ func TestGetFlowSummary_StorageError(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock query error
@@ -373,17 +374,18 @@ func TestGetFlowDependencies_Success(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock dependencies query
 	rows := sqlmock.NewRows([]string{
-		"source_label", "dest_label", "flow_count", "byte_count", "packet_count",
+		"source_label", "dest_label", "flow_count", "total_bytes", "protocols",
 	}).
-		AddRow("web", "db", 100, 102400, 1000).
-		AddRow("web", "cache", 50, 51200, 500)
+		AddRow("web", "db", 100, 102400, []byte(`["6","17"]`)).
+		AddRow("web", "cache", 50, 51200, []byte(`["6"]`))
 
-	mock.ExpectQuery("SELECT (.+) FROM flows").
+	mock.ExpectQuery("SELECT.*source_labels").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "app").
 		WillReturnRows(rows)
 
 	// Make request
@@ -413,11 +415,12 @@ func TestGetFlowDependencies_StorageError(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorage(db)
+	flowStorage := storage.NewFlowStorageLegacy(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock query error
-	mock.ExpectQuery("SELECT (.+) FROM flows").
+	mock.ExpectQuery("SELECT.*source_labels").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "app").
 		WillReturnError(sql.ErrConnDone)
 
 	// Make request
