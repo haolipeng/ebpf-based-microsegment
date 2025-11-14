@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -279,9 +280,10 @@ func initStorage(cfg *config.Config) flow.Storage {
 	log.Info("Initializing local SQLite storage...")
 
 	// Create storage directory if it doesn't exist
-	storageDir := "./data"
+	// Extract directory path from storage file path
+	storageDir := filepath.Dir(cfg.Flow.StoragePath)
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
-		log.Errorf("Failed to create storage directory: %v", err)
+		log.Errorf("Failed to create storage directory %s: %v", storageDir, err)
 		return nil
 	}
 
