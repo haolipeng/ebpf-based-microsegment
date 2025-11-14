@@ -1,0 +1,108 @@
+/* 拓扑图页面样式 */
+
+.topology-page {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 图表容器 */
+.topology-graph-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* 节点高亮效果 */
+.topology-node-highlight {
+  box-shadow: 0 0 20px rgba(84, 112, 198, 0.8);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(84, 112, 198, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(84, 112, 198, 1);
+  }
+}
+
+/* 边动画效果 */
+.topology-edge-animate {
+  animation: flow 2s linear infinite;
+}
+
+@keyframes flow {
+  0% {
+    stroke-dashoffset: 20;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Loading状态 */
+.topology-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 16px;
+  color: #999;
+}
+
+/* 响应式布局 */
+@media (max-width: 768px) {
+  .topology-page {
+    padding: 12px !important;
+  }
+
+  .topology-graph-container {
+    height: 400px !important;
+  }
+}
+
+/* 详情面板样式 */
+.topology-detail-panel .ant-descriptions-item-label {
+  font-weight: 500;
+  background-color: #fafafa;
+}
+
+.topology-detail-panel .ant-descriptions-item-content {
+  font-weight: normal;
+}
+
+/* 图例卡片样式 */
+.topology-legend-card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 控制栏样式 */
+.topology-controls {
+  background-color: #fff;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 空状态样式 */
+.topology-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+}
+
+.topology-empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.4;
+}
+
+.topology-empty-text {
+  font-size: 16px;
+}
+

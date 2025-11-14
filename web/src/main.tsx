@@ -4,6 +4,7 @@ import { RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import router from './router'
 import './index.css'
+import './styles/topology.css'
 
 // Create a client for TanStack Query
 const queryClient = new QueryClient({

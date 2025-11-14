@@ -5,6 +5,7 @@ import Agents from './pages/Agents'
 import AgentDetail from './pages/Agents/AgentDetail'
 import Flows from './pages/Flows'
 import Policies from './pages/Policies'
+import Topology from './pages/Topology'
 
 const router = createBrowserRouter([
   {
@@ -30,6 +31,10 @@ const router = createBrowserRouter([
       {
         path: 'policies',
         element: <Policies />,
+      },
+      {
+        path: 'topology',
+        element: <Topology />,
       },
     ],
   },

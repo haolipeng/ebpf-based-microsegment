@@ -4,6 +4,7 @@ import {
   ClusterOutlined,
   ApartmentOutlined,
   SafetyOutlined,
+  ShareAltOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { MenuProps } from 'antd'
@@ -27,6 +28,11 @@ const menuItems: MenuItem[] = [
     key: '/flows',
     icon: <ApartmentOutlined />,
     label: 'Flows',
+  },
+  {
+    key: '/topology',
+    icon: <ShareAltOutlined />,
+    label: 'Topology',
   },
   {
     key: '/policies',
