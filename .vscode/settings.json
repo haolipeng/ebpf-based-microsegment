@@ -1,0 +1,37 @@
+{
+    "git.ignoreLimitWarning": true,
+    "claudeCode.autoCommit": false,
+    "claudeCode.git.autoStage": false,
+    "claudeCode.git.autoCommitOnTaskCompletion": false,
+
+    // Go 语言配置
+    "go.toolsManagement.autoUpdate": true,
+    "go.useLanguageServer": true,
+    "go.lintTool": "golangci-lint",
+    "go.lintOnSave": "package",
+    "go.formatTool": "gofmt",
+    "go.formatOnSave": true,
+
+    // Go 调试配置
+    // 注意: dlv-dap 调试适配器会按需加载复合数据,不需要 dlvLoadConfig
+    "go.delveConfig": {
+        "showGlobalVariables": true
+    },
+
+    // 文件关联
+    "files.associations": {
+        "*.bpf.c": "c",
+        "*.yaml": "yaml"
+    },
+
+    // C/C++ 配置 (用于 eBPF 代码)
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/src/bpf",
+        "${workspaceFolder}/src/bpf/headers",
+        "/usr/include"
+    ],
+    "C_Cpp.default.defines": [
+        "__BPF__",
+        "__TARGET_ARCH_x86"
+    ]
+}

@@ -1,0 +1,143 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build-bpf",
+            "type": "shell",
+            "command": "make",
+            "args": ["bpf"],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PATH": "/usr/local/go/bin:/home/work/goProject/bin:${env:PATH}"
+                }
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": false
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        },
+        {
+            "label": "build-agent",
+            "type": "shell",
+            "command": "make",
+            "args": ["agent"],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PATH": "/usr/local/go/bin:/home/work/goProject/bin:${env:PATH}"
+                }
+            },
+            "dependsOn": ["build-bpf"],
+            "problemMatcher": ["$go"],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "build-server",
+            "type": "shell",
+            "command": "make",
+            "args": ["server"],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PATH": "/usr/local/go/bin:/home/work/goProject/bin:${env:PATH}"
+                }
+            },
+            "problemMatcher": ["$go"],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "group": "build"
+        },
+        {
+            "label": "build-all",
+            "type": "shell",
+            "command": "make",
+            "args": ["all"],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PATH": "/usr/local/go/bin:/home/work/goProject/bin:${env:PATH}"
+                }
+            },
+            "problemMatcher": ["$go"],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "group": "build"
+        },
+        {
+            "label": "test-agent",
+            "type": "shell",
+            "command": "make",
+            "args": ["test"],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PATH": "/usr/local/go/bin:/home/work/goProject/bin:${env:PATH}"
+                }
+            },
+            "problemMatcher": ["$go"],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "group": "test"
+        },
+        {
+            "label": "clean",
+            "type": "shell",
+            "command": "make",
+            "args": ["clean"],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PATH": "/usr/local/go/bin:/home/work/goProject/bin:${env:PATH}"
+                }
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": false
+            }
+        }
+    ]
+}
