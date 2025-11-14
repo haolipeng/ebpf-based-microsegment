@@ -33,6 +33,7 @@
 #define DEBUG_MODE 0
 
 #include "headers/common_types.h"
+#include "headers/tcp_state_machine.h"
 
 char LICENSE[] SEC("license") = "GPL";
 
@@ -153,6 +154,46 @@ static __always_inline bool is_tcp_closing_xdp(struct xdp_md *ctx, struct flow_k
 	return (tcph->fin || tcph->rst);
 }
 
+// Helper: Update TCP state machine (XDP version)
+// 更新 TCP 状态机
+static __always_inline __u8 update_tcp_state_xdp(struct xdp_md *ctx, struct flow_key *key, __u8 current_state) {
+	void *data = (void *)(long)ctx->data;
+	void *data_end = (void *)(long)ctx->data_end;
+
+	// 仅处理 TCP 协议
+	if (key->protocol != IPPROTO_TCP)
+		return current_state;
+
+	// 解析以太网头
+	__u16 eth_proto;
+	struct ethhdr *eth = data;
+	if ((void *)(eth + 1) > data_end)
+		return current_state;
+	eth_proto = eth->h_proto;
+
+	if (eth_proto != bpf_htons(ETH_P_IP))
+		return current_state;
+
+	// 解析 IPv4 头
+	struct iphdr *iph = (void *)(eth + 1);
+	if ((void *)(iph + 1) > data_end)
+		return current_state;
+
+	// 计算 TCP 头位置
+	void *tcph_ptr = (void *)iph + (iph->ihl * 4);
+	struct tcphdr *tcph = tcph_ptr;
+
+	if ((void *)(tcph + 1) > data_end)
+		return current_state;
+
+	// 提取 TCP 标志
+	__u8 flags = get_tcp_flags(tcph);
+
+	// XDP 仅支持 ingress 方向,因此所有数据包都是入站的
+	// 使用入站转换逻辑
+	return tcp_state_transition_inbound(current_state, flags);
+}
+
 // Helper: Push flow event to user-space via Ring Buffer (XDP version)
 // 推送流事件到用户空间的 Ring Buffer (XDP 版本)
 // Returns 0 on success, -1 on failure
@@ -246,19 +287,24 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 		session->packets_to_server += 1;
 		session->bytes_to_server += packet_len;  // 累加字节数
 
-		// 检测 TCP 连接关闭 (FIN 或 RST 标志)
-		// 只在会话未标记为关闭时检测,避免重复计数
-		if (session->state != SESSION_STATE_CLOSING &&
-		    session->state != SESSION_STATE_CLOSED) {
-			if (is_tcp_closing_xdp(ctx, &key)) {
+		// 更新 TCP 状态机 (仅对 TCP 协议)
+		if (key.protocol == IPPROTO_TCP) {
+			__u8 old_tcp_state = session->tcp_state;
+			session->tcp_state = update_tcp_state_xdp(ctx, &key, old_tcp_state);
+
+			// 检测 TCP 连接关闭状态
+			if (is_tcp_state_closing(session->tcp_state) &&
+			    session->state != SESSION_STATE_CLOSING &&
+			    session->state != SESSION_STATE_CLOSED) {
 				// 标记会话为关闭状态
 				session->state = SESSION_STATE_CLOSING;
 				// 增加已关闭会话计数
 				update_stats(STATS_CLOSED_SESSIONS);
 #if DEBUG_MODE
-				bpf_printk("XDP TCP closing: %pI4:%d -> %pI4:%d\n",
+				bpf_printk("XDP TCP state transition: %pI4:%d -> %pI4:%d (%d -> %d)\n",
 					   &key.src_ip, bpf_ntohs(key.src_port),
-					   &key.dst_ip, bpf_ntohs(key.dst_port));
+					   &key.dst_ip, bpf_ntohs(key.dst_port),
+					   old_tcp_state, session->tcp_state);
 #endif
 			}
 		}
@@ -302,6 +348,13 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 #endif
 
 	// 4. 创建新会话
+	// 初始化 TCP 状态 (根据第一个数据包的标志)
+	__u8 initial_tcp_state = TCP_STATE_CLOSED;
+	if (key.protocol == IPPROTO_TCP) {
+		// 从 CLOSED 状态开始转换,模拟收到第一个数据包
+		initial_tcp_state = update_tcp_state_xdp(ctx, &key, TCP_STATE_CLOSED);
+	}
+
 	struct session_value new_session = {
 		.created_ts = now,
 		.last_seen_ts = now,
@@ -310,7 +363,7 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 		.bytes_to_server = packet_len,  // 使用计算得到的数据包长度
 		.bytes_to_client = 0,
 		.state = SESSION_STATE_NEW,
-		.tcp_state = TCP_STATE_CLOSED,
+		.tcp_state = initial_tcp_state,  // 使用计算得到的 TCP 状态
 		.policy_action = action,
 		.flags = 0,
 	};
