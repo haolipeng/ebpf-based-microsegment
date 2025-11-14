@@ -16,6 +16,22 @@ type WorkloadManager interface {
 	GetLabelsByIP(ip string) (map[string]string, bool)
 }
 
+// Reporter interface for sending flows to control plane (agent-server mode)
+// This interface is defined here to avoid circular dependencies
+type Reporter interface {
+	// Report sends a single flow to the reporter
+	Report(ctx context.Context, flow *Flow) error
+
+	// ReportBatch sends multiple flows (for efficiency)
+	ReportBatch(ctx context.Context, flows []*Flow) error
+
+	// Start initializes the reporter
+	Start() error
+
+	// Stop gracefully shuts down the reporter
+	Stop() error
+}
+
 // Storage interface for persisting flow data
 type Storage interface {
 	// SaveFlow persists a flow to storage
@@ -42,11 +58,12 @@ type Storage interface {
 
 // Collector collects flow events from eBPF Ring Buffer
 type Collector struct {
-	ringBuf         *ringbuf.Reader
-	storage         Storage
-	workloadMgr     WorkloadManager
-	wsHub           *Hub               // WebSocket hub for real-time streaming
-	lifecycleManager *LifecycleManager // Lifecycle manager for data cleanup
+	ringBuf          *ringbuf.Reader
+	storage          Storage
+	workloadMgr      WorkloadManager
+	reporter         Reporter           // Reporter for sending flows to control plane (agent-server mode)
+	wsHub            *Hub               // WebSocket hub for real-time streaming
+	lifecycleManager *LifecycleManager  // Lifecycle manager for data cleanup
 
 	// Flow tracking
 	activeFlows map[string]*Flow // Keyed by flow ID
@@ -109,6 +126,17 @@ func NewCollector(ringBuf *ringbuf.Reader, storage Storage, workloadMgr Workload
 		cancel:      cancel,
 		config:      config,
 	}
+}
+
+// SetReporter sets the reporter for sending flows to control plane (agent-server mode)
+func (c *Collector) SetReporter(reporter Reporter) {
+	c.reporter = reporter
+	log.Println("[Flow Collector] Reporter configured for agent-server mode")
+}
+
+// GetReporter returns the reporter
+func (c *Collector) GetReporter() Reporter {
+	return c.reporter
 }
 
 // SetWebSocketHub sets the WebSocket hub for real-time streaming

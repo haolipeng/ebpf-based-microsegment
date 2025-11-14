@@ -48,10 +48,7 @@ server:
 
 # Flow collection configuration
 flow:
-  # Enable flow data collection and storage
-  enabled: true
-
-  # Path to SQLite database for flow storage
+  # Path to SQLite database for flow storage (standalone mode only)
   storage_path: "./data/flows.db"
 
   # Duration after which inactive flows are considered closed

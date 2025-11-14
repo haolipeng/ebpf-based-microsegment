@@ -79,10 +79,13 @@ func runAgent(cmd *cobra.Command, args []string) {
 
 	log.Info("✓ Policy manager initialized")
 
-	// Initialize agent-server components (only in agent-server mode)
+	// Initialize mode-specific components
 	var rep reporter.Reporter
 	var agentClient *client.AgentClient
+	var flowStorage flow.Storage
+
 	if cfg.IsAgentServerMode() {
+		// Agent-Server mode: initialize reporter and server connection
 		log.Info("Connecting to control plane server...")
 		rep, agentClient = initAgentServerMode(cfg, pm)
 
@@ -92,22 +95,22 @@ func runAgent(cmd *cobra.Command, args []string) {
 		}
 		defer rep.Stop()
 	} else {
+		// Standalone mode: initialize local SQLite storage
 		log.Info("Running in standalone mode (no server connection)")
+
+		flowStorage = initStorage(cfg)
+		if flowStorage != nil {
+			defer flowStorage.Close()
+			log.Info("✓ Standalone mode storage initialized")
+		}
 	}
 
-	// Initialize flow collection if enabled
-	var flowCollector *flow.Collector
-	var flowStorage flow.Storage
-	if cfg.Flow.Enabled {
-		log.Info("Initializing flow collection...")
-		flowCollector, flowStorage = initFlowCollection(cfg, dp)
-		if flowCollector != nil {
-			defer flowCollector.Stop()
-			defer flowStorage.Close()
-			log.Info("✓ Flow collection initialized")
-		}
-	} else {
-		log.Info("Flow collection disabled")
+	// Initialize flow collector (always enabled as it's core functionality)
+	log.Info("Initializing flow collection...")
+	flowCollector := initFlowCollector(cfg, dp, flowStorage, rep)
+	if flowCollector != nil {
+		defer flowCollector.Stop()
+		log.Info("✓ Flow collection initialized")
 	}
 
 	// Start API server if enabled
@@ -125,8 +128,9 @@ func runAgent(cmd *cobra.Command, args []string) {
 			log.Fatalf("Failed to create API server: %v", err)
 		}
 
-		// Register flow components with API server if flow collection is enabled
-		if flowCollector != nil && flowStorage != nil {
+		// Register flow components with API server
+		// flowStorage may be nil in agent-server mode
+		if flowCollector != nil {
 			apiServer.SetFlowComponents(flowCollector, flowStorage)
 			log.Debug("Flow components registered with API server")
 		}
@@ -264,29 +268,39 @@ func initAgentServerMode(cfg *config.Config, pm *policy.PolicyManager) (reporter
 	return rep, agentClient
 }
 
-func initFlowCollection(cfg *config.Config, dp *dataplane.DataPlane) (*flow.Collector, flow.Storage) {
+// initStorage initializes SQLite storage for standalone mode.
+// This function should only be called in standalone mode.
+func initStorage(cfg *config.Config) flow.Storage {
+	log.Info("Initializing local SQLite storage...")
+
 	// Create storage directory if it doesn't exist
 	storageDir := "./data"
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
-		log.Warnf("Failed to create storage directory: %v", err)
-		return nil, nil
+		log.Errorf("Failed to create storage directory: %v", err)
+		return nil
 	}
 
 	// Initialize SQLite storage
 	storage, err := flow.NewSQLiteStorage(cfg.Flow.StoragePath)
 	if err != nil {
 		log.Errorf("Failed to create flow storage: %v", err)
-		return nil, nil
+		return nil
 	}
 
-	log.Infof("Flow storage initialized at %s", cfg.Flow.StoragePath)
+	log.Infof("✓ SQLite storage initialized at %s", cfg.Flow.StoragePath)
+	return storage
+}
 
+// initFlowCollector creates and configures the flow collector.
+// Behavior varies by operation mode:
+// - agent-server mode: configures collector to send flows to server via reporter
+// - standalone mode: configures collector to persist flows to local storage
+func initFlowCollector(cfg *config.Config, dp *dataplane.DataPlane, storage flow.Storage, rep reporter.Reporter) *flow.Collector {
 	// Get Ring Buffer from dataplane
 	ringBuf := dp.GetFlowRingBuffer()
 	if ringBuf == nil {
 		log.Error("Failed to get flow ring buffer from dataplane")
-		storage.Close()
-		return nil, nil
+		return nil
 	}
 
 	// Create collector configuration
@@ -294,46 +308,55 @@ func initFlowCollection(cfg *config.Config, dp *dataplane.DataPlane) (*flow.Coll
 		FlowTimeout:       cfg.Flow.FlowTimeout,
 		BatchSize:         100,
 		EnableEnrichment:  true,
-		EnablePersistence: true,
+		EnablePersistence: storage != nil, // Only persist if storage is available
 		CleanupInterval:   cfg.Flow.CleanupInterval,
 	}
 
-	// Create collector (workloadMgr is nil for now, can be added later)
+	// Create collector
+	// - workloadMgr is nil for now, can be added later for Kubernetes integration
+	// - storage may be nil in agent-server mode
 	collector := flow.NewCollector(ringBuf, storage, nil, collectorConfig)
+
+	// Agent-server mode: configure reporter to send flows to server
+	if cfg.IsAgentServerMode() && rep != nil {
+		collector.SetReporter(rep)
+		log.Info("✓ Collector configured to send flows to server via gRPC")
+	}
 
 	// Create and start WebSocket Hub for real-time streaming
 	wsHub := flow.NewHub()
 	go wsHub.Run()
 	collector.SetWebSocketHub(wsHub)
-	log.Info("WebSocket hub started for real-time flow streaming")
+	log.Info("✓ WebSocket hub started for real-time flow streaming")
 
 	// Start collector
 	if err := collector.Start(); err != nil {
 		log.Errorf("Failed to start flow collector: %v", err)
-		storage.Close()
-		return nil, nil
+		return nil
 	}
 
-	// Create and start lifecycle manager for data cleanup and monitoring
-	lifecycleConfig := flow.LifecycleConfig{
-		CleanupInterval:            24 * time.Hour, // Daily cleanup
-		RetentionDuration:          time.Duration(cfg.Flow.RetentionDays) * 24 * time.Hour,
-		StoragePath:                cfg.Flow.StoragePath,
-		DiskSpaceThresholdPercent:  80, // Warn when disk usage exceeds 80%
-		EnableDiskMonitoring:       true,
+	// Create and start lifecycle manager (only if storage exists)
+	if storage != nil {
+		lifecycleConfig := flow.LifecycleConfig{
+			CleanupInterval:           24 * time.Hour, // Daily cleanup
+			RetentionDuration:         time.Duration(cfg.Flow.RetentionDays) * 24 * time.Hour,
+			StoragePath:               cfg.Flow.StoragePath,
+			DiskSpaceThresholdPercent: 80, // Warn when disk usage exceeds 80%
+			EnableDiskMonitoring:      true,
+		}
+
+		lifecycleManager := flow.NewLifecycleManager(storage, lifecycleConfig)
+		if err := lifecycleManager.Start(); err != nil {
+			log.Warnf("Failed to start lifecycle manager: %v", err)
+		} else {
+			log.Info("✓ Lifecycle manager started for data cleanup and monitoring")
+		}
+
+		// Store lifecycle manager in collector for API access
+		collector.SetLifecycleManager(lifecycleManager)
 	}
 
-	lifecycleManager := flow.NewLifecycleManager(storage, lifecycleConfig)
-	if err := lifecycleManager.Start(); err != nil {
-		log.Warnf("Failed to start lifecycle manager: %v", err)
-	} else {
-		log.Info("Lifecycle manager started for data cleanup and monitoring")
-	}
-
-	// Store lifecycle manager in collector for API access
-	collector.SetLifecycleManager(lifecycleManager)
-
-	return collector, storage
+	return collector
 }
 
 func main() {

@@ -56,11 +56,9 @@ type APIConfig struct {
 }
 
 // FlowConfig holds flow collection configuration
+// Flow collection is always enabled as it's a core system functionality
 type FlowConfig struct {
-	// Enabled controls whether flow collection is enabled
-	Enabled bool `mapstructure:"enabled"`
-
-	// StoragePath is the path to SQLite database for flow storage
+	// StoragePath is the path to SQLite database for flow storage (standalone mode only)
 	StoragePath string `mapstructure:"storage_path"`
 
 	// FlowTimeout is the duration after which inactive flows are considered closed
@@ -223,8 +221,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.retry_base_delay", "1s")
 	v.SetDefault("server.retry_max_delay", "30s")
 
-	// Flow collection defaults
-	v.SetDefault("flow.enabled", true)
+	// Flow collection defaults (always enabled)
 	v.SetDefault("flow.storage_path", "./data/flows.db")
 	v.SetDefault("flow.flow_timeout", "5m")
 	v.SetDefault("flow.cleanup_interval", "1m")
@@ -396,7 +393,6 @@ func DefaultConfig() *Config {
 			RetryMaxDelay:     30 * time.Second,
 		},
 		Flow: FlowConfig{
-			Enabled:         true,
 			StoragePath:     "./data/flows.db",
 			FlowTimeout:     5 * time.Minute,
 			CleanupInterval: 1 * time.Minute,
