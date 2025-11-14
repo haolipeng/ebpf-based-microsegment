@@ -88,7 +88,7 @@ func runAgent(cmd *cobra.Command, args []string) {
 	if cfg.IsAgentServerMode() {
 		// Agent-Server mode: initialize reporter and server connection
 		log.Info("Connecting to control plane server...")
-		rep, agentClient = initAgentServerMode(cfg, pm)
+		rep, agentClient = initGrpcControlPlane(cfg, pm)
 
 		// Start reporter
 		if err := rep.Start(); err != nil {
@@ -108,7 +108,13 @@ func runAgent(cmd *cobra.Command, args []string) {
 
 	// Initialize flow collector (always enabled as it's core functionality)
 	log.Info("Initializing flow collection...")
-	flowCollector := initFlowCollector(cfg, dp, flowStorage, rep)
+	var flowCollector *flow.Collector
+	if cfg.IsAgentServerMode() {
+		flowCollector = initFlowCollectorForServerMode(cfg, dp, rep)
+	} else {
+		flowCollector = initFlowCollectorForStandaloneMode(cfg, dp, flowStorage)
+	}
+
 	if flowCollector != nil {
 		defer flowCollector.Stop()
 		log.Info("✓ Flow collection initialized")
@@ -219,7 +225,7 @@ func setupLogging(logLevel string) {
 	})
 }
 
-func initAgentServerMode(cfg *config.Config, pm *policy.PolicyManager) (reporter.Reporter, *client.AgentClient) {
+func initGrpcControlPlane(cfg *config.Config, pm *policy.PolicyManager) (reporter.Reporter, *client.AgentClient) {
 	log.Info("Initializing agent-server mode...")
 
 	agentCfg := cfg.AgentServer
@@ -298,11 +304,10 @@ func initStorage(cfg *config.Config) flow.Storage {
 	return storage
 }
 
-// initFlowCollector creates and configures the flow collector.
-// Behavior varies by operation mode:
-// - agent-server mode: configures collector to send flows to server via reporter
-// - standalone mode: configures collector to persist flows to local storage
-func initFlowCollector(cfg *config.Config, dp *dataplane.DataPlane, storage flow.Storage, rep reporter.Reporter) *flow.Collector {
+// initFlowCollectorForServerMode initializes flow collector for agent-server mode.
+// In this mode, flows are sent to the control plane server via gRPC reporter.
+// No local storage or lifecycle management is configured.
+func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane, rep reporter.Reporter) *flow.Collector {
 	// Get Ring Buffer from dataplane
 	ringBuf := dp.GetFlowRingBuffer()
 	if ringBuf == nil {
@@ -310,22 +315,20 @@ func initFlowCollector(cfg *config.Config, dp *dataplane.DataPlane, storage flow
 		return nil
 	}
 
-	// Create collector configuration
+	// Create collector configuration (no persistence in server mode)
 	collectorConfig := flow.CollectorConfig{
 		FlowTimeout:       cfg.Flow.FlowTimeout,
 		BatchSize:         100,
 		EnableEnrichment:  true,
-		EnablePersistence: storage != nil, // Only persist if storage is available
+		EnablePersistence: false, // Server mode: flows are sent to server, not persisted locally
 		CleanupInterval:   cfg.Flow.CleanupInterval,
 	}
 
-	// Create collector
-	// - workloadMgr is nil for now, can be added later for Kubernetes integration
-	// - storage may be nil in agent-server mode
-	collector := flow.NewCollector(ringBuf, storage, nil, collectorConfig)
+	// Create collector without storage (workloadMgr can be added later for K8s)
+	collector := flow.NewCollector(ringBuf, nil, nil, collectorConfig)
 
-	// Agent-server mode: configure reporter to send flows to server
-	if cfg.IsAgentServerMode() && rep != nil {
+	// Configure reporter to send flows to server
+	if rep != nil {
 		collector.SetReporter(rep)
 		log.Info("✓ Collector configured to send flows to server via gRPC")
 	}
@@ -342,7 +345,44 @@ func initFlowCollector(cfg *config.Config, dp *dataplane.DataPlane, storage flow
 		return nil
 	}
 
-	// Create and start lifecycle manager (only if storage exists)
+	return collector
+}
+
+// initFlowCollectorForStandaloneMode initializes flow collector for standalone mode.
+// In this mode, flows are persisted to local SQLite storage with lifecycle management.
+func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPlane, storage flow.Storage) *flow.Collector {
+	// Get Ring Buffer from dataplane
+	ringBuf := dp.GetFlowRingBuffer()
+	if ringBuf == nil {
+		log.Error("Failed to get flow ring buffer from dataplane")
+		return nil
+	}
+
+	// Create collector configuration (with persistence in standalone mode)
+	collectorConfig := flow.CollectorConfig{
+		FlowTimeout:       cfg.Flow.FlowTimeout,
+		BatchSize:         100,
+		EnableEnrichment:  true,
+		EnablePersistence: storage != nil, // Persist flows to local storage
+		CleanupInterval:   cfg.Flow.CleanupInterval,
+	}
+
+	// Create collector with storage (workloadMgr can be added later for K8s)
+	collector := flow.NewCollector(ringBuf, storage, nil, collectorConfig)
+
+	// Create and start WebSocket Hub for real-time streaming
+	wsHub := flow.NewHub()
+	go wsHub.Run()
+	collector.SetWebSocketHub(wsHub)
+	log.Info("✓ WebSocket hub started for real-time flow streaming")
+
+	// Start collector
+	if err := collector.Start(); err != nil {
+		log.Errorf("Failed to start flow collector: %v", err)
+		return nil
+	}
+
+	// Create and start lifecycle manager for storage cleanup
 	if storage != nil {
 		lifecycleConfig := flow.LifecycleConfig{
 			CleanupInterval:           24 * time.Hour, // Daily cleanup
