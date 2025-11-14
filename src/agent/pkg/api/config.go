@@ -24,6 +24,12 @@ type Config struct {
 
 	// LogLevel sets the log level for API server (debug, info, warn, error)
 	LogLevel string `json:"log_level" yaml:"log_level"`
+
+	// Interface is the network interface name (for config endpoint display)
+	Interface string `json:"interface" yaml:"interface"`
+
+	// StatsInterval is the statistics reporting interval in seconds
+	StatsInterval int `json:"stats_interval" yaml:"stats_interval"`
 }
 
 // DefaultConfig returns default API configuration

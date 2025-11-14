@@ -117,10 +117,12 @@ func runAgent(cmd *cobra.Command, args []string) {
 	var apiServer *api.Server
 	if cfg.API.Enabled {
 		apiConfig := &api.Config{
-			Host:       cfg.API.Host,
-			Port:       cfg.API.Port,
-			EnableCORS: cfg.API.EnableCORS,
-			LogLevel:   cfg.LogLevel,
+			Host:          cfg.API.Host,
+			Port:          cfg.API.Port,
+			EnableCORS:    cfg.API.EnableCORS,
+			LogLevel:      cfg.LogLevel,
+			Interface:     cfg.Interface,
+			StatsInterval: cfg.StatsInterval,
 		}
 
 		apiServer, err = api.NewAPIServer(apiConfig, dp, pm)

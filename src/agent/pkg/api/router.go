@@ -13,9 +13,9 @@ func (s *Server) setupRoutes() {
 	policyHandler := handlers.NewPolicyHandler(s.policyManager)
 	statsHandler := handlers.NewStatisticsHandler(s.dataPlane)
 	configHandler := handlers.NewConfigHandler(
-		"lo", // TODO: Get from actual config
+		s.config.Interface,
 		s.config.LogLevel,
-		5, // TODO: Get from actual config
+		s.config.StatsInterval,
 		s.config.Host,
 		s.config.Port,
 	)
