@@ -16,13 +16,17 @@ var startTime = time.Now()
 type HealthHandler struct {
 	dataPlane     dataplane.DataPlaneInterface
 	policyManager policy.Manager
+	version       string
+	interface_    string
 }
 
 // NewHealthHandler creates a new health handler
-func NewHealthHandler(dp dataplane.DataPlaneInterface, pm policy.Manager) *HealthHandler {
+func NewHealthHandler(dp dataplane.DataPlaneInterface, pm policy.Manager, version, iface string) *HealthHandler {
 	return &HealthHandler{
 		dataPlane:     dp,
 		policyManager: pm,
+		version:       version,
+		interface_:    iface,
 	}
 }
 
@@ -68,8 +72,8 @@ func (h *HealthHandler) GetStatus(c *gin.Context) {
 	// Build response
 	response := models.StatusResponse{
 		Status:    overallStatus,
-		Version:   "0.1.0", // TODO: Get from build info
-		Interface: "lo",    // TODO: Get from config
+		Version:   h.version,
+		Interface: h.interface_,
 		DataPlane: dataPlaneStatus,
 		API: models.APIStatus{
 			Status:  "running",

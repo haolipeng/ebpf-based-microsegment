@@ -9,7 +9,7 @@ import (
 // setupRoutes configures all API routes
 func (s *Server) setupRoutes() {
 	// Create handlers
-	healthHandler := handlers.NewHealthHandler(s.dataPlane, s.policyManager)
+	healthHandler := handlers.NewHealthHandler(s.dataPlane, s.policyManager, s.config.Version, s.config.Interface)
 	policyHandler := handlers.NewPolicyHandler(s.policyManager)
 	statsHandler := handlers.NewStatisticsHandler(s.dataPlane)
 	configHandler := handlers.NewConfigHandler(

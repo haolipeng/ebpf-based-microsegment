@@ -22,6 +22,8 @@ import (
 
 var (
 	configPath string
+	// version can be set via ldflags during build: -ldflags "-X main.version=v1.0.0"
+	version = "0.1.0"
 )
 
 var rootCmd = &cobra.Command{
@@ -131,6 +133,7 @@ func runAgent(cmd *cobra.Command, args []string) {
 			Interface:       cfg.Interface,
 			StatsInterval:   cfg.StatsInterval,
 			EnableWebSocket: cfg.API.EnableWebSocket,
+			Version:         version,
 		}
 
 		apiServer, err = api.NewAPIServer(apiConfig, dp, pm)

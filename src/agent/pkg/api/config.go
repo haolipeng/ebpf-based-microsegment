@@ -33,6 +33,9 @@ type Config struct {
 
 	// EnableWebSocket enables real-time flow streaming via WebSocket
 	EnableWebSocket bool `json:"enable_websocket" yaml:"enable_websocket"`
+
+	// Version is the agent version string
+	Version string `json:"version" yaml:"version"`
 }
 
 // DefaultConfig returns default API configuration
@@ -46,5 +49,6 @@ func DefaultConfig() *Config {
 		EnableCORS:      true,
 		LogLevel:        "info",
 		EnableWebSocket: true, // Enable WebSocket by default
+		Version:         "0.1.0",
 	}
 }
