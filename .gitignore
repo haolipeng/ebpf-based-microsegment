@@ -1,5 +1,7 @@
 # Source references directory
 source-references/
+data/
+bin/
 
 # Build artifacts
 *.o
