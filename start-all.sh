@@ -48,7 +48,7 @@ echo "[3/4] 启动 Agent 组件..."
 if pgrep -f microsegment-agent > /dev/null; then
     echo "  Agent 已在运行"
 else
-    nohup sudo -E ./bin/microsegment-agent --config agent-config.yaml > /tmp/agent.log 2>&1 &
+    nohup sudo -E ./bin/microsegment-agent --config config/agent.yaml > /tmp/agent.log 2>&1 &
     sleep 3
     if pgrep -f microsegment-agent > /dev/null; then
         echo "  ✓ Agent 启动成功 (PID: $(pgrep -f microsegment-agent | head -1))"

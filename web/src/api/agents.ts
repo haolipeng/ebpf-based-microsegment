@@ -55,8 +55,8 @@ export const agentsApi = {
 
   // Get agent by ID
   get: async (id: string): Promise<Agent> => {
-    const response = await apiClient.get<Agent>(`/v1/agents/${id}`)
-    return response.data
+    const response = await apiClient.get<ServerAgent>(`/v1/agents/${id}`)
+    return transformAgent(response.data)
   },
 
   // Get agent health status

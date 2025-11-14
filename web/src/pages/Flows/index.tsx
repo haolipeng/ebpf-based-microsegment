@@ -137,6 +137,9 @@ export default function Flows() {
         specific flows.
       </Paragraph>
 
+      {/* Filters */}
+      <FlowFilters filters={filters} onFiltersChange={handleFiltersChange} onReset={handleResetFilters} />
+
       {/* Summary Cards */}
       {summary && !summaryError && (
         <FlowSummaryCards summary={summary} loading={summaryLoading} />
@@ -150,9 +153,6 @@ export default function Flows() {
           </Col>
         </Row>
       )}
-
-      {/* Filters */}
-      <FlowFilters filters={filters} onFiltersChange={handleFiltersChange} onReset={handleResetFilters} />
 
       {/* Error Alert */}
       {error && (

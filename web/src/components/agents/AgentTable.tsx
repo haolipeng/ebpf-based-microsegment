@@ -44,16 +44,18 @@ export default function AgentTable({ agents, loading = false }: AgentTableProps)
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
-      width: 120,
+      width: 150,
       ellipsis: true,
       render: (id: string) => (
-        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{id.slice(0, 8)}</span>
+        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{id.slice(0, 12)}</span>
       ),
     },
     {
       title: 'Hostname',
       dataIndex: 'hostname',
       key: 'hostname',
+      width: 130,
+      ellipsis: true,
       sorter: (a, b) => a.hostname.localeCompare(b.hostname),
     },
     {

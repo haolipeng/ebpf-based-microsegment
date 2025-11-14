@@ -4,38 +4,52 @@ import type { Flow, FlowQuery, FlowSummary } from '../types/flow'
 // Server response type for flow summary (snake_case from Go)
 interface ServerFlowSummary {
   total_flows: number
+  active_flows: number
+  closed_flows: number
   total_packets: number
   total_bytes: number
+  allowed_flows: number
+  denied_flows: number
   unique_source_ips: number
   unique_dest_ips: number
   avg_duration_ms: number
   top_protocols: Array<{
-    protocol: number
+    protocol: string // Protocol number as string from backend
     count: number
     bytes: number
   }> | null
 }
 
+// Protocol number to name mapping (IANA protocol numbers)
+export const protocolName = (proto: string | number): string => {
+  const protoNum = typeof proto === 'string' ? parseInt(proto, 10) : proto
+  switch (protoNum) {
+    case 1: return 'ICMP'
+    case 2: return 'IGMP'
+    case 6: return 'TCP'
+    case 17: return 'UDP'
+    case 41: return 'IPv6'
+    case 47: return 'GRE'
+    case 50: return 'ESP'
+    case 51: return 'AH'
+    case 58: return 'ICMPv6'
+    case 89: return 'OSPF'
+    case 132: return 'SCTP'
+    default: return isNaN(protoNum) ? 'Unknown' : `Protocol ${protoNum}`
+  }
+}
+
 // Transform server flow summary to frontend format
 function transformFlowSummary(serverSummary: ServerFlowSummary): FlowSummary {
-  // Protocol number to name mapping
-  const protocolName = (proto: number): string => {
-    switch (proto) {
-      case 6: return 'TCP'
-      case 17: return 'UDP'
-      case 1: return 'ICMP'
-      default: return `Protocol ${proto}`
-    }
-  }
 
   return {
     totalFlows: serverSummary.total_flows || 0,
-    activeFlows: 0, // Not provided by current API
-    closedFlows: 0, // Not provided by current API
+    activeFlows: serverSummary.active_flows || 0,
+    closedFlows: serverSummary.closed_flows || 0,
     totalPackets: serverSummary.total_packets || 0,
     totalBytes: serverSummary.total_bytes || 0,
-    allowedFlows: 0, // Not provided by current API
-    deniedFlows: 0, // Not provided by current API
+    allowedFlows: serverSummary.allowed_flows || 0,
+    deniedFlows: serverSummary.denied_flows || 0,
     topProtocols: (serverSummary.top_protocols || []).map(p => ({
       protocol: protocolName(p.protocol),
       flowCount: p.count,

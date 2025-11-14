@@ -2,6 +2,13 @@
 # eBPF Microsegmentation - Complete Shutdown Script
 
 PROJECT_ROOT="/home/work/ebpf-based-microsegment"
+
+# Ensure script runs with root privileges (needed to stop agent process started via sudo)
+if [[ $EUID -ne 0 ]]; then
+  echo "检测到当前不是 root 权限，正在使用 sudo 重新执行..."
+  exec sudo -E "$0" "$@"
+fi
+
 cd "$PROJECT_ROOT"
 
 echo "========================================"
@@ -16,7 +23,7 @@ echo
 
 # 2. Stop Agent
 echo "[2/4] 停止 Agent 组件..."
-sudo pkill -f microsegment-agent && echo "  ✓ Agent 已停止" || echo "  Agent 未运行"
+pkill -f microsegment-agent && echo "  ✓ Agent 已停止" || echo "  Agent 未运行"
 echo
 
 # 3. Stop Server
