@@ -53,6 +53,9 @@ type APIConfig struct {
 
 	// EnableCORS enables Cross-Origin Resource Sharing
 	EnableCORS bool `mapstructure:"enable_cors"`
+
+	// EnableWebSocket enables real-time flow streaming via WebSocket
+	EnableWebSocket bool `mapstructure:"enable_websocket"`
 }
 
 // FlowConfig holds flow collection configuration
@@ -212,6 +215,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("api.host", "127.0.0.1")
 	v.SetDefault("api.port", 8080)
 	v.SetDefault("api.enable_cors", true)
+	v.SetDefault("api.enable_websocket", true)
 
 	// Server defaults
 	v.SetDefault("server.batch_size", 100)
@@ -377,10 +381,11 @@ func DefaultConfig() *Config {
 		StatsInterval: 30,
 		Mode:          "agent-server", // Default to agent-server mode
 		API: APIConfig{
-			Enabled:    true,
-			Host:       "127.0.0.1",
-			Port:       8080,
-			EnableCORS: true,
+			Enabled:         true,
+			Host:            "127.0.0.1",
+			Port:            8080,
+			EnableCORS:      true,
+			EnableWebSocket: true,
 		},
 		AgentServer: &AgentServerConfig{
 			ServerAddr:        "10.107.12.201:9090",

@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"time"
@@ -102,12 +103,29 @@ func NewHub() *Hub {
 	}
 }
 
-// Run starts the hub's main loop
+// Run starts the hub's main loop (deprecated: use RunWithContext)
 func (h *Hub) Run() {
+	h.RunWithContext(context.Background())
+}
+
+// RunWithContext starts the hub's main loop with context for graceful shutdown
+func (h *Hub) RunWithContext(ctx context.Context) {
 	log.Info("WebSocket hub started")
 
 	for {
 		select {
+		case <-ctx.Done():
+			log.Info("WebSocket hub shutting down...")
+			h.mutex.Lock()
+			// Close all client connections
+			for client := range h.clients {
+				close(client.Send)
+			}
+			h.clients = make(map[*Client]bool)
+			h.mutex.Unlock()
+			log.Info("WebSocket hub stopped")
+			return
+
 		case client := <-h.register:
 			h.mutex.Lock()
 			h.clients[client] = true

@@ -30,17 +30,21 @@ type Config struct {
 
 	// StatsInterval is the statistics reporting interval in seconds
 	StatsInterval int `json:"stats_interval" yaml:"stats_interval"`
+
+	// EnableWebSocket enables real-time flow streaming via WebSocket
+	EnableWebSocket bool `json:"enable_websocket" yaml:"enable_websocket"`
 }
 
 // DefaultConfig returns default API configuration
 func DefaultConfig() *Config {
 	return &Config{
-		Host:         "127.0.0.1",
-		Port:         8080,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
-		EnableCORS:   true,
-		LogLevel:     "info",
+		Host:            "127.0.0.1",
+		Port:            8080,
+		ReadTimeout:     10 * time.Second,
+		WriteTimeout:    10 * time.Second,
+		IdleTimeout:     60 * time.Second,
+		EnableCORS:      true,
+		LogLevel:        "info",
+		EnableWebSocket: true, // Enable WebSocket by default
 	}
 }

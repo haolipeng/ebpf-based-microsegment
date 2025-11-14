@@ -165,6 +165,16 @@ func (c *Collector) GetLifecycleManager() *LifecycleManager {
 func (c *Collector) Start() error {
 	log.Println("[Flow Collector] Starting flow collector...")
 
+	// Start WebSocket Hub if configured
+	if c.wsHub != nil {
+		c.wg.Add(1)
+		go func() {
+			defer c.wg.Done()
+			c.wsHub.RunWithContext(c.ctx)
+		}()
+		log.Println("[Flow Collector] WebSocket hub started")
+	}
+
 	// Start event collection loop
 	c.wg.Add(1)
 	go c.collectLoop()
