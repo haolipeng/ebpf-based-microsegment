@@ -94,17 +94,20 @@ static __always_inline void *parse_ipv4(
  * @tcph: TCP 头指针
  * @data_end: 数据包结束指针
  * @key: 输出参数 - 流键,填充源/目标端口字段
+ * @tcp_flags: 输出参数 - TCP 标志 (可选,传 NULL 表示不需要)
  *
  * 返回: 0 成功, -1 失败
  *
  * 功能:
  * 1. 验证 TCP 头边界
  * 2. 提取源/目标端口 (网络字节序)
+ * 3. 提取 TCP 标志 (FIN, SYN, RST, ACK 等)
  */
 static __always_inline int parse_tcp(
 	struct tcphdr *tcph,
 	void *data_end,
-	struct flow_key *key)
+	struct flow_key *key,
+	__u8 *tcp_flags)
 {
 	// 边界检查: 确保有足够空间读取基本 TCP 头 (20 字节)
 	if ((void *)(tcph + 1) > data_end)
@@ -113,6 +116,18 @@ static __always_inline int parse_tcp(
 	// 提取端口 (网络字节序)
 	key->src_port = tcph->source;
 	key->dst_port = tcph->dest;
+
+	// 提取 TCP 标志 (如果需要)
+	if (tcp_flags) {
+		// 从 tcph 中提取标志位
+		// FIN=0x01, SYN=0x02, RST=0x04, ACK=0x10 等
+		*tcp_flags = 0;
+		if (tcph->fin) *tcp_flags |= 0x01;
+		if (tcph->syn) *tcp_flags |= 0x02;
+		if (tcph->rst) *tcp_flags |= 0x04;
+		if (tcph->psh) *tcp_flags |= 0x08;
+		if (tcph->ack) *tcp_flags |= 0x10;
+	}
 
 	return 0;
 }
@@ -196,8 +211,8 @@ static __always_inline int extract_flow_key_from_packet(
 
 	// 4. 根据协议类型解析传输层
 	if (key->protocol == IPPROTO_TCP) {
-		// TCP
-		if (parse_tcp((struct tcphdr *)l4, data_end, key) < 0)
+		// TCP - 不提取标志 (传 NULL)
+		if (parse_tcp((struct tcphdr *)l4, data_end, key, NULL) < 0)
 			return -1;
 	} else if (key->protocol == IPPROTO_UDP) {
 		// UDP

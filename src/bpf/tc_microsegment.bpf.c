@@ -96,6 +96,42 @@ static __always_inline int extract_flow_key(struct __sk_buff *skb, struct flow_k
     return extract_flow_key_from_packet(data, data_end, key);
 }
 
+// Helper: Check if TCP connection is closing (FIN or RST)
+// 检查 TCP 连接是否正在关闭 (FIN 或 RST 标志)
+static __always_inline bool is_tcp_closing(struct __sk_buff *skb, struct flow_key *key) {
+    void *data = (void *)(long)skb->data;
+    void *data_end = (void *)(long)skb->data_end;
+
+    // 仅处理 TCP 协议
+    if (key->protocol != IPPROTO_TCP)
+        return false;
+
+    // 解析以太网头
+    __u16 eth_proto;
+    struct ethhdr *eth = data;
+    if ((void *)(eth + 1) > data_end)
+        return false;
+    eth_proto = eth->h_proto;
+
+    if (eth_proto != bpf_htons(ETH_P_IP))
+        return false;
+
+    // 解析 IPv4 头
+    struct iphdr *iph = (void *)(eth + 1);
+    if ((void *)(iph + 1) > data_end)
+        return false;
+
+    // 计算 TCP 头位置
+    void *tcph_ptr = (void *)iph + (iph->ihl * 4);
+    struct tcphdr *tcph = tcph_ptr;
+
+    if ((void *)(tcph + 1) > data_end)
+        return false;
+
+    // 检查 FIN 或 RST 标志
+    return (tcph->fin || tcph->rst);
+}
+
 // Helper: Push flow event to user-space via Ring Buffer
 // Returns 0 on success, -1 on failure
 static __always_inline int push_flow_event(
@@ -160,6 +196,7 @@ static __always_inline int create_session(struct flow_key *key, __u8 action, __u
     int ret = bpf_map_update_elem(&session_map, key, &new_session, BPF_NOEXIST);
     if (ret == 0) {
         update_stats(STATS_NEW_SESSIONS);
+        update_stats(STATS_ACTIVE_SESSIONS);  // 增加活跃会话计数
 
         // Push flow event for all new connections (ALLOW, DENY, LOG)
         // Control plane will handle filtering based on configuration
@@ -217,6 +254,24 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
         session->last_seen_ts = get_timestamp_ns();
         session->packets_to_server += 1;
         session->bytes_to_server += skb->len;
+
+        // 检测 TCP 连接关闭 (FIN 或 RST 标志)
+        // 只在会话未标记为关闭时检测,避免重复计数
+        if (session->state != SESSION_STATE_CLOSING &&
+            session->state != SESSION_STATE_CLOSED) {
+            if (is_tcp_closing(skb, &key)) {
+                // 标记会话为关闭状态
+                session->state = SESSION_STATE_CLOSING;
+                // 增加已关闭会话计数
+                update_stats(STATS_CLOSED_SESSIONS);
+                // 减少活跃会话计数 (通过 Go 端周期性校正更准确)
+#if DEBUG_MODE
+                bpf_printk("TCP closing: %pI4:%d -> %pI4:%d\n",
+                           &key.src_ip, bpf_ntohs(key.src_port),
+                           &key.dst_ip, bpf_ntohs(key.dst_port));
+#endif
+            }
+        }
 
         // Fast enforcement check
         if (action == POLICY_ACTION_DENY) {

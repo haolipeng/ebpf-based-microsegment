@@ -28,10 +28,10 @@ type Loader interface {
 // 负责根据系统能力和用户配置选择和管理数据平面
 type Manager struct {
 	// 配置
-	iface     string         // 网卡名称
-	ifaceIdx  int            // 网卡索引
-	config    *ModeConfig    // 模式配置
-	caps      *Capabilities  // 系统能力
+	iface    string        // 网卡名称
+	ifaceIdx int           // 网卡索引
+	config   *ModeConfig   // 模式配置
+	caps     *Capabilities // 系统能力
 
 	// 当前加载的数据平面
 	currentMode DataPlaneMode // 当前模式
@@ -65,9 +65,9 @@ func NewManager(ifaceName string, config *ModeConfig) (*Manager, error) {
 	// 3. 使用默认配置 (如果未提供)
 	if config == nil {
 		config = &ModeConfig{
-			ForceMode:       ModeUnknown,      // 自动选择
-			PreferXDP:       false,            // 默认使用 TC (更稳定)
-			AllowGenericXDP: true,             // 允许 Generic XDP 回退
+			ForceMode:       ModeUnknown, // 自动选择
+			PreferXDP:       false,       // 默认使用 TC (更稳定)
+			AllowGenericXDP: true,        // 允许 Generic XDP 回退
 		}
 	}
 
@@ -104,7 +104,7 @@ func (m *Manager) Load() error {
 
 	log.Infof("Loading dataplane in mode: %v on interface %s", mode, m.iface)
 
-	// 3. 创建对应的 loader
+	// 3. 创建ebpf程序对应的 loader加载器
 	var loader Loader
 	var err error
 

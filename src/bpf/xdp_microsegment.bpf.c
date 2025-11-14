@@ -3,6 +3,15 @@
  *
  * 这个 XDP 程序在网卡驱动层处理数据包,提供最高性能的网络策略执行
  * 与 TC 程序共享策略数据 (通过 Map Pinning),确保策略一致性
+ *
+ * 功能特性:
+ * - 会话追踪: 使用 LRU_HASH 自动淘汰旧会话
+ * - 流事件推送: 通过 Ring Buffer 向用户态推送新连接事件
+ * - 字节统计: 从 XDP context 计算并记录数据包字节数
+ * - 策略执行: 仅支持 INGRESS 方向 (XDP 限制)
+ *
+ * 注意: XDP 仅在 ingress (数据包进入) 方向运行,
+ *       egress 方向由 TC 程序处理
  */
 
 #include "vmlinux.h"
@@ -108,6 +117,102 @@ static __always_inline int extract_flow_key(struct xdp_md *ctx, struct flow_key 
 	return extract_flow_key_from_packet(data, data_end, key);
 }
 
+// Helper: Check if TCP connection is closing (FIN or RST)
+// 检查 TCP 连接是否正在关闭 (FIN 或 RST 标志)
+static __always_inline bool is_tcp_closing_xdp(struct xdp_md *ctx, struct flow_key *key) {
+	void *data = (void *)(long)ctx->data;
+	void *data_end = (void *)(long)ctx->data_end;
+
+	// 仅处理 TCP 协议
+	if (key->protocol != IPPROTO_TCP)
+		return false;
+
+	// 解析以太网头
+	__u16 eth_proto;
+	struct ethhdr *eth = data;
+	if ((void *)(eth + 1) > data_end)
+		return false;
+	eth_proto = eth->h_proto;
+
+	if (eth_proto != bpf_htons(ETH_P_IP))
+		return false;
+
+	// 解析 IPv4 头
+	struct iphdr *iph = (void *)(eth + 1);
+	if ((void *)(iph + 1) > data_end)
+		return false;
+
+	// 计算 TCP 头位置
+	void *tcph_ptr = (void *)iph + (iph->ihl * 4);
+	struct tcphdr *tcph = tcph_ptr;
+
+	if ((void *)(tcph + 1) > data_end)
+		return false;
+
+	// 检查 FIN 或 RST 标志
+	return (tcph->fin || tcph->rst);
+}
+
+// Helper: Push flow event to user-space via Ring Buffer (XDP version)
+// 推送流事件到用户空间的 Ring Buffer (XDP 版本)
+// Returns 0 on success, -1 on failure
+static __always_inline int push_flow_event_xdp(
+	struct flow_key *key,
+	__u64 timestamp_ns,
+	__u64 packet_count,
+	__u64 byte_count,
+	__u8 event_type,
+	__u8 policy_action,
+	__u32 policy_id,
+	__u8 state,
+	__u8 direction)
+{
+	// Reserve space in ring buffer (non-blocking)
+	// 在 Ring Buffer 中预留空间 (非阻塞)
+	struct flow_event *event = bpf_ringbuf_reserve(&flow_events, sizeof(*event), 0);
+	if (!event) {
+		// Ring buffer full - event dropped (silent failure for performance)
+		// Ring Buffer 满 - 静默丢弃事件以保证性能
+#if DEBUG_MODE
+		bpf_printk("XDP: Ring buffer full, flow event dropped\n");
+#endif
+		return -1;
+	}
+
+	// Populate event fields (5-tuple)
+	// 填充事件字段 (5元组)
+	event->src_ip = key->src_ip;
+	event->dst_ip = key->dst_ip;
+	event->src_port = key->src_port;
+	event->dst_port = key->dst_port;
+	event->protocol = key->protocol;
+
+	// Event metadata
+	// 事件元数据
+	event->event_type = event_type;
+	event->direction = direction;
+	event->padding = 0;
+
+	// Statistics
+	// 统计信息
+	event->packet_count = packet_count;
+	event->byte_count = byte_count;
+	event->timestamp_ns = timestamp_ns;
+
+	// Policy context
+	// 策略上下文
+	event->policy_id = policy_id;
+	event->policy_action = policy_action;
+	event->state = state;
+	event->reserved = 0;
+
+	// Submit to ring buffer (non-blocking, will not fail)
+	// 提交到 Ring Buffer (非阻塞,不会失败)
+	bpf_ringbuf_submit(event, 0);
+
+	return 0;
+}
+
 // ========== Main XDP Program ==========
 
 SEC("xdp")
@@ -132,10 +237,31 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 
 		__u8 action = session->policy_action;
 
+		// 计算数据包长度
+		__u32 packet_len = (void *)(long)ctx->data_end - (void *)(long)ctx->data;
+
 		// 更新会话统计
 		__u64 now = get_timestamp_ns();
 		session->last_seen_ts = now;
 		session->packets_to_server += 1;
+		session->bytes_to_server += packet_len;  // 累加字节数
+
+		// 检测 TCP 连接关闭 (FIN 或 RST 标志)
+		// 只在会话未标记为关闭时检测,避免重复计数
+		if (session->state != SESSION_STATE_CLOSING &&
+		    session->state != SESSION_STATE_CLOSED) {
+			if (is_tcp_closing_xdp(ctx, &key)) {
+				// 标记会话为关闭状态
+				session->state = SESSION_STATE_CLOSING;
+				// 增加已关闭会话计数
+				update_stats(STATS_CLOSED_SESSIONS);
+#if DEBUG_MODE
+				bpf_printk("XDP TCP closing: %pI4:%d -> %pI4:%d\n",
+					   &key.src_ip, bpf_ntohs(key.src_port),
+					   &key.dst_ip, bpf_ntohs(key.dst_port));
+#endif
+			}
+		}
 
 		// 执行策略动作
 		if (action == POLICY_ACTION_DENY) {
@@ -158,6 +284,9 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 	__u64 now = get_timestamp_ns();
 	__u32 matched_rule_id = 0;
 
+	// 计算数据包长度 (XDP context 提供 data 和 data_end 指针)
+	__u32 packet_len = (void *)(long)ctx->data_end - (void *)(long)ctx->data;
+
 	// 3. 查询策略 (使用共享的策略匹配逻辑)
 	// XDP 只能在 ingress 方向运行,所以方向固定为 INGRESS
 	__u8 action = lookup_policy_action(&key, POLICY_DIR_INGRESS, &matched_rule_id);
@@ -178,7 +307,7 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 		.last_seen_ts = now,
 		.packets_to_server = 1,
 		.packets_to_client = 0,
-		.bytes_to_server = 0,  // XDP 不容易获取数据包长度
+		.bytes_to_server = packet_len,  // 使用计算得到的数据包长度
 		.bytes_to_client = 0,
 		.state = SESSION_STATE_NEW,
 		.tcp_state = TCP_STATE_CLOSED,
@@ -190,7 +319,20 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 	int ret = bpf_map_update_elem(&session_map, &key, &new_session, BPF_NOEXIST);
 	if (ret == 0) {
 		update_stats(STATS_NEW_SESSIONS);
-		// TODO: 推送流事件到 ring buffer (Task 3.3)
+		update_stats(STATS_ACTIVE_SESSIONS);  // 增加活跃会话计数
+
+		// 推送流事件到 Ring Buffer
+		push_flow_event_xdp(
+			&key,
+			now,
+			1,              // First packet
+			packet_len,     // Packet bytes
+			FLOW_EVENT_NEW,
+			action,
+			matched_rule_id,
+			FLOW_STATE_ACTIVE,
+			POLICY_DIR_INGRESS  // XDP 仅支持 ingress
+		);
 	}
 
 	// 5. 执行策略动作

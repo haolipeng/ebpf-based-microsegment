@@ -15,28 +15,49 @@ import (
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall" -target amd64 bpf ../../../bpf/tc_microsegment.bpf.c -- -I../../../bpf -I../../../../vmlinux/x86
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall" -target amd64 xdpbpf ../../../bpf/xdp_microsegment.bpf.c -- -I../../../bpf -I../../../../vmlinux/x86
 
+// eBPF 统计指标索引常量
+// 这些常量必须与 eBPF C 代码保持严格一致
+// 参考: src/bpf/headers/common_types.h 中的 enum stats_key
+//
+// 注意：修改这些值时，必须同步更新 C 代码中的定义！
+const (
+	StatsTotalPackets   uint32 = 0  // STATS_TOTAL_PACKETS
+	StatsAllowedPackets uint32 = 1  // STATS_ALLOWED_PACKETS
+	StatsDeniedPackets  uint32 = 2  // STATS_DENIED_PACKETS
+	StatsNewSessions    uint32 = 3  // STATS_NEW_SESSIONS
+	StatsClosedSessions uint32 = 4  // STATS_CLOSED_SESSIONS
+	StatsActiveSessions uint32 = 5  // STATS_ACTIVE_SESSIONS
+	StatsPolicyHits     uint32 = 6  // STATS_POLICY_HITS
+	StatsPolicyMisses   uint32 = 7  // STATS_POLICY_MISSES
+	StatsIngressPackets uint32 = 8  // STATS_INGRESS_PACKETS (Direction-specific)
+	StatsEgressPackets  uint32 = 9  // STATS_EGRESS_PACKETS  (Direction-specific)
+	StatsIngressDenied  uint32 = 10 // STATS_INGRESS_DENIED  (Direction-specific)
+	StatsEgressDenied   uint32 = 11 // STATS_EGRESS_DENIED   (Direction-specific)
+	StatsMax            uint32 = 12 // STATS_MAX - 总的统计项数量
+)
+
 // DataPlane 管理 eBPF 数据平面
 // 高级 API，封装了统计、监控等功能
 type DataPlane struct {
-	manager  *Manager         // 数据平面管理器 (底层)
-	rbReader *ringbuf.Reader  // Ring buffer reader
+	manager  *Manager        // 数据平面管理器 (底层)
+	rbReader *ringbuf.Reader // Ring buffer reader
 }
 
 // Statistics 保存数据包处理统计信息
 type Statistics struct {
-	TotalPackets    uint64
-	AllowedPackets  uint64
-	DeniedPackets   uint64
-	NewSessions     uint64
-	ClosedSessions  uint64
-	ActiveSessions  uint64
-	PolicyHits      uint64
-	PolicyMisses    uint64
+	TotalPackets   uint64
+	AllowedPackets uint64
+	DeniedPackets  uint64
+	NewSessions    uint64
+	ClosedSessions uint64
+	ActiveSessions uint64
+	PolicyHits     uint64
+	PolicyMisses   uint64
 	// Direction-specific statistics (for egress support)
-	IngressPackets  uint64
-	EgressPackets   uint64
-	IngressDenied   uint64
-	EgressDenied    uint64
+	IngressPackets uint64
+	EgressPackets  uint64
+	IngressDenied  uint64
+	EgressDenied   uint64
 }
 
 // New 创建一个新的数据平面实例
@@ -45,7 +66,6 @@ type Statistics struct {
 // 默认配置：优先 TC 模式（更稳定），支持自动选择 TCX 或 Legacy TC
 // 如果需要 XDP，请使用 NewWithConfig() 并设置 PreferXDP: true
 func New(iface string) (*DataPlane, error) {
-	// 使用默认配置 (TC 优先，保持向后兼容)
 	config := &ModeConfig{
 		ForceMode:       ModeUnknown, // 自动选择
 		PreferXDP:       false,       // 默认使用 TC (更稳定)
@@ -79,14 +99,14 @@ func NewWithConfig(iface string, config *ModeConfig) (*DataPlane, error) {
 	// 3. 获取 Maps
 	maps, err := manager.GetMaps()
 	if err != nil {
-		manager.Unload()
+		_ = manager.Unload()
 		return nil, fmt.Errorf("getting maps: %w", err)
 	}
 
 	// 4. 创建 Ring Buffer Reader
 	rbReader, err := ringbuf.NewReader(maps.FlowEventsRB)
 	if err != nil {
-		manager.Unload()
+		_ = manager.Unload()
 		return nil, fmt.Errorf("creating ring buffer reader: %w", err)
 	}
 
@@ -125,47 +145,65 @@ func (dp *DataPlane) Close() error {
 	return nil
 }
 
-// GetStatistics 获取当前数据包处理统计信息
+// statMapping defines the relationship between eBPF map keys and Statistics struct fields
+type statMapping struct {
+	key   uint32
+	field *uint64
+}
+
+// GetStatistics retrieves and aggregates statistics from the eBPF data plane
+// It reads per-CPU values from the stats map and sums them up
 func (dp *DataPlane) GetStatistics() Statistics {
 	stats := Statistics{}
 
-	// 获取 maps
+	// Get eBPF maps
 	maps, err := dp.manager.GetMaps()
 	if err != nil {
-		log.Debugf("Failed to get maps: %v", err)
+		log.Debugf("Failed to get eBPF maps: %v", err)
 		return stats
 	}
 
-	// Helper function to read per-CPU array and sum values
-	readStat := func(key uint32) uint64 {
-		var values []uint64
-		if err := maps.StatsMap.Lookup(&key, &values); err != nil {
-			log.Debugf("Failed to lookup stat key %d: %v", key, err)
-			return 0
-		}
-
-		var total uint64
-		for _, v := range values {
-			total += v
-		}
-		return total
+	// Define mappings between eBPF keys and struct fields
+	// This approach is more maintainable and type-safe than reflection
+	mappings := []statMapping{
+		{StatsTotalPackets, &stats.TotalPackets},
+		{StatsAllowedPackets, &stats.AllowedPackets},
+		{StatsDeniedPackets, &stats.DeniedPackets},
+		{StatsNewSessions, &stats.NewSessions},
+		{StatsClosedSessions, &stats.ClosedSessions},
+		{StatsActiveSessions, &stats.ActiveSessions},
+		{StatsPolicyHits, &stats.PolicyHits},
+		{StatsPolicyMisses, &stats.PolicyMisses},
+		{StatsIngressPackets, &stats.IngressPackets},
+		{StatsEgressPackets, &stats.EgressPackets},
+		{StatsIngressDenied, &stats.IngressDenied},
+		{StatsEgressDenied, &stats.EgressDenied},
 	}
 
-	stats.TotalPackets = readStat(0)
-	stats.AllowedPackets = readStat(1)
-	stats.DeniedPackets = readStat(2)
-	stats.NewSessions = readStat(3)
-	stats.ClosedSessions = readStat(4)
-	stats.ActiveSessions = readStat(5)
-	stats.PolicyHits = readStat(6)
-	stats.PolicyMisses = readStat(7)
-	// Direction-specific statistics (for egress support)
-	stats.IngressPackets = readStat(8)  // STATS_INGRESS_PACKETS
-	stats.EgressPackets = readStat(9)   // STATS_EGRESS_PACKETS
-	stats.IngressDenied = readStat(10)  // STATS_INGRESS_DENIED
-	stats.EgressDenied = readStat(11)   // STATS_EGRESS_DENIED
+	// Read and aggregate per-CPU statistics
+	for _, m := range mappings {
+		*m.field = dp.readAndSumPerCPUStat(maps.StatsMap, m.key)
+	}
 
 	return stats
+}
+
+// readAndSumPerCPUStat reads per-CPU array values and returns their sum
+// Returns 0 if the lookup fails (graceful degradation)
+func (dp *DataPlane) readAndSumPerCPUStat(statsMap *ebpf.Map, key uint32) uint64 {
+	var perCPUValues []uint64
+
+	if err := statsMap.Lookup(&key, &perCPUValues); err != nil {
+		log.Debugf("Failed to lookup stat key %d: %v", key, err)
+		return 0
+	}
+
+	var sum uint64
+	for _, val := range perCPUValues {
+		sum += val
+	}
+
+	return sum
 }
 
 // MonitorFlowEvents 持续读取和处理 ring buffer 中的流事件
