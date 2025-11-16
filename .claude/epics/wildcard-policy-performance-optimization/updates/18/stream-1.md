@@ -3,7 +3,7 @@ issue: 18
 stream: eBPF-optimization
 agent: direct
 started: 2025-11-16T13:45:00Z
-status: in_progress
+status: completed
 ---
 
 # Stream 1: eBPF 循环常量化与早停优化
