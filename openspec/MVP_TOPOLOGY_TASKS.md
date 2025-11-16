@@ -9,18 +9,23 @@
 - **阶段 1 (数据基础层)**: ✅ 已完成 - 发现已有完整实现
 - **阶段 2 (可视化核心)**: ✅ 已完成 - 创建了 TopologyGraph 组件和样式
 - **阶段 3 (页面集成)**: ✅ 已完成 - 创建页面组件并完成路由和导航集成
-- **阶段 4 (最终验证)**: ✅ 代码质量检查完成 | ⏳ 功能测试待启动服务器
+- **阶段 4 (最终验证)**: ✅ 代码质量检查完成 | ⏳ 功能测试待手动验证
 
 **实施说明**:
 - 大部分基础设施（类型定义、数据聚合、Hook、ECharts 配置）已存在且功能完整
 - MVP 创建的新文件：
-  - `web/src/components/topology/TopologyGraph.tsx` (完整版，带事件处理)
-  - `web/src/pages/Topology/index.tsx` (页面组件)
-  - `web/src/styles/topology.css` (基础样式)
-- 路由和导航菜单集成已提前完成
-- TypeScript 编译通过，TopologyGraph.tsx 的 lint 问题已修复
+  - `src/components/topology/TopologyGraph.tsx` (完整版，带事件处理)
+  - `src/components/topology/topologyConfig.ts` (ECharts 配置)
+  - `src/components/topology/TopologyControls.tsx` (控制面板 - 超出 MVP)
+  - `src/components/topology/TopologyLegend.tsx` (图例 - 超出 MVP)
+  - `src/components/topology/NodeDetailPanel.tsx` (详情面板 - 超出 MVP)
+  - `src/pages/Topology/index.tsx` (页面组件)
+  - `src/styles/topology.css` (基础样式)
+- 路由和导航菜单集成已完成
+- TypeScript 编译通过 (0 errors)
+- 所有依赖已安装 (Vite, ECharts, React Query, Ant Design)
 - 删除了重复的 web/web 目录
-- 下一步：运行开发服务器进行功能验证（`npm run dev`）
+- **下一步**：查看 `TOPOLOGY_MVP_VERIFICATION.md` 进行手动功能验证
 
 ---
 

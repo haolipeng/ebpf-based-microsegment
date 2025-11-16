@@ -1,16 +1,19 @@
 # 任务清单：Topology Visualization Core
 
-> **实施状态**: ✅ MVP 核心功能已完成 | ⏳ 高级功能和测试待完成
+> **实施状态**: ✅ 代码开发 100% 完成 | ⏳ 功能测试待手动验证
 >
 > **完成情况**:
-> - ✅ ECharts 配置模块 (12/12)
-> - ✅ TopologyGraph 组件 (12/12)
-> - ⏳ 图例组件 (0/10) - MVP 暂不包含
-> - ✅ 样式 (3/9) - 基础样式完成，高级功能 MVP 暂不包含
+> - ✅ ECharts 配置模块 (12/12) - 100%
+> - ✅ TopologyGraph 组件 (12/12) - 100%
+> - ✅ 图例组件 (10/10) - 100% (**已完成,非 MVP**)
+> - ✅ 样式 (8/9) - 89% (仅暗色主题待测试)
 > - ⏳ 集成测试 (0/11) - 需启动服务器测试
 > - ⏳ 视觉校验 (0/9) - 需启动服务器测试
 > - ⏳ 性能优化 (0/6) - 需启动服务器测试
-> - ✅ 验证 (3/6) - 代码质量检查完成，浏览器测试需启动服务器
+> - ✅ 验证 (3/6) - 50% (代码质量完成,浏览器测试需启动服务器)
+>
+> **代码完成度**: ✅ **100%** (所有组件和样式已实现)
+> **手动测试**: ⏳ **0%** (需启动开发服务器进行功能验证)
 
 ## 1. ECharts 配置模块 ✅
 - [x] 1.1 新建 `web/src/components/topology/topologyConfig.ts`
@@ -40,27 +43,27 @@
 - [x] 2.11 使 height 属性支持 number/string
 - [x] 2.12 启用 notMerge 与 lazyUpdate 以提升性能
 
-## 3. 图例组件
-- [ ] 3.1 新建 `web/src/components/topology/TopologyLegend.tsx`
-- [ ] 3.2 设计绝对定位的卡片布局
-- [ ] 3.3 添加 “Node Type” 区域（IP、Service 标识）
-- [ ] 3.4 添加 “Node Size” 区域（三种尺寸示例）
-- [ ] 3.5 添加 “Protocol” 区域（TCP/UDP/ICMP/Other 颜色）
-- [ ] 3.6 添加 “Connection Traffic” 区域（不同边宽示例）
-- [ ] 3.7 添加交互提示区
-- [ ] 3.8 让图例随 viewMode 变化而更新文案
-- [ ] 3.9 设置合适的留白与字体
-- [ ] 3.10 确保图例不遮挡主要图表内容
+## 3. 图例组件 ✅
+- [x] 3.1 新建 `web/src/components/topology/TopologyLegend.tsx`
+- [x] 3.2 设计绝对定位的卡片布局
+- [x] 3.3 添加 "Node Type" 区域（IP、Service 标识）
+- [x] 3.4 添加 "Node Size" 区域（三种尺寸示例）
+- [x] 3.5 添加 "Protocol" 区域（TCP/UDP/ICMP/Other 颜色）
+- [x] 3.6 添加 "Connection Traffic" 区域（不同边宽示例）
+- [x] 3.7 添加交互提示区
+- [x] 3.8 让图例随 viewMode 变化而更新文案
+- [x] 3.9 设置合适的留白与字体
+- [x] 3.10 确保图例不遮挡主要图表内容
 
-## 4. 样式 ✅ (基础版本)
+## 4. 样式 ✅ (完整版本)
 - [x] 4.1 新建 `web/src/styles/topology.css`
 - [x] 4.2 编写 `.topology-graph-container` 样式
-- [ ] 4.3 添加 `.topology-node-highlight` 动画 (MVP 暂不包含)
-- [ ] 4.4 添加 `.topology-edge-animate` 动画（可选，MVP 暂不包含）
+- [x] 4.3 添加 `.topology-node-highlight` 动画 (含 pulse 动画)
+- [x] 4.4 添加 `.topology-edge-animate` 动画 (含 flow 动画)
 - [x] 4.5 定义 `.topology-loading` 样式
 - [x] 4.6 定义 `.topology-empty` 居中样式
-- [ ] 4.7 添加移动端（<768px）响应式媒体查询 (MVP 暂不包含)
-- [ ] 4.8 设置图例卡片的阴影与定位 (图例组件 MVP 暂不包含)
+- [x] 4.7 添加移动端（<768px）响应式媒体查询
+- [x] 4.8 设置图例卡片的阴影与定位
 - [ ] 4.9 如有需要，确保暗色主题兼容 (待后续测试)
 
 ## 5. 集成测试
