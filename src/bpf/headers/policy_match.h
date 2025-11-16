@@ -18,6 +18,12 @@
 #ifndef __POLICY_MATCH_H__
 #define __POLICY_MATCH_H__
 
+/* Maximum number of wildcard policy entries to scan
+ * Reduced from 100 to 50 to improve performance
+ * This value should be aligned with server-side compact storage implementation
+ */
+#define MAX_WILDCARD_LOOP 50
+
 /* matches_wildcard - 检查流是否匹配通配符策略
  *
  * @key: 流的五元组键
@@ -135,9 +141,9 @@ static __always_inline __u8 lookup_policy_action(
 	__u8 best_priority = 0;
 
 	// 使用 #pragma unroll 展开循环,满足 eBPF 验证器要求
-	// 最多支持 100 条通配符策略
+	// 最多扫描 MAX_WILDCARD_LOOP (50) 条通配符策略
 	#pragma unroll
-	for (__u32 i = 0; i < 100; i++) {
+	for (__u32 i = 0; i < MAX_WILDCARD_LOOP; i++) {
 		__u32 idx = i;
 		if (idx >= MAX_ENTRIES_WILDCARD_POLICY)
 			break;
@@ -147,9 +153,10 @@ static __always_inline __u8 lookup_policy_action(
 		if (!wildcard)
 			continue;
 
-		// 跳过空槽位 (rule_id == 0 表示未使用)
+		// 早停优化: 遇到空槽位立即停止扫描
+		// 假设策略紧凑存储(由 Server 端保证),空槽位后没有有效策略
 		if (wildcard->rule_id == 0)
-			continue;
+			break;
 
 		// 检查是否匹配 (包含方向匹配)
 		if (!matches_wildcard(key, wildcard, direction))
