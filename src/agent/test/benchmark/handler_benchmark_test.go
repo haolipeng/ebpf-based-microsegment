@@ -90,7 +90,7 @@ func setupRouter(b *testing.B) *gin.Engine {
 	dp := NewBenchDataPlane()
 	pm := NewBenchPolicyManager()
 
-	healthHandler := handlers.NewHealthHandler(dp, pm)
+	healthHandler := handlers.NewHealthHandler(dp, pm, "benchmark-v1.0.0", "lo")
 	policyHandler := handlers.NewPolicyHandler(pm)
 	statsHandler := handlers.NewStatisticsHandler(dp)
 	configHandler := handlers.NewConfigHandler("lo", "error", 5, "127.0.0.1", 8080)

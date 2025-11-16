@@ -9,9 +9,8 @@
 //
 // 1. Collector - 流量收集器，从 eBPF Ring Buffer 读取事件
 // 2. Storage - 流量持久化存储（SQLite 实现）
-// 3. Hub - WebSocket 实时流式传输中心
-// 4. LifecycleManager - 数据生命周期管理（清理过期数据）
-// 5. Aggregator - 全局流量聚合分析器
+// 3. LifecycleManager - 数据生命周期管理（清理过期数据）
+// 4. Aggregator - 全局流量聚合分析器
 //
 // # 数据流
 //
@@ -21,8 +20,7 @@
 //	    ↓
 //	├─→ 内存聚合（5元组）
 //	├─→ 工作负载标签富化
-//	├─→ SQLite 持久化
-//	└─→ WebSocket 实时推送
+//	└─→ SQLite 持久化
 //
 // # 基本使用
 //
@@ -67,27 +65,6 @@
 //	    log.Fatal(err)
 //	}
 //	log.Printf("Total flows: %d, Total bytes: %d", summary.TotalFlows, summary.TotalBytes)
-//
-// # WebSocket 实时流式传输
-//
-// 创建和使用 WebSocket Hub：
-//
-//	hub := flow.NewHub()
-//	go hub.Run()
-//	collector.SetWebSocketHub(hub)
-//
-//	// 在 HTTP 服务器中注册路由
-//	http.HandleFunc("/ws/flows", func(w http.ResponseWriter, r *http.Request) {
-//	    hub.ServeWS(w, r)
-//	})
-//
-// 客户端连接后将实时收到流量事件：
-//
-//	const ws = new WebSocket('ws://localhost:8080/ws/flows');
-//	ws.onmessage = (event) => {
-//	    const flow = JSON.parse(event.data);
-//	    console.log('New flow:', flow);
-//	};
 //
 // # 数据生命周期管理
 //
@@ -190,12 +167,6 @@
 //   - 索引查询：多字段索引加速
 //   - 数据清理：定期删除过期数据（默认 7 天）
 //
-// WebSocket 性能：
-//   - 广播模式：支持多客户端
-//   - 非阻塞发送：避免慢客户端阻塞
-//   - 心跳保活：定期 ping/pong
-//   - 自动重连：客户端断线重连
-//
 // # 线程安全
 //
 // Collector 使用互斥锁保护：
@@ -205,10 +176,6 @@
 // SQLiteStorage 使用：
 //   - 数据库连接池（single writer, multiple readers）
 //   - 事务保护批量操作
-//
-// Hub 使用通道通信：
-//   - register/unregister channels
-//   - broadcast channel
 //
 // # 工作负载标签富化
 //
@@ -252,22 +219,19 @@
 //
 // 1. Ring Buffer 大小有限，需要及时读取避免事件丢失
 // 2. SQLite 数据库需要定期清理，避免磁盘空间耗尽
-// 3. WebSocket 客户端数量会影响广播性能
-// 4. 工作负载标签查询需要 WorkloadManager 支持
-// 5. 大规模查询建议添加时间范围和分页限制
+// 3. 工作负载标签查询需要 WorkloadManager 支持
+// 4. 大规模查询建议添加时间范围和分页限制
 //
 // # 错误处理
 //
 // 包中的错误分类：
 //   - 解析错误: Ring Buffer 数据格式错误
 //   - 存储错误: SQLite 数据库操作失败
-//   - 网络错误: WebSocket 连接失败
 //   - 超时错误: 流量清理超时
 //
 // 错误处理策略：
 //   - 解析错误: 记录日志，跳过该事件，增加 dropped 计数
 //   - 存储错误: 记录警告，继续处理（内存数据仍可用）
-//   - 网络错误: 自动重连，移除失败客户端
 //   - 超时错误: 继续清理，记录错误统计
 //
 // # 监控指标

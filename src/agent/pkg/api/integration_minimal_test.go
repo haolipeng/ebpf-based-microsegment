@@ -50,7 +50,7 @@ func NewMinimalTestEnv(t *testing.T) *MinimalTestEnv {
 	}
 
 	// Create handlers with mock
-	healthHandler := handlers.NewHealthHandler(mockDP, nil)
+	healthHandler := handlers.NewHealthHandler(mockDP, nil, "test-version", "test-iface")
 	statsHandler := handlers.NewStatisticsHandler(mockDP)
 
 	// Setup routes

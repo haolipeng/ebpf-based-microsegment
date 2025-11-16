@@ -112,9 +112,9 @@ func runAgent(cmd *cobra.Command, args []string) {
 	log.Info("Initializing flow collection...")
 	var flowCollector *flow.Collector
 	if cfg.IsAgentServerMode() {
-		flowCollector = initFlowCollectorForServerMode(cfg, dp, rep, cfg.API.EnableWebSocket)
+		flowCollector = initFlowCollectorForServerMode(cfg, dp, rep)
 	} else {
-		flowCollector = initFlowCollectorForStandaloneMode(cfg, dp, flowStorage, cfg.API.EnableWebSocket)
+		flowCollector = initFlowCollectorForStandaloneMode(cfg, dp, flowStorage)
 	}
 
 	if flowCollector != nil {
@@ -126,14 +126,13 @@ func runAgent(cmd *cobra.Command, args []string) {
 	var apiServer *api.Server
 	if cfg.API.Enabled {
 		apiConfig := &api.Config{
-			Host:            cfg.API.Host,
-			Port:            cfg.API.Port,
-			EnableCORS:      cfg.API.EnableCORS,
-			LogLevel:        cfg.LogLevel,
-			Interface:       cfg.Interface,
-			StatsInterval:   cfg.StatsInterval,
-			EnableWebSocket: cfg.API.EnableWebSocket,
-			Version:         version,
+			Host:          cfg.API.Host,
+			Port:          cfg.API.Port,
+			EnableCORS:    cfg.API.EnableCORS,
+			LogLevel:      cfg.LogLevel,
+			Interface:     cfg.Interface,
+			StatsInterval: cfg.StatsInterval,
+			Version:       version,
 		}
 
 		apiServer, err = api.NewAPIServer(apiConfig, dp, pm)
@@ -311,7 +310,7 @@ func initStorage(cfg *config.Config) flow.Storage {
 // initFlowCollectorForServerMode initializes flow collector for agent-server mode.
 // In this mode, flows are sent to the control plane server via gRPC reporter.
 // No local storage or lifecycle management is configured.
-func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane, rep reporter.Reporter, enableWebSocket bool) *flow.Collector {
+func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane, rep reporter.Reporter) *flow.Collector {
 	// Get Ring Buffer from dataplane
 	ringBuf := dp.GetFlowRingBuffer()
 	if ringBuf == nil {
@@ -337,15 +336,6 @@ func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane,
 		log.Info("✓ Collector configured to send flows to server via gRPC")
 	}
 
-	// Create and start WebSocket Hub for real-time streaming (if enabled)
-	if enableWebSocket {
-		wsHub := flow.NewHub()
-		collector.SetWebSocketHub(wsHub)
-		log.Info("✓ WebSocket hub configured for real-time flow streaming")
-	} else {
-		log.Info("WebSocket streaming disabled by configuration")
-	}
-
 	// Start collector
 	if err := collector.Start(); err != nil {
 		log.Errorf("Failed to start flow collector: %v", err)
@@ -357,7 +347,7 @@ func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane,
 
 // initFlowCollectorForStandaloneMode initializes flow collector for standalone mode.
 // In this mode, flows are persisted to local SQLite storage with lifecycle management.
-func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPlane, storage flow.Storage, enableWebSocket bool) *flow.Collector {
+func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPlane, storage flow.Storage) *flow.Collector {
 	// Get Ring Buffer from dataplane
 	ringBuf := dp.GetFlowRingBuffer()
 	if ringBuf == nil {
@@ -376,15 +366,6 @@ func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPl
 
 	// Create collector with storage (workloadMgr can be added later for K8s)
 	collector := flow.NewCollector(ringBuf, storage, nil, collectorConfig)
-
-	// Create and start WebSocket Hub for real-time streaming (if enabled)
-	if enableWebSocket {
-		wsHub := flow.NewHub()
-		collector.SetWebSocketHub(wsHub)
-		log.Info("✓ WebSocket hub configured for real-time flow streaming")
-	} else {
-		log.Info("WebSocket streaming disabled by configuration")
-	}
 
 	// Start collector
 	if err := collector.Start(); err != nil {

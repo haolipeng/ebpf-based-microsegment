@@ -61,9 +61,8 @@ type Collector struct {
 	ringBuf          *ringbuf.Reader
 	storage          Storage
 	workloadMgr      WorkloadManager
-	reporter         Reporter           // Reporter for sending flows to control plane (agent-server mode)
-	wsHub            *Hub               // WebSocket hub for real-time streaming
-	lifecycleManager *LifecycleManager  // Lifecycle manager for data cleanup
+	reporter         Reporter          // Reporter for sending flows to control plane (agent-server mode)
+	lifecycleManager *LifecycleManager // Lifecycle manager for data cleanup
 
 	// Flow tracking
 	activeFlows map[string]*Flow // Keyed by flow ID
@@ -120,7 +119,6 @@ func NewCollector(ringBuf *ringbuf.Reader, storage Storage, workloadMgr Workload
 		ringBuf:     ringBuf,
 		storage:     storage,
 		workloadMgr: workloadMgr,
-		wsHub:       nil, // Can be set later via SetWebSocketHub
 		activeFlows: make(map[string]*Flow),
 		ctx:         ctx,
 		cancel:      cancel,
@@ -139,17 +137,6 @@ func (c *Collector) GetReporter() Reporter {
 	return c.reporter
 }
 
-// SetWebSocketHub sets the WebSocket hub for real-time streaming
-func (c *Collector) SetWebSocketHub(hub *Hub) {
-	c.wsHub = hub
-	log.Println("[Flow Collector] WebSocket hub configured for real-time streaming")
-}
-
-// GetWebSocketHub returns the WebSocket hub
-func (c *Collector) GetWebSocketHub() *Hub {
-	return c.wsHub
-}
-
 // SetLifecycleManager sets the lifecycle manager for data cleanup and monitoring
 func (c *Collector) SetLifecycleManager(manager *LifecycleManager) {
 	c.lifecycleManager = manager
@@ -164,16 +151,6 @@ func (c *Collector) GetLifecycleManager() *LifecycleManager {
 // Start begins collecting flow events from Ring Buffer
 func (c *Collector) Start() error {
 	log.Println("[Flow Collector] Starting flow collector...")
-
-	// Start WebSocket Hub if configured
-	if c.wsHub != nil {
-		c.wg.Add(1)
-		go func() {
-			defer c.wg.Done()
-			c.wsHub.RunWithContext(c.ctx)
-		}()
-		log.Println("[Flow Collector] WebSocket hub started")
-	}
 
 	// Start event collection loop
 	c.wg.Add(1)
@@ -296,11 +273,6 @@ func (c *Collector) handleNewFlow(flow *Flow) error {
 		}
 	}
 
-	// Broadcast to WebSocket clients if hub is configured
-	if c.wsHub != nil {
-		c.wsHub.Broadcast(flow)
-	}
-
 	return nil
 }
 
@@ -358,11 +330,6 @@ func (c *Collector) updateExistingFlow(flow *Flow) error {
 		if err := c.storage.UpdateFlow(existing); err != nil {
 			return fmt.Errorf("failed to update flow: %w", err)
 		}
-	}
-
-	// Broadcast update to WebSocket clients if hub is configured
-	if c.wsHub != nil {
-		c.wsHub.Broadcast(existing)
 	}
 
 	return nil

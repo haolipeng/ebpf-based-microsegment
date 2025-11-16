@@ -2,6 +2,8 @@
 package policy
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"testing"
 	"time"
@@ -11,7 +13,7 @@ import (
 )
 
 // setupCompilerTest creates test fixtures for compiler tests
-func setupCompilerTest(t *testing.T) (*SQLiteStorage, *groups.GroupManager, *PolicyCompiler, func()) {
+func setupCompilerTest(t *testing.T) (*SQLiteStorage, *workload.Manager, *groups.GroupManager, *PolicyCompiler, func()) {
 	t.Helper()
 
 	// Create temporary database
@@ -27,14 +29,28 @@ func setupCompilerTest(t *testing.T) (*SQLiteStorage, *groups.GroupManager, *Pol
 	workloadDBPath := "/tmp/test_workload_" + t.Name() + ".db"
 	os.Remove(workloadDBPath)
 
-	workloadStorage, err := workload.NewSQLiteStorage(workloadDBPath)
+	workloadStorage, err := workload.NewSQLiteWorkloadStorage(workloadDBPath)
 	if err != nil {
 		storage.Close()
 		t.Fatalf("Failed to create workload storage: %v", err)
 	}
 
+	// Create group storage
+	groupDBPath := "/tmp/test_group_" + t.Name() + ".db"
+	os.Remove(groupDBPath)
+
+	groupStorage, err := groups.NewSQLiteGroupStorage(groupDBPath)
+	if err != nil {
+		storage.Close()
+		workloadStorage.Close()
+		t.Fatalf("Failed to create group storage: %v", err)
+	}
+
+	// Create workload manager
+	workloadMgr := workload.NewManager(workloadStorage)
+
 	// Create group manager
-	groupMgr := groups.NewGroupManager(workloadStorage)
+	groupMgr := groups.NewGroupManager(groupStorage, workloadMgr)
 
 	// Create compiler
 	compiler := NewPolicyCompiler(storage, groupMgr)
@@ -42,43 +58,49 @@ func setupCompilerTest(t *testing.T) (*SQLiteStorage, *groups.GroupManager, *Pol
 	cleanup := func() {
 		storage.Close()
 		workloadStorage.Close()
+		groupStorage.Close()
 		os.Remove(dbPath)
 		os.Remove(workloadDBPath)
+		os.Remove(groupDBPath)
 	}
 
-	return storage, groupMgr, compiler, cleanup
+	return storage, workloadMgr, groupMgr, compiler, cleanup
 }
 
 func TestCompilePolicyRule_1x1(t *testing.T) {
-	storage, groupMgr, compiler, cleanup := setupCompilerTest(t)
+	storage, workloadMgr, groupMgr, compiler, cleanup := setupCompilerTest(t)
 	defer cleanup()
 
 	// Create workloads
-	web := &workload.Workload{
-		ID:     "web-1",
-		IP:     "10.0.1.10",
-		Labels: map[string]string{"role": "web"},
-	}
-	db := &workload.Workload{
-		ID:     "db-1",
-		IP:     "10.0.2.20",
-		Labels: map[string]string{"role": "db"},
+	web := workload.NewWorkload("web-1", "web-1", "localhost")
+	web.AddIP(net.ParseIP("10.0.1.10"))
+	web.Labels = map[string]string{"role": "web"}
+
+	db := workload.NewWorkload("db-1", "db-1", "localhost")
+	db.AddIP(net.ParseIP("10.0.2.20"))
+	db.Labels = map[string]string{"role": "db"}
+
+	err := workloadMgr.CreateWorkload(web)
+	if err != nil {
+		t.Fatalf("Failed to create web workload: %v", err)
 	}
 
-	groupMgr.AddWorkload(web)
-	groupMgr.AddWorkload(db)
+	err = workloadMgr.CreateWorkload(db)
+	if err != nil {
+		t.Fatalf("Failed to create db workload: %v", err)
+	}
 
 	// Create groups
-	err := groupMgr.CreateGroup("web-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "web"},
-	})
+	webGroup := groups.NewGroup("web-servers")
+	webGroup.AddSelector(groups.NewEqualSelector("role", "web"))
+	err = groupMgr.CreateGroup(webGroup)
 	if err != nil {
 		t.Fatalf("Failed to create web-servers group: %v", err)
 	}
 
-	err = groupMgr.CreateGroup("db-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "db"},
-	})
+	dbGroup := groups.NewGroup("db-servers")
+	dbGroup.AddSelector(groups.NewEqualSelector("role", "db"))
+	err = groupMgr.CreateGroup(dbGroup)
 	if err != nil {
 		t.Fatalf("Failed to create db-servers group: %v", err)
 	}
@@ -149,40 +171,46 @@ func TestCompilePolicyRule_1x1(t *testing.T) {
 }
 
 func TestCompilePolicyRule_NxM(t *testing.T) {
-	storage, groupMgr, compiler, cleanup := setupCompilerTest(t)
+	storage, workloadMgr, groupMgr, compiler, cleanup := setupCompilerTest(t)
 	defer cleanup()
 
 	// Create 10 web workloads
 	for i := 1; i <= 10; i++ {
-		web := &workload.Workload{
-			ID:     "web-" + string(rune('0'+i)),
-			IP:     "10.0.1." + string(rune('0'+i)),
-			Labels: map[string]string{"role": "web"},
+		id := fmt.Sprintf("web-%d", i)
+		ipStr := fmt.Sprintf("10.0.1.%d", i+10)
+		web := workload.NewWorkload(id, id, "localhost")
+		web.AddIP(net.ParseIP(ipStr))
+		web.Labels = map[string]string{"role": "web"}
+		err := workloadMgr.CreateWorkload(web)
+		if err != nil {
+			t.Fatalf("Failed to create web workload: %v", err)
 		}
-		groupMgr.AddWorkload(web)
 	}
 
 	// Create 2 db workloads
 	for i := 1; i <= 2; i++ {
-		db := &workload.Workload{
-			ID:     "db-" + string(rune('0'+i)),
-			IP:     "10.0.2." + string(rune('0'+i)),
-			Labels: map[string]string{"role": "db"},
+		id := fmt.Sprintf("db-%d", i)
+		ipStr := fmt.Sprintf("10.0.2.%d", i+10)
+		db := workload.NewWorkload(id, id, "localhost")
+		db.AddIP(net.ParseIP(ipStr))
+		db.Labels = map[string]string{"role": "db"}
+		err := workloadMgr.CreateWorkload(db)
+		if err != nil {
+			t.Fatalf("Failed to create db workload: %v", err)
 		}
-		groupMgr.AddWorkload(db)
 	}
 
 	// Create groups
-	err := groupMgr.CreateGroup("web-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "web"},
-	})
+	webGroup := groups.NewGroup("web-servers")
+	webGroup.AddSelector(groups.NewEqualSelector("role", "web"))
+	err := groupMgr.CreateGroup(webGroup)
 	if err != nil {
 		t.Fatalf("Failed to create web-servers group: %v", err)
 	}
 
-	err = groupMgr.CreateGroup("db-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "db"},
-	})
+	dbGroup := groups.NewGroup("db-servers")
+	dbGroup.AddSelector(groups.NewEqualSelector("role", "db"))
+	err = groupMgr.CreateGroup(dbGroup)
 	if err != nil {
 		t.Fatalf("Failed to create db-servers group: %v", err)
 	}
@@ -227,31 +255,42 @@ func TestCompilePolicyRule_NxM(t *testing.T) {
 }
 
 func TestCompilePolicyRule_MultiplePortRanges(t *testing.T) {
-	storage, groupMgr, compiler, cleanup := setupCompilerTest(t)
+	storage, workloadMgr, groupMgr, compiler, cleanup := setupCompilerTest(t)
 	defer cleanup()
 
 	// Create workloads
-	web := &workload.Workload{
-		ID:     "web-1",
-		IP:     "10.0.1.10",
-		Labels: map[string]string{"role": "web"},
-	}
-	db := &workload.Workload{
-		ID:     "db-1",
-		IP:     "10.0.2.20",
-		Labels: map[string]string{"role": "db"},
+	web := workload.NewWorkload("web-1", "web-1", "localhost")
+	web.AddIP(net.ParseIP("10.0.1.10"))
+	web.Labels = map[string]string{"role": "web"}
+
+	db := workload.NewWorkload("db-1", "db-1", "localhost")
+	db.AddIP(net.ParseIP("10.0.2.20"))
+	db.Labels = map[string]string{"role": "db"}
+
+	err := workloadMgr.CreateWorkload(web)
+	if err != nil {
+		t.Fatalf("Failed to create web workload: %v", err)
 	}
 
-	groupMgr.AddWorkload(web)
-	groupMgr.AddWorkload(db)
+	err = workloadMgr.CreateWorkload(db)
+	if err != nil {
+		t.Fatalf("Failed to create db workload: %v", err)
+	}
 
 	// Create groups
-	groupMgr.CreateGroup("web-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "web"},
-	})
-	groupMgr.CreateGroup("db-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "db"},
-	})
+	webGroup := groups.NewGroup("web-servers")
+	webGroup.AddSelector(groups.NewEqualSelector("role", "web"))
+	err = groupMgr.CreateGroup(webGroup)
+	if err != nil {
+		t.Fatalf("Failed to create web-servers group: %v", err)
+	}
+
+	dbGroup := groups.NewGroup("db-servers")
+	dbGroup.AddSelector(groups.NewEqualSelector("role", "db"))
+	err = groupMgr.CreateGroup(dbGroup)
+	if err != nil {
+		t.Fatalf("Failed to create db-servers group: %v", err)
+	}
 
 	// Create policy rule with multiple port ranges
 	rule := &PolicyRule{
@@ -268,7 +307,7 @@ func TestCompilePolicyRule_MultiplePortRanges(t *testing.T) {
 		Enabled:  true,
 	}
 
-	err := storage.CreatePolicyRule(rule)
+	err = storage.CreatePolicyRule(rule)
 	if err != nil {
 		t.Fatalf("Failed to create policy rule: %v", err)
 	}
@@ -300,31 +339,42 @@ func TestCompilePolicyRule_MultiplePortRanges(t *testing.T) {
 }
 
 func TestCompilePolicyRule_PortRange(t *testing.T) {
-	storage, groupMgr, compiler, cleanup := setupCompilerTest(t)
+	storage, workloadMgr, groupMgr, compiler, cleanup := setupCompilerTest(t)
 	defer cleanup()
 
 	// Create workloads
-	web := &workload.Workload{
-		ID:     "web-1",
-		IP:     "10.0.1.10",
-		Labels: map[string]string{"role": "web"},
-	}
-	app := &workload.Workload{
-		ID:     "app-1",
-		IP:     "10.0.2.20",
-		Labels: map[string]string{"role": "app"},
+	web := workload.NewWorkload("web-1", "web-1", "localhost")
+	web.AddIP(net.ParseIP("10.0.1.10"))
+	web.Labels = map[string]string{"role": "web"}
+
+	app := workload.NewWorkload("app-1", "app-1", "localhost")
+	app.AddIP(net.ParseIP("10.0.2.20"))
+	app.Labels = map[string]string{"role": "app"}
+
+	err := workloadMgr.CreateWorkload(web)
+	if err != nil {
+		t.Fatalf("Failed to create web workload: %v", err)
 	}
 
-	groupMgr.AddWorkload(web)
-	groupMgr.AddWorkload(app)
+	err = workloadMgr.CreateWorkload(app)
+	if err != nil {
+		t.Fatalf("Failed to create app workload: %v", err)
+	}
 
 	// Create groups
-	groupMgr.CreateGroup("web-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "web"},
-	})
-	groupMgr.CreateGroup("app-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "app"},
-	})
+	webGroup := groups.NewGroup("web-servers")
+	webGroup.AddSelector(groups.NewEqualSelector("role", "web"))
+	err = groupMgr.CreateGroup(webGroup)
+	if err != nil {
+		t.Fatalf("Failed to create web-servers group: %v", err)
+	}
+
+	appGroup := groups.NewGroup("app-servers")
+	appGroup.AddSelector(groups.NewEqualSelector("role", "app"))
+	err = groupMgr.CreateGroup(appGroup)
+	if err != nil {
+		t.Fatalf("Failed to create app-servers group: %v", err)
+	}
 
 	// Create policy rule with port range
 	rule := &PolicyRule{
@@ -339,7 +389,7 @@ func TestCompilePolicyRule_PortRange(t *testing.T) {
 		Enabled:  true,
 	}
 
-	err := storage.CreatePolicyRule(rule)
+	err = storage.CreatePolicyRule(rule)
 	if err != nil {
 		t.Fatalf("Failed to create policy rule: %v", err)
 	}
@@ -370,31 +420,42 @@ func TestCompilePolicyRule_PortRange(t *testing.T) {
 }
 
 func TestCompilePolicyRule_Traceability(t *testing.T) {
-	storage, groupMgr, compiler, cleanup := setupCompilerTest(t)
+	storage, workloadMgr, groupMgr, compiler, cleanup := setupCompilerTest(t)
 	defer cleanup()
 
 	// Create workloads
-	web := &workload.Workload{
-		ID:     "web-1",
-		IP:     "10.0.1.10",
-		Labels: map[string]string{"role": "web"},
-	}
-	db := &workload.Workload{
-		ID:     "db-1",
-		IP:     "10.0.2.20",
-		Labels: map[string]string{"role": "db"},
+	web := workload.NewWorkload("web-1", "web-1", "localhost")
+	web.AddIP(net.ParseIP("10.0.1.10"))
+	web.Labels = map[string]string{"role": "web"}
+
+	db := workload.NewWorkload("db-1", "db-1", "localhost")
+	db.AddIP(net.ParseIP("10.0.2.20"))
+	db.Labels = map[string]string{"role": "db"}
+
+	err := workloadMgr.CreateWorkload(web)
+	if err != nil {
+		t.Fatalf("Failed to create web workload: %v", err)
 	}
 
-	groupMgr.AddWorkload(web)
-	groupMgr.AddWorkload(db)
+	err = workloadMgr.CreateWorkload(db)
+	if err != nil {
+		t.Fatalf("Failed to create db workload: %v", err)
+	}
 
 	// Create groups
-	groupMgr.CreateGroup("web-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "web"},
-	})
-	groupMgr.CreateGroup("db-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "db"},
-	})
+	webGroup := groups.NewGroup("web-servers")
+	webGroup.AddSelector(groups.NewEqualSelector("role", "web"))
+	err = groupMgr.CreateGroup(webGroup)
+	if err != nil {
+		t.Fatalf("Failed to create web-servers group: %v", err)
+	}
+
+	dbGroup := groups.NewGroup("db-servers")
+	dbGroup.AddSelector(groups.NewEqualSelector("role", "db"))
+	err = groupMgr.CreateGroup(dbGroup)
+	if err != nil {
+		t.Fatalf("Failed to create db-servers group: %v", err)
+	}
 
 	// Create policy rule
 	rule := &PolicyRule{
@@ -409,7 +470,7 @@ func TestCompilePolicyRule_Traceability(t *testing.T) {
 		Enabled:  true,
 	}
 
-	err := storage.CreatePolicyRule(rule)
+	err = storage.CreatePolicyRule(rule)
 	if err != nil {
 		t.Fatalf("Failed to create policy rule: %v", err)
 	}
@@ -463,19 +524,25 @@ func TestCompilePolicyRule_Traceability(t *testing.T) {
 }
 
 func TestCompilePolicyRule_DisabledRule(t *testing.T) {
-	storage, groupMgr, compiler, cleanup := setupCompilerTest(t)
+	storage, workloadMgr, groupMgr, compiler, cleanup := setupCompilerTest(t)
 	defer cleanup()
 
 	// Create workloads and groups
-	web := &workload.Workload{
-		ID:     "web-1",
-		IP:     "10.0.1.10",
-		Labels: map[string]string{"role": "web"},
+	web := workload.NewWorkload("web-1", "web-1", "localhost")
+	web.AddIP(net.ParseIP("10.0.1.10"))
+	web.Labels = map[string]string{"role": "web"}
+
+	err := workloadMgr.CreateWorkload(web)
+	if err != nil {
+		t.Fatalf("Failed to create web workload: %v", err)
 	}
-	groupMgr.AddWorkload(web)
-	groupMgr.CreateGroup("web-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "web"},
-	})
+
+	webGroup := groups.NewGroup("web-servers")
+	webGroup.AddSelector(groups.NewEqualSelector("role", "web"))
+	err = groupMgr.CreateGroup(webGroup)
+	if err != nil {
+		t.Fatalf("Failed to create web-servers group: %v", err)
+	}
 
 	// Create disabled policy rule
 	rule := &PolicyRule{
@@ -488,7 +555,7 @@ func TestCompilePolicyRule_DisabledRule(t *testing.T) {
 		Enabled:   false, // Disabled
 	}
 
-	err := storage.CreatePolicyRule(rule)
+	err = storage.CreatePolicyRule(rule)
 	if err != nil {
 		t.Fatalf("Failed to create policy rule: %v", err)
 	}
@@ -506,33 +573,46 @@ func TestCompilePolicyRule_DisabledRule(t *testing.T) {
 }
 
 func TestCompilePolicyRule_Warnings(t *testing.T) {
-	storage, groupMgr, compiler, cleanup := setupCompilerTest(t)
+	storage, workloadMgr, groupMgr, compiler, cleanup := setupCompilerTest(t)
 	defer cleanup()
 
 	// Create many workloads to trigger warning threshold
 	// We need > 1000 compiled policies, so create 35×35 = 1225 policies
 	for i := 1; i <= 35; i++ {
-		web := &workload.Workload{
-			ID:     "web-" + string(rune('A'+i)),
-			IP:     "10.0.1." + string(rune('0'+i)),
-			Labels: map[string]string{"role": "web"},
+		webID := fmt.Sprintf("web-%d", i)
+		webIP := fmt.Sprintf("10.0.1.%d", i)
+		web := workload.NewWorkload(webID, webID, "localhost")
+		web.AddIP(net.ParseIP(webIP))
+		web.Labels = map[string]string{"role": "web"}
+		err := workloadMgr.CreateWorkload(web)
+		if err != nil {
+			t.Fatalf("Failed to create web workload: %v", err)
 		}
-		groupMgr.AddWorkload(web)
 
-		db := &workload.Workload{
-			ID:     "db-" + string(rune('A'+i)),
-			IP:     "10.0.2." + string(rune('0'+i)),
-			Labels: map[string]string{"role": "db"},
+		dbID := fmt.Sprintf("db-%d", i)
+		dbIP := fmt.Sprintf("10.0.2.%d", i)
+		db := workload.NewWorkload(dbID, dbID, "localhost")
+		db.AddIP(net.ParseIP(dbIP))
+		db.Labels = map[string]string{"role": "db"}
+		err = workloadMgr.CreateWorkload(db)
+		if err != nil {
+			t.Fatalf("Failed to create db workload: %v", err)
 		}
-		groupMgr.AddWorkload(db)
 	}
 
-	groupMgr.CreateGroup("web-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "web"},
-	})
-	groupMgr.CreateGroup("db-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "db"},
-	})
+	webGroup := groups.NewGroup("web-servers")
+	webGroup.AddSelector(groups.NewEqualSelector("role", "web"))
+	err := groupMgr.CreateGroup(webGroup)
+	if err != nil {
+		t.Fatalf("Failed to create web-servers group: %v", err)
+	}
+
+	dbGroup := groups.NewGroup("db-servers")
+	dbGroup.AddSelector(groups.NewEqualSelector("role", "db"))
+	err = groupMgr.CreateGroup(dbGroup)
+	if err != nil {
+		t.Fatalf("Failed to create db-servers group: %v", err)
+	}
 
 	// Create policy rule
 	rule := &PolicyRule{
@@ -545,7 +625,7 @@ func TestCompilePolicyRule_Warnings(t *testing.T) {
 		Enabled:   true,
 	}
 
-	err := storage.CreatePolicyRule(rule)
+	err = storage.CreatePolicyRule(rule)
 	if err != nil {
 		t.Fatalf("Failed to create policy rule: %v", err)
 	}
@@ -568,30 +648,41 @@ func TestCompilePolicyRule_Warnings(t *testing.T) {
 }
 
 func TestInvalidateCompiledPolicies(t *testing.T) {
-	storage, groupMgr, compiler, cleanup := setupCompilerTest(t)
+	storage, workloadMgr, groupMgr, compiler, cleanup := setupCompilerTest(t)
 	defer cleanup()
 
 	// Create workloads and groups
-	web := &workload.Workload{
-		ID:     "web-1",
-		IP:     "10.0.1.10",
-		Labels: map[string]string{"role": "web"},
-	}
-	db := &workload.Workload{
-		ID:     "db-1",
-		IP:     "10.0.2.20",
-		Labels: map[string]string{"role": "db"},
+	web := workload.NewWorkload("web-1", "web-1", "localhost")
+	web.AddIP(net.ParseIP("10.0.1.10"))
+	web.Labels = map[string]string{"role": "web"}
+
+	db := workload.NewWorkload("db-1", "db-1", "localhost")
+	db.AddIP(net.ParseIP("10.0.2.20"))
+	db.Labels = map[string]string{"role": "db"}
+
+	err := workloadMgr.CreateWorkload(web)
+	if err != nil {
+		t.Fatalf("Failed to create web workload: %v", err)
 	}
 
-	groupMgr.AddWorkload(web)
-	groupMgr.AddWorkload(db)
+	err = workloadMgr.CreateWorkload(db)
+	if err != nil {
+		t.Fatalf("Failed to create db workload: %v", err)
+	}
 
-	groupMgr.CreateGroup("web-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "web"},
-	})
-	groupMgr.CreateGroup("db-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "db"},
-	})
+	webGroup := groups.NewGroup("web-servers")
+	webGroup.AddSelector(groups.NewEqualSelector("role", "web"))
+	err = groupMgr.CreateGroup(webGroup)
+	if err != nil {
+		t.Fatalf("Failed to create web-servers group: %v", err)
+	}
+
+	dbGroup := groups.NewGroup("db-servers")
+	dbGroup.AddSelector(groups.NewEqualSelector("role", "db"))
+	err = groupMgr.CreateGroup(dbGroup)
+	if err != nil {
+		t.Fatalf("Failed to create db-servers group: %v", err)
+	}
 
 	// Create and compile policy rule
 	rule := &PolicyRule{
@@ -633,30 +724,41 @@ func TestInvalidateCompiledPolicies(t *testing.T) {
 }
 
 func TestCompileAllPolicies(t *testing.T) {
-	storage, groupMgr, compiler, cleanup := setupCompilerTest(t)
+	storage, workloadMgr, groupMgr, compiler, cleanup := setupCompilerTest(t)
 	defer cleanup()
 
 	// Create workloads
-	web := &workload.Workload{
-		ID:     "web-1",
-		IP:     "10.0.1.10",
-		Labels: map[string]string{"role": "web"},
-	}
-	db := &workload.Workload{
-		ID:     "db-1",
-		IP:     "10.0.2.20",
-		Labels: map[string]string{"role": "db"},
+	web := workload.NewWorkload("web-1", "web-1", "localhost")
+	web.AddIP(net.ParseIP("10.0.1.10"))
+	web.Labels = map[string]string{"role": "web"}
+
+	db := workload.NewWorkload("db-1", "db-1", "localhost")
+	db.AddIP(net.ParseIP("10.0.2.20"))
+	db.Labels = map[string]string{"role": "db"}
+
+	err := workloadMgr.CreateWorkload(web)
+	if err != nil {
+		t.Fatalf("Failed to create web workload: %v", err)
 	}
 
-	groupMgr.AddWorkload(web)
-	groupMgr.AddWorkload(db)
+	err = workloadMgr.CreateWorkload(db)
+	if err != nil {
+		t.Fatalf("Failed to create db workload: %v", err)
+	}
 
-	groupMgr.CreateGroup("web-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "web"},
-	})
-	groupMgr.CreateGroup("db-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "db"},
-	})
+	webGroup := groups.NewGroup("web-servers")
+	webGroup.AddSelector(groups.NewEqualSelector("role", "web"))
+	err = groupMgr.CreateGroup(webGroup)
+	if err != nil {
+		t.Fatalf("Failed to create web-servers group: %v", err)
+	}
+
+	dbGroup := groups.NewGroup("db-servers")
+	dbGroup.AddSelector(groups.NewEqualSelector("role", "db"))
+	err = groupMgr.CreateGroup(dbGroup)
+	if err != nil {
+		t.Fatalf("Failed to create db-servers group: %v", err)
+	}
 
 	// Create multiple policy rules
 	rule1 := &PolicyRule{
@@ -683,7 +785,7 @@ func TestCompileAllPolicies(t *testing.T) {
 	storage.CreatePolicyRule(rule2)
 
 	// Compile all policies
-	err := compiler.CompileAllPolicies()
+	err = compiler.CompileAllPolicies()
 	if err != nil {
 		t.Fatalf("CompileAllPolicies failed: %v", err)
 	}
@@ -701,30 +803,41 @@ func TestCompileAllPolicies(t *testing.T) {
 }
 
 func TestGetCompilationSummary(t *testing.T) {
-	storage, groupMgr, compiler, cleanup := setupCompilerTest(t)
+	storage, workloadMgr, groupMgr, compiler, cleanup := setupCompilerTest(t)
 	defer cleanup()
 
 	// Create workloads
-	web := &workload.Workload{
-		ID:     "web-1",
-		IP:     "10.0.1.10",
-		Labels: map[string]string{"role": "web"},
-	}
-	db := &workload.Workload{
-		ID:     "db-1",
-		IP:     "10.0.2.20",
-		Labels: map[string]string{"role": "db"},
+	web := workload.NewWorkload("web-1", "web-1", "localhost")
+	web.AddIP(net.ParseIP("10.0.1.10"))
+	web.Labels = map[string]string{"role": "web"}
+
+	db := workload.NewWorkload("db-1", "db-1", "localhost")
+	db.AddIP(net.ParseIP("10.0.2.20"))
+	db.Labels = map[string]string{"role": "db"}
+
+	err := workloadMgr.CreateWorkload(web)
+	if err != nil {
+		t.Fatalf("Failed to create web workload: %v", err)
 	}
 
-	groupMgr.AddWorkload(web)
-	groupMgr.AddWorkload(db)
+	err = workloadMgr.CreateWorkload(db)
+	if err != nil {
+		t.Fatalf("Failed to create db workload: %v", err)
+	}
 
-	groupMgr.CreateGroup("web-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "web"},
-	})
-	groupMgr.CreateGroup("db-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "db"},
-	})
+	webGroup := groups.NewGroup("web-servers")
+	webGroup.AddSelector(groups.NewEqualSelector("role", "web"))
+	err = groupMgr.CreateGroup(webGroup)
+	if err != nil {
+		t.Fatalf("Failed to create web-servers group: %v", err)
+	}
+
+	dbGroup := groups.NewGroup("db-servers")
+	dbGroup.AddSelector(groups.NewEqualSelector("role", "db"))
+	err = groupMgr.CreateGroup(dbGroup)
+	if err != nil {
+		t.Fatalf("Failed to create db-servers group: %v", err)
+	}
 
 	// Create and compile policy rule
 	rule := &PolicyRule{
@@ -772,24 +885,30 @@ func TestCompilePolicyRule_Performance(t *testing.T) {
 		t.Skip("Skipping performance test in short mode")
 	}
 
-	storage, groupMgr, compiler, cleanup := setupCompilerTest(t)
+	storage, workloadMgr, groupMgr, compiler, cleanup := setupCompilerTest(t)
 	defer cleanup()
 
 	// Create 10×10 workloads
 	for i := 1; i <= 10; i++ {
 		for j := 1; j <= 10; j++ {
-			web := &workload.Workload{
-				ID:     "web-" + string(rune('0'+i)) + "-" + string(rune('0'+j)),
-				IP:     "10.0." + string(rune('0'+i)) + "." + string(rune('0'+j)),
-				Labels: map[string]string{"role": "web"},
+			id := fmt.Sprintf("web-%d-%d", i, j)
+			ipStr := fmt.Sprintf("10.0.%d.%d", i, j)
+			web := workload.NewWorkload(id, id, "localhost")
+			web.AddIP(net.ParseIP(ipStr))
+			web.Labels = map[string]string{"role": "web"}
+			err := workloadMgr.CreateWorkload(web)
+			if err != nil {
+				t.Fatalf("Failed to create web workload: %v", err)
 			}
-			groupMgr.AddWorkload(web)
 		}
 	}
 
-	groupMgr.CreateGroup("web-servers", groups.LabelSelector{
-		MatchLabels: map[string]string{"role": "web"},
-	})
+	webGroup := groups.NewGroup("web-servers")
+	webGroup.AddSelector(groups.NewEqualSelector("role", "web"))
+	err := groupMgr.CreateGroup(webGroup)
+	if err != nil {
+		t.Fatalf("Failed to create web-servers group: %v", err)
+	}
 
 	// Create policy rule
 	rule := &PolicyRule{

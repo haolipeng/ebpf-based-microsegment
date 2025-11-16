@@ -99,7 +99,7 @@ func setupHealthTestRouter(dp *MockDataPlane, pm *MockPolicyManagerForHealth) *g
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
-	handler := NewHealthHandler(dp, pm)
+	handler := NewHealthHandler(dp, pm, "0.1.0", "lo")
 
 	router.GET("/api/v1/health", handler.GetHealth)
 	router.GET("/api/v1/status", handler.GetStatus)
