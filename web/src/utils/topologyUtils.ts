@@ -471,6 +471,99 @@ export function mergeTopologyUpdate(
     if (!edge.metrics.protocols.includes(newFlow.protocol)) {
       edge.metrics.protocols.push(newFlow.protocol)
     }
+  } else if (viewMode === 'LABEL') {
+    // LABEL view realtime update logic
+    const sourceLabel = getServiceLabel(newFlow.sourceLabels)
+    const targetLabel = getServiceLabel(newFlow.destLabels)
+
+    // Skip flows without labels
+    if (!sourceLabel || !targetLabel) {
+      return existing
+    }
+
+    const sourceId = sourceLabel
+    const targetId = targetLabel
+
+    // Update or create source node
+    let sourceNode = nodes.find(n => n.id === sourceId)
+    if (!sourceNode) {
+      sourceNode = {
+        id: sourceId,
+        label: sourceLabel,
+        type: 'SERVICE',
+        metrics: {
+          flowCount: 0,
+          packetCount: 0,
+          byteCount: 0,
+          activeFlows: 0,
+        },
+        labels: newFlow.sourceLabels,
+      }
+      nodes.push(sourceNode)
+    }
+
+    // Update or create target node
+    let targetNode = nodes.find(n => n.id === targetId)
+    if (!targetNode) {
+      targetNode = {
+        id: targetId,
+        label: targetLabel,
+        type: 'SERVICE',
+        metrics: {
+          flowCount: 0,
+          packetCount: 0,
+          byteCount: 0,
+          activeFlows: 0,
+        },
+        labels: newFlow.destLabels,
+      }
+      nodes.push(targetNode)
+    }
+
+    // Update node metrics
+    sourceNode.metrics.flowCount++
+    sourceNode.metrics.packetCount += newFlow.packetCount
+    sourceNode.metrics.byteCount += newFlow.byteCount
+    if (newFlow.state === 'ACTIVE') {
+      sourceNode.metrics.activeFlows++
+    }
+
+    targetNode.metrics.flowCount++
+    targetNode.metrics.packetCount += newFlow.packetCount
+    targetNode.metrics.byteCount += newFlow.byteCount
+    if (newFlow.state === 'ACTIVE') {
+      targetNode.metrics.activeFlows++
+    }
+
+    // Update or create edge
+    const edgeId = `${sourceId}->${targetId}`
+    let edge = edges.find(e => e.id === edgeId || e.id === `${targetId}->${sourceId}`)
+
+    if (!edge) {
+      const direction = newFlow.direction === 'UNKNOWN' ? 'EGRESS' : (newFlow.direction as 'INGRESS' | 'EGRESS' | 'BIDIRECTIONAL')
+      edge = {
+        id: edgeId,
+        source: sourceId,
+        target: targetId,
+        metrics: {
+          flowCount: 0,
+          packetCount: 0,
+          byteCount: 0,
+          protocols: [],
+        },
+        direction,
+      }
+      edges.push(edge)
+    }
+
+    // Update edge metrics
+    edge.metrics.flowCount++
+    edge.metrics.packetCount += newFlow.packetCount
+    edge.metrics.byteCount += newFlow.byteCount
+
+    if (!edge.metrics.protocols.includes(newFlow.protocol)) {
+      edge.metrics.protocols.push(newFlow.protocol)
+    }
   }
 
   return {

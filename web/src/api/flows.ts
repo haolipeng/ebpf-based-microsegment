@@ -70,12 +70,130 @@ interface ServerFlowQueryResponse {
   total_count: number
 }
 
+// Server flow type (snake_case from backend)
+interface ServerFlow {
+  id: number | string
+  src_ip: string
+  src_port: number
+  dst_ip: string
+  dst_port: number
+  protocol: number | string
+  direction: number | string
+  packet_count: number
+  byte_count: number
+  start_time?: number | string
+  end_time?: number | string
+  last_seen?: number | string
+  source_labels?: Record<string, string>
+  dest_labels?: Record<string, string>
+  policy_id?: number
+  policy_action?: number | string
+  state?: number | string
+  agent_id?: string
+}
+
+// Transform server flow to frontend flow format
+function transformFlow(serverFlow: ServerFlow): Flow {
+  // Convert protocol number to name using the protocolName helper
+  const protocolNum = typeof serverFlow.protocol === 'string' 
+    ? parseInt(serverFlow.protocol, 10) 
+    : serverFlow.protocol
+  const protocol = protocolName(protocolNum)
+
+  // Convert state number to string
+  const stateMap: Record<number, Flow['state']> = {
+    1: 'ACTIVE',
+    2: 'CLOSED',
+    3: 'TIMEOUT',
+  }
+  const state = typeof serverFlow.state === 'number' 
+    ? (stateMap[serverFlow.state] || 'CLOSED')
+    : (serverFlow.state as Flow['state'] || 'CLOSED')
+
+  // Convert policy action number to string
+  const actionMap: Record<number, Flow['policyAction']> = {
+    1: 'ALLOW',
+    2: 'DENY',
+    3: 'LOG',
+  }
+  const policyAction = typeof serverFlow.policy_action === 'number'
+    ? (actionMap[serverFlow.policy_action] || 'ALLOW')
+    : (serverFlow.policy_action as Flow['policyAction'] || 'ALLOW')
+
+  // Convert direction number to string
+  const directionMap: Record<number, Flow['direction']> = {
+    1: 'INGRESS',
+    2: 'EGRESS',
+    0: 'UNKNOWN',
+  }
+  const direction = typeof serverFlow.direction === 'number'
+    ? (directionMap[serverFlow.direction] || 'UNKNOWN')
+    : (serverFlow.direction as Flow['direction'] || 'UNKNOWN')
+
+  // Convert timestamps (backend returns nanoseconds, divide by 1e9 to get milliseconds)
+  const startTime = serverFlow.start_time 
+    ? (typeof serverFlow.start_time === 'number' 
+        ? new Date(serverFlow.start_time / 1000000).toISOString() // Already in microseconds from backend
+        : serverFlow.start_time)
+    : new Date().toISOString()
+  
+  const endTime = serverFlow.end_time
+    ? (typeof serverFlow.end_time === 'number'
+        ? new Date(serverFlow.end_time / 1000000).toISOString()
+        : serverFlow.end_time)
+    : undefined
+
+  const lastSeen = serverFlow.last_seen
+    ? (typeof serverFlow.last_seen === 'number'
+        ? new Date(serverFlow.last_seen / 1000000).toISOString()
+        : serverFlow.last_seen)
+    : startTime
+
+  return {
+    id: String(serverFlow.id),
+    sourceIp: serverFlow.src_ip,
+    sourcePort: serverFlow.src_port,
+    destIp: serverFlow.dst_ip,
+    destPort: serverFlow.dst_port,
+    protocol: protocol,
+    packetCount: serverFlow.packet_count,
+    byteCount: serverFlow.byte_count,
+    durationMs: endTime ? (new Date(endTime).getTime() - new Date(startTime).getTime()) : 0,
+    startTime,
+    endTime,
+    lastSeen,
+    sourceLabels: serverFlow.source_labels,
+    destLabels: serverFlow.dest_labels,
+    policyId: serverFlow.policy_id,
+    policyAction,
+    state,
+    direction,
+    eventType: 'NEW', // Default, not provided by backend
+  }
+}
+
 export const flowsApi = {
   // Query flows with filters
   query: async (params: FlowQuery): Promise<Flow[]> => {
-    const response = await apiClient.get<ServerFlowQueryResponse>('/v1/flows', { params })
-    // Server returns object with flows array, extract it
-    return response.data.flows || []
+    // Transform camelCase params to snake_case for backend API
+    const apiParams: Record<string, any> = {}
+    if (params.startTime) apiParams.start_time = params.startTime
+    if (params.endTime) apiParams.end_time = params.endTime
+    if (params.sourceIp) apiParams.source_ip = params.sourceIp
+    if (params.destIp) apiParams.dest_ip = params.destIp
+    if (params.protocol) apiParams.protocol = params.protocol
+    if (params.state) apiParams.state = params.state
+    if (params.direction) apiParams.direction = params.direction
+    if (params.policyAction) apiParams.policy_action = params.policyAction
+    // Set default limit if not provided
+    apiParams.limit = params.limit || 1000  // Default to 1000 for topology to get more data
+    if (params.offset) apiParams.offset = params.offset
+    // Ignore viewMode and maxNodes as they are frontend-only filters
+    
+    const response = await apiClient.get<ServerFlowQueryResponse>('/v1/flows', { params: apiParams })
+    // Server returns object with flows array, transform each flow
+    const serverFlows = response.data.flows || []
+    return serverFlows.map(transformFlow)
   },
 
   // Get flow summary statistics

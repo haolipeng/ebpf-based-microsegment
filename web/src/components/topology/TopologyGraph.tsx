@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react'
 import ReactECharts from 'echarts-for-react'
-import type { ECharts } from 'echarts'
+import type { ECharts, ECElementEvent } from 'echarts'
 import { Spin, Empty } from 'antd'
 import type { TopologyData, TopologyNode, TopologyEdge, TopologyViewMode } from '../../types/topology'
 import { getTopologyChartOption } from './topologyConfig'
@@ -49,15 +49,12 @@ export default function TopologyGraph({
     if (!chart) return
 
     // 点击事件处理
-    const handleClick = (params: {
-      dataType?: string
-      data?: TopologyNode | TopologyEdge
-    }) => {
-      if (params.dataType === 'node' && onNodeClick) {
+    const handleClick = (params: ECElementEvent) => {
+      if (params.dataType === 'node' && onNodeClick && params.data) {
         // 获取完整的节点数据
         const node = params.data as TopologyNode
         onNodeClick(node)
-      } else if (params.dataType === 'edge' && onEdgeClick) {
+      } else if (params.dataType === 'edge' && onEdgeClick && params.data) {
         // 获取完整的边数据
         const edge = params.data as TopologyEdge
         onEdgeClick(edge)
@@ -65,7 +62,7 @@ export default function TopologyGraph({
     }
 
     // 双击节点聚焦
-    const handleDblClick = (params: { dataType?: string; dataIndex?: number }) => {
+    const handleDblClick = (params: ECElementEvent) => {
       if (params.dataType === 'node') {
         // 高亮相关节点和边
         chart.dispatchAction({
