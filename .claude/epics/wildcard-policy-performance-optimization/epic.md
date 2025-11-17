@@ -273,12 +273,7 @@ Sequential tasks: 4
 
 ### Internal Dependencies
 
-#### D3: 监控系统
-- **依赖**: Prometheus exporter 新增 metrics
-- **时间**: Phase 1 完成后 1 周内
-- **负责人**: Monitoring Team
-
-#### D4: 测试基础设施
+#### D3: 测试基础设施
 - **依赖**: 10Gbps 网卡性能测试环境
 - **时间**: Phase 2 开发期间
 - **负责人**: QA Team
@@ -336,7 +331,6 @@ Sequential tasks: 4
 - [ ] 策略添加/删除操作 <100ms
 
 #### 可运维性
-- [ ] Prometheus metrics 完整
 - [ ] 日志记录策略变更
 - [ ] 支持策略导出/导入
 - [ ] 故障回滚机制完善
