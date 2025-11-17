@@ -87,13 +87,12 @@ static __always_inline __u64 get_timestamp_ns() {
     return bpf_ktime_get_ns();
 }
 
-// Helper: Extract flow key from packet (TC-specific wrapper)
+// Helper: Extract flow key from packet
 // TC 使用 struct __sk_buff,提供 data 和 data_end 指针
 static __always_inline int extract_flow_key(struct __sk_buff *skb, struct flow_key *key) {
     void *data = (void *)(long)skb->data;
     void *data_end = (void *)(long)skb->data_end;
 
-    // 调用通用的流键提取函数 (在 flow_processing.h 中定义)
     return extract_flow_key_from_packet(data, data_end, key);
 }
 
@@ -329,6 +328,20 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
                 session->state = SESSION_STATE_CLOSING;
                 // 增加已关闭会话计数
                 update_stats(STATS_CLOSED_SESSIONS);
+
+                // Push connection closed event to control plane
+                push_flow_event(
+                    &key,
+                    session->last_seen_ts,
+                    session->packets_to_server + session->packets_to_client,
+                    session->bytes_to_server + session->bytes_to_client,
+                    FLOW_EVENT_CLOSED,
+                    session->policy_action,
+                    0,  // policy_id not tracked in session
+                    SESSION_STATE_CLOSING,
+                    direction
+                );
+
 #if DEBUG_MODE
                 bpf_printk("TCP state transition: %pI4:%d -> %pI4:%d (%d -> %d)\n",
                            &key.src_ip, bpf_ntohs(key.src_port),
