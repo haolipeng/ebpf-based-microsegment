@@ -16,10 +16,11 @@ P1 - 重要优化
 建议:
 短期:限制通配符数量 < 50
 长期:使用 LPM Trie Map 优化 CIDR 匹配
-TCP 状态机未完整实现 📊
-问题: 定义了 10 个 TCP 状态,但只检测 FIN/RST
-影响: 无法精确跟踪连接状态(半关闭、异常等)
-需要: 实现完整的 SYN/ACK/FIN 状态转换
+~~TCP 状态机未完整实现~~ ✅ **已解决**
+位置: src/bpf/headers/tcp_state_machine.h
+实现: 完整的 10 状态定义 + 双向状态转换(出站/入站)
+特性: 支持 SYN/ACK/FIN/RST 完整转换,同时关闭,快速关闭等
+提交: commit aada69a "实现完整的 TCP 状态机"
 会话超时机制缺失 ⏱️
 问题: 仅依赖 LRU 自动淘汰,无精确控制
 建议: 用户态周期性扫描删除过期会话
@@ -36,4 +37,6 @@ TC/XDP 会话表分离 🔄
 建议: 考虑 Pinning 共享 session_map(需处理并发)
 P3 - 代码质量
 代码重复: is_tcp_closing() 在 TC/XDP 中重复
-魔法数字: for (i < 100) 应使用 MAX_WILDCARD_LOOP 常量
+~~魔法数字: for (i < 100)~~ ✅ **已解决**
+位置: src/bpf/headers/policy_match.h:25
+实现: 定义 MAX_WILDCARD_LOOP=50 常量,替换所有硬编码循环
