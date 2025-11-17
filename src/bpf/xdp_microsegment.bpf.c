@@ -300,6 +300,20 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 				session->state = SESSION_STATE_CLOSING;
 				// 增加已关闭会话计数
 				update_stats(STATS_CLOSED_SESSIONS);
+
+				// Push connection closed event to control plane
+				push_flow_event_xdp(
+					&key,
+					session->last_seen_ts,
+					session->packets_to_server + session->packets_to_client,
+					session->bytes_to_server + session->bytes_to_client,
+					FLOW_EVENT_CLOSED,
+					session->policy_action,
+					0,  // policy_id not tracked in session
+					SESSION_STATE_CLOSING,
+					POLICY_DIR_INGRESS  // XDP only supports ingress
+				);
+
 #if DEBUG_MODE
 				bpf_printk("XDP TCP state transition: %pI4:%d -> %pI4:%d (%d -> %d)\n",
 					   &key.src_ip, bpf_ntohs(key.src_port),
