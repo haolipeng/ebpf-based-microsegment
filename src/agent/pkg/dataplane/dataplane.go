@@ -238,45 +238,44 @@ func (dp *DataPlane) MonitorFlowEvents() {
 			continue
 		}
 
-		// Convert IPs to readable format
-		srcIPStr := intToIP(event.SrcIP)
-		dstIPStr := intToIP(event.DstIP)
+		// Convert to Flow structure (handles IPv4/IPv6 conversion)
+		flowData := event.ToFlow()
 
 		// Handle different event types
 		switch event.EventType {
 		case flow.FlowEventNew:
 			log.Infof("[FLOW NEW] %s:%d -> %s:%d proto=%s dir=%s action=%s packets=%d bytes=%d",
-				srcIPStr, event.SrcPort,
-				dstIPStr, event.DstPort,
+				flowData.SourceIP, event.SrcPort,
+				flowData.DestIP, event.DstPort,
 				event.Protocol, event.Direction, event.PolicyAction,
 				event.PacketCount, event.ByteCount)
 
 		case flow.FlowEventClosed:
 			log.Infof("[FLOW CLOSED] %s:%d -> %s:%d proto=%s dir=%s packets=%d bytes=%d",
-				srcIPStr, event.SrcPort,
-				dstIPStr, event.DstPort,
+				flowData.SourceIP, event.SrcPort,
+				flowData.DestIP, event.DstPort,
 				event.Protocol, event.Direction,
 				event.PacketCount, event.ByteCount)
 
 		case flow.FlowEventTimeout:
 			log.Infof("[FLOW TIMEOUT] %s:%d -> %s:%d proto=%s dir=%s packets=%d bytes=%d",
-				srcIPStr, event.SrcPort,
-				dstIPStr, event.DstPort,
+				flowData.SourceIP, event.SrcPort,
+				flowData.DestIP, event.DstPort,
 				event.Protocol, event.Direction,
 				event.PacketCount, event.ByteCount)
 
 		case flow.FlowEventUpdate:
 			log.Debugf("[FLOW UPDATE] %s:%d -> %s:%d proto=%s packets=%d bytes=%d",
-				srcIPStr, event.SrcPort,
-				dstIPStr, event.DstPort,
+				flowData.SourceIP, event.SrcPort,
+				flowData.DestIP, event.DstPort,
 				event.Protocol,
 				event.PacketCount, event.ByteCount)
 
 		default:
 			log.Warnf("[FLOW UNKNOWN] Unknown event type %d for %s:%d -> %s:%d",
 				event.EventType,
-				srcIPStr, event.SrcPort,
-				dstIPStr, event.DstPort)
+				flowData.SourceIP, event.SrcPort,
+				flowData.DestIP, event.DstPort)
 		}
 	}
 }
