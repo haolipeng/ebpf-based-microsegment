@@ -11,19 +11,12 @@ XDP 字节统计缺失 ⚠️
 影响: 带宽监控不准确
 修复: 添加 packet_len = ctx->data_end - ctx->data 计算
 P1 - 重要优化
-通配符策略性能优化 🔥
-问题: 线性扫描最多 100 次,策略多时性能差
-建议:
-短期:限制通配符数量 < 50
-长期:使用 LPM Trie Map 优化 CIDR 匹配
-~~TCP 状态机未完整实现~~ ✅ **已解决**
-位置: src/bpf/headers/tcp_state_machine.h
-实现: 完整的 10 状态定义 + 双向状态转换(出站/入站)
-特性: 支持 SYN/ACK/FIN/RST 完整转换,同时关闭,快速关闭等
-提交: commit aada69a "实现完整的 TCP 状态机"
-会话超时机制缺失 ⏱️
-问题: 仅依赖 LRU 自动淘汰,无精确控制
-建议: 用户态周期性扫描删除过期会话
+会话超时机制 ⏱️ **部分实现**
+eBPF Map: 使用 LRU Hash Map 自动淘汰（适用于短期连接）
+用户态: ✅ **已实现** LifecycleManager (src/agent/pkg/flow/lifecycle.go)
+- 周期性清理过期流数据（每 24h），可配置保留时长
+- 磁盘空间监控，统计 API
+优化建议: 如需 eBPF Map 精确超时，添加用户态扫描（P2）
 P2 - 功能增强
 连接关闭事件未上报 📤
 问题: 已检测 TCP 关闭,但未推送 FLOW_EVENT_CLOSED 事件
