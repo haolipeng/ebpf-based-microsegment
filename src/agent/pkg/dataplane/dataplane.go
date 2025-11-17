@@ -2,7 +2,6 @@
 package dataplane
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -10,6 +9,9 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/ringbuf"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/session"
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall" -target amd64 bpf ../../../bpf/tc_microsegment.bpf.c -- -I../../../bpf -I../../../../vmlinux/x86
@@ -39,8 +41,9 @@ const (
 // DataPlane 管理 eBPF 数据平面
 // 高级 API，封装了统计、监控等功能
 type DataPlane struct {
-	manager  *Manager        // 数据平面管理器 (底层)
-	rbReader *ringbuf.Reader // Ring buffer reader
+	manager        *Manager                 // 数据平面管理器 (底层)
+	rbReader       *ringbuf.Reader          // Ring buffer reader
+	timeoutManager *session.TimeoutManager  // Session timeout manager (optional)
 }
 
 // Statistics 保存数据包处理统计信息
@@ -122,6 +125,13 @@ func NewWithConfig(iface string, config *ModeConfig) (*DataPlane, error) {
 // Close 清理数据平面资源
 func (dp *DataPlane) Close() error {
 	var errs []error
+
+	// Stop timeout manager first
+	if dp.timeoutManager != nil {
+		if err := dp.timeoutManager.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("stopping timeout manager: %w", err))
+		}
+	}
 
 	// 关闭 Ring Buffer Reader
 	if dp.rbReader != nil {
@@ -221,27 +231,53 @@ func (dp *DataPlane) MonitorFlowEvents() {
 			continue
 		}
 
-		// 解析流事件 - 简单的结构体解析
-		if len(record.RawSample) < 32 {
-			log.Warn("Received incomplete flow event")
+		// Parse flow event using the dedicated parser
+		event, err := flow.ParseFlowEvent(record.RawSample)
+		if err != nil {
+			log.Warnf("Failed to parse flow event: %v", err)
 			continue
 		}
 
-		// 手动解析流事件结构
-		// 解析流键 (5-tuple)
-		srcIP := binary.LittleEndian.Uint32(record.RawSample[0:4])
-		dstIP := binary.LittleEndian.Uint32(record.RawSample[4:8])
-		srcPort := binary.LittleEndian.Uint16(record.RawSample[8:10])
-		dstPort := binary.LittleEndian.Uint16(record.RawSample[10:12])
-		protocol := record.RawSample[12]
+		// Convert IPs to readable format
+		srcIPStr := intToIP(event.SrcIP)
+		dstIPStr := intToIP(event.DstIP)
 
-		srcIPStr := intToIP(srcIP)
-		dstIPStr := intToIP(dstIP)
+		// Handle different event types
+		switch event.EventType {
+		case flow.FlowEventNew:
+			log.Infof("[FLOW NEW] %s:%d -> %s:%d proto=%s dir=%s action=%s packets=%d bytes=%d",
+				srcIPStr, event.SrcPort,
+				dstIPStr, event.DstPort,
+				event.Protocol, event.Direction, event.PolicyAction,
+				event.PacketCount, event.ByteCount)
 
-		log.Infof("[FLOW EVENT] %s:%d -> %s:%d proto=%d",
-			srcIPStr, srcPort,
-			dstIPStr, dstPort,
-			protocol)
+		case flow.FlowEventClosed:
+			log.Infof("[FLOW CLOSED] %s:%d -> %s:%d proto=%s dir=%s packets=%d bytes=%d",
+				srcIPStr, event.SrcPort,
+				dstIPStr, event.DstPort,
+				event.Protocol, event.Direction,
+				event.PacketCount, event.ByteCount)
+
+		case flow.FlowEventTimeout:
+			log.Infof("[FLOW TIMEOUT] %s:%d -> %s:%d proto=%s dir=%s packets=%d bytes=%d",
+				srcIPStr, event.SrcPort,
+				dstIPStr, event.DstPort,
+				event.Protocol, event.Direction,
+				event.PacketCount, event.ByteCount)
+
+		case flow.FlowEventUpdate:
+			log.Debugf("[FLOW UPDATE] %s:%d -> %s:%d proto=%s packets=%d bytes=%d",
+				srcIPStr, event.SrcPort,
+				dstIPStr, event.DstPort,
+				event.Protocol,
+				event.PacketCount, event.ByteCount)
+
+		default:
+			log.Warnf("[FLOW UNKNOWN] Unknown event type %d for %s:%d -> %s:%d",
+				event.EventType,
+				srcIPStr, event.SrcPort,
+				dstIPStr, event.DstPort)
+		}
 	}
 }
 
@@ -294,4 +330,34 @@ func (dp *DataPlane) GetMode() DataPlaneMode {
 // GetManager 返回底层的 Manager (用于高级操作)
 func (dp *DataPlane) GetManager() *Manager {
 	return dp.manager
+}
+
+// EnableSessionTimeout enables and starts the session timeout manager
+// This should be called after the data plane is initialized
+func (dp *DataPlane) EnableSessionTimeout(config session.SessionTimeoutConfig) error {
+	// Get session map
+	sessionMap := dp.GetSessionMap()
+	if sessionMap == nil {
+		return fmt.Errorf("session map not available")
+	}
+
+	// Create timeout manager
+	dp.timeoutManager = session.NewTimeoutManager(sessionMap, config)
+
+	// Start timeout manager
+	if err := dp.timeoutManager.Start(); err != nil {
+		return fmt.Errorf("failed to start timeout manager: %w", err)
+	}
+
+	log.Info("✓ Session timeout manager enabled")
+	return nil
+}
+
+// GetTimeoutStats returns session timeout statistics
+// Returns empty stats if timeout manager is not enabled
+func (dp *DataPlane) GetTimeoutStats() session.SessionTimeoutStats {
+	if dp.timeoutManager == nil {
+		return session.SessionTimeoutStats{}
+	}
+	return dp.timeoutManager.GetStats()
 }
