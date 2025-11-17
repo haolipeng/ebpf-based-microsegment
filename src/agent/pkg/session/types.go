@@ -53,17 +53,19 @@ type SessionTimeoutStats struct {
 	ScanErrors uint64 `json:"scan_errors"`
 }
 
-// FlowKey represents the 5-tuple flow key (matches kernel struct)
+// FlowKey represents the 5-tuple flow key (matches kernel struct flow_key)
+// Supports both IPv4 and IPv6 (IPv4-mapped IPv6 format)
 type FlowKey struct {
-	SrcIP    uint32
-	DstIP    uint32
-	SrcPort  uint16
-	DstPort  uint16
-	Protocol uint8
-	Pad      [3]uint8
+	SrcIP     [4]uint32 // Source IP address (128 bits)
+	DstIP     [4]uint32 // Destination IP address (128 bits)
+	SrcPort   uint16    // Source port
+	DstPort   uint16    // Destination port
+	Protocol  uint8     // Protocol (TCP/UDP/ICMP)
+	IPVersion uint8     // IP version (4 or 6)
+	VlanID    uint16    // VLAN ID (0 = no VLAN)
 }
 
-// SessionValue represents the session value (matches kernel struct)
+// SessionValue represents the session value (matches kernel struct session_value)
 type SessionValue struct {
 	CreatedTS       uint64 // Session creation timestamp (nanoseconds)
 	LastSeenTS      uint64 // Last packet timestamp (nanoseconds)
@@ -71,11 +73,20 @@ type SessionValue struct {
 	PacketsToClient uint64 // Packets from server to client
 	BytesToServer   uint64 // Bytes from client to server
 	BytesToClient   uint64 // Bytes from server to client
-	State           uint8  // Session state
-	TCPState        uint8  // TCP state machine
-	PolicyAction    uint8  // Matched policy action
-	Flags           uint8  // Session flags
-	Pad             uint32 // Padding
+
+	// Enhanced TCP tracking
+	TCPSeqClient  uint32 // Last TCP sequence number from client
+	TCPSeqServer  uint32 // Last TCP sequence number from server
+	TCPAckClient  uint32 // Last TCP acknowledgment from client
+	TCPAckServer  uint32 // Last TCP acknowledgment from server
+	TCPWindowSize uint16 // TCP window size (last seen)
+	TCPRetrans    uint8  // TCP retransmission count
+
+	State        uint8 // Session state
+	TCPState     uint8 // TCP state machine
+	PolicyAction uint8 // Matched policy action
+	Flags        uint8 // Connection flags (CONN_FLAG_*)
+	Pad          uint8 // Padding for alignment
 }
 
 // TCP state constants (must match common_types.h)

@@ -119,27 +119,38 @@ func (p Protocol) String() string {
 	}
 }
 
-// FlowEvent represents a flow event from eBPF Ring Buffer (48 bytes)
-// This matches the C struct flow_event in common_types.h
+// FlowEvent represents a flow event from eBPF Ring Buffer (IPv4/IPv6 support)
+// This matches the C struct flow_event in common_types.h (84 bytes total)
 type FlowEvent struct {
-	// 5-tuple identification
-	SrcIP   uint32 // Source IP (network byte order)
-	DstIP   uint32 // Destination IP (network byte order)
-	SrcPort uint16 // Source port (network byte order)
-	DstPort uint16 // Destination port (network byte order)
+	// 5-tuple identification (36 bytes)
+	// IPv4 addresses are stored as IPv4-mapped IPv6 (::ffff:a.b.c.d)
+	SrcIP   [4]uint32 // Source IP address (128 bits)
+	DstIP   [4]uint32 // Destination IP address (128 bits)
+	SrcPort uint16    // Source port (network byte order)
+	DstPort uint16    // Destination port (network byte order)
 
-	// Packet metadata
+	// Packet metadata (8 bytes)
 	Protocol  Protocol      // Protocol (TCP/UDP/ICMP)
 	EventType FlowEventType // Event type
 	Direction FlowDirection // Traffic direction
-	Padding   uint8         // Padding for alignment
+	IPVersion uint8         // IP version (4 or 6)
+	VlanID    uint16        // VLAN ID (0 = no VLAN)
+	TcpFlags  uint8         // TCP flags (SYN, FIN, RST, etc.)
+	Flags     uint8         // Connection flags (CONN_FLAG_*)
 
-	// Traffic statistics
+	// Traffic statistics (24 bytes)
 	PacketCount uint64 // Total packets in this flow
 	ByteCount   uint64 // Total bytes in this flow
 	TimestampNS uint64 // Event timestamp in nanoseconds
 
-	// Policy context
+	// Enhanced TCP tracking (12 bytes)
+	TcpSeq     uint32 // TCP sequence number
+	TcpAck     uint32 // TCP acknowledgment number
+	TcpWindow  uint16 // TCP window size
+	TcpRetrans uint8  // Retransmission count
+	TcpState   uint8  // TCP state
+
+	// Policy context (4 bytes)
 	PolicyID     uint32       // Matched policy/rule ID
 	PolicyAction PolicyAction // Policy action
 	State        FlowState    // Flow state
@@ -148,27 +159,59 @@ type FlowEvent struct {
 
 // ParseFlowEvent parses a raw byte slice from Ring Buffer into FlowEvent
 // Assumes little-endian byte order (x86_64)
+// Structure size: 36 (5-tuple) + 8 (metadata) + 24 (stats) + 12 (TCP) + 8 (policy) = 88 bytes
 func ParseFlowEvent(data []byte) (*FlowEvent, error) {
-	if len(data) < 48 {
-		return nil, fmt.Errorf("invalid flow event size: expected 48 bytes, got %d", len(data))
+	expectedSize := 88 // Total size with all new fields
+	if len(data) < expectedSize {
+		return nil, fmt.Errorf("invalid flow event size: expected at least %d bytes, got %d", expectedSize, len(data))
 	}
 
 	event := &FlowEvent{
-		SrcIP:        binary.LittleEndian.Uint32(data[0:4]),
-		DstIP:        binary.LittleEndian.Uint32(data[4:8]),
-		SrcPort:      binary.BigEndian.Uint16(data[8:10]),  // Network byte order
-		DstPort:      binary.BigEndian.Uint16(data[10:12]), // Network byte order
-		Protocol:     Protocol(data[12]),
-		EventType:    FlowEventType(data[13]),
-		Direction:    FlowDirection(data[14]),
-		Padding:      data[15],
-		PacketCount:  binary.LittleEndian.Uint64(data[16:24]),
-		ByteCount:    binary.LittleEndian.Uint64(data[24:32]),
-		TimestampNS:  binary.LittleEndian.Uint64(data[32:40]),
-		PolicyID:     binary.LittleEndian.Uint32(data[40:44]),
-		PolicyAction: PolicyAction(data[44]),
-		State:        FlowState(data[45]),
-		Reserved:     binary.LittleEndian.Uint16(data[46:48]),
+		// 5-tuple identification (36 bytes)
+		// Source IP: 4 x 32-bit words = 16 bytes (offset 0-15)
+		SrcIP: [4]uint32{
+			binary.LittleEndian.Uint32(data[0:4]),
+			binary.LittleEndian.Uint32(data[4:8]),
+			binary.LittleEndian.Uint32(data[8:12]),
+			binary.LittleEndian.Uint32(data[12:16]),
+		},
+		// Destination IP: 4 x 32-bit words = 16 bytes (offset 16-31)
+		DstIP: [4]uint32{
+			binary.LittleEndian.Uint32(data[16:20]),
+			binary.LittleEndian.Uint32(data[20:24]),
+			binary.LittleEndian.Uint32(data[24:28]),
+			binary.LittleEndian.Uint32(data[28:32]),
+		},
+		// Ports: 2 + 2 = 4 bytes (offset 32-35)
+		SrcPort: binary.BigEndian.Uint16(data[32:34]), // Network byte order
+		DstPort: binary.BigEndian.Uint16(data[34:36]), // Network byte order
+
+		// Packet metadata (8 bytes, offset 36-43)
+		Protocol:  Protocol(data[36]),
+		EventType: FlowEventType(data[37]),
+		Direction: FlowDirection(data[38]),
+		IPVersion: data[39],
+		VlanID:    binary.LittleEndian.Uint16(data[40:42]),
+		TcpFlags:  data[42],
+		Flags:     data[43],
+
+		// Traffic statistics (24 bytes, offset 44-67)
+		PacketCount: binary.LittleEndian.Uint64(data[44:52]),
+		ByteCount:   binary.LittleEndian.Uint64(data[52:60]),
+		TimestampNS: binary.LittleEndian.Uint64(data[60:68]),
+
+		// Enhanced TCP tracking (12 bytes, offset 68-79)
+		TcpSeq:     binary.LittleEndian.Uint32(data[68:72]),
+		TcpAck:     binary.LittleEndian.Uint32(data[72:76]),
+		TcpWindow:  binary.LittleEndian.Uint16(data[76:78]),
+		TcpRetrans: data[78],
+		TcpState:   data[79],
+
+		// Policy context (8 bytes, offset 80-87)
+		PolicyID:     binary.LittleEndian.Uint32(data[80:84]),
+		PolicyAction: PolicyAction(data[84]),
+		State:        FlowState(data[85]),
+		Reserved:     binary.LittleEndian.Uint16(data[86:88]),
 	}
 
 	return event, nil
@@ -208,18 +251,41 @@ type Flow struct {
 	EventType string `json:"event_type"` // Last event type
 }
 
-// FlowKey generates a unique key for the flow based on 5-tuple
-func FlowKey(srcIP, dstIP uint32, srcPort, dstPort uint16, protocol uint8) string {
-	return fmt.Sprintf("%d-%d-%d-%d-%d", srcIP, dstIP, srcPort, dstPort, protocol)
+// FlowKey generates a unique key for the flow based on 5-tuple (IPv4/IPv6 support)
+func FlowKey(srcIP, dstIP [4]uint32, srcPort, dstPort uint16, protocol uint8) string {
+	// Use all 4 uint32 words for both IPv4 and IPv6
+	return fmt.Sprintf("%08x%08x%08x%08x-%08x%08x%08x%08x-%d-%d-%d",
+		srcIP[0], srcIP[1], srcIP[2], srcIP[3],
+		dstIP[0], dstIP[1], dstIP[2], dstIP[3],
+		srcPort, dstPort, protocol)
 }
 
-// ToFlow converts a FlowEvent to a Flow structure with enrichment
-func (e *FlowEvent) ToFlow() *Flow {
-	srcIP := make(net.IP, 4)
-	binary.LittleEndian.PutUint32(srcIP, e.SrcIP)
+// ipv6ToNetIP converts [4]uint32 IPv6 address to net.IP
+// Handles both native IPv6 and IPv4-mapped IPv6 addresses
+func ipv6ToNetIP(ipv6 [4]uint32, ipVersion uint8) net.IP {
+	// Check if this is IPv4-mapped IPv6 (::ffff:a.b.c.d)
+	// IPv4-mapped: [0, 0, 0xffff0000, ipv4_addr] in network byte order
+	if ipVersion == 4 || (ipv6[0] == 0 && ipv6[1] == 0 && ipv6[2] == 0x0000ffff) {
+		// Extract IPv4 address from last 32 bits
+		ipv4 := make(net.IP, 4)
+		binary.LittleEndian.PutUint32(ipv4, ipv6[3])
+		return ipv4
+	}
 
-	dstIP := make(net.IP, 4)
-	binary.LittleEndian.PutUint32(dstIP, e.DstIP)
+	// Native IPv6 address
+	ipv6Bytes := make(net.IP, 16)
+	binary.LittleEndian.PutUint32(ipv6Bytes[0:4], ipv6[0])
+	binary.LittleEndian.PutUint32(ipv6Bytes[4:8], ipv6[1])
+	binary.LittleEndian.PutUint32(ipv6Bytes[8:12], ipv6[2])
+	binary.LittleEndian.PutUint32(ipv6Bytes[12:16], ipv6[3])
+	return ipv6Bytes
+}
+
+// ToFlow converts a FlowEvent to a Flow structure with enrichment (IPv4/IPv6 support)
+func (e *FlowEvent) ToFlow() *Flow {
+	// Convert IP addresses based on IP version
+	srcIP := ipv6ToNetIP(e.SrcIP, e.IPVersion)
+	dstIP := ipv6ToNetIP(e.DstIP, e.IPVersion)
 
 	flowID := FlowKey(e.SrcIP, e.DstIP, e.SrcPort, e.DstPort, uint8(e.Protocol))
 	timestamp := time.Unix(0, int64(e.TimestampNS))

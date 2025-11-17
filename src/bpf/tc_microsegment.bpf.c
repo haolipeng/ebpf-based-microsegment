@@ -12,6 +12,7 @@
 
 // Ethernet protocol types
 #define ETH_P_IP 0x0800
+#define ETH_P_IPV6 0x86DD
 
 // Debug mode - disable for production to reduce latency
 #define DEBUG_MODE 0
@@ -61,6 +62,16 @@ struct {
     __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
 } stats_map SEC(".maps");
 
+// Timeout configuration map (shared between TC and XDP)
+// PINNED: Allows user-space to configure session timeout values
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, TIMEOUT_CONFIG_MAX);
+    __type(key, __u32);  // enum timeout_config_key
+    __type(value, __u64); // timeout in nanoseconds
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} timeout_config_map SEC(".maps");
+
 // Ring buffer for flow events to user-space
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
@@ -96,7 +107,7 @@ static __always_inline int extract_flow_key(struct __sk_buff *skb, struct flow_k
     return extract_flow_key_from_packet(data, data_end, key);
 }
 
-// Helper: Check if TCP connection is closing (FIN or RST)
+// Helper: Check if TCP connection is closing (FIN or RST) - IPv4/IPv6 support
 // 检查 TCP 连接是否正在关闭 (FIN 或 RST 标志)
 static __always_inline bool is_tcp_closing(struct __sk_buff *skb, struct flow_key *key) {
     void *data = (void *)(long)skb->data;
@@ -113,18 +124,33 @@ static __always_inline bool is_tcp_closing(struct __sk_buff *skb, struct flow_ke
         return false;
     eth_proto = eth->h_proto;
 
-    if (eth_proto != bpf_htons(ETH_P_IP))
-        return false;
+    void *tcph_ptr = NULL;
 
-    // 解析 IPv4 头
-    struct iphdr *iph = (void *)(eth + 1);
-    if ((void *)(iph + 1) > data_end)
-        return false;
+    // 根据 IP 版本解析不同的 IP 头
+    if (eth_proto == bpf_htons(ETH_P_IP)) {
+        // IPv4
+        struct iphdr *iph = (void *)(eth + 1);
+        if ((void *)(iph + 1) > data_end)
+            return false;
 
-    // 计算 TCP 头位置
-    void *tcph_ptr = (void *)iph + (iph->ihl * 4);
+        // 计算 TCP 头位置
+        tcph_ptr = (void *)iph + (iph->ihl * 4);
+
+    } else if (eth_proto == bpf_htons(ETH_P_IPV6)) {
+        // IPv6
+        struct ipv6hdr *ip6h = (void *)(eth + 1);
+        if ((void *)(ip6h + 1) > data_end)
+            return false;
+
+        // TCP 头位置 (IPv6 固定 40 字节头部，不考虑扩展头)
+        tcph_ptr = (void *)(ip6h + 1);
+
+    } else {
+        return false;
+    }
+
+    // 验证 TCP 头边界
     struct tcphdr *tcph = tcph_ptr;
-
     if ((void *)(tcph + 1) > data_end)
         return false;
 
@@ -132,7 +158,7 @@ static __always_inline bool is_tcp_closing(struct __sk_buff *skb, struct flow_ke
     return (tcph->fin || tcph->rst);
 }
 
-// Helper: Update TCP state machine
+// Helper: Update TCP state machine - IPv4/IPv6 support
 // 更新 TCP 状态机
 static __always_inline __u8 update_tcp_state(struct __sk_buff *skb, struct flow_key *key, __u8 current_state) {
     void *data = (void *)(long)skb->data;
@@ -149,18 +175,33 @@ static __always_inline __u8 update_tcp_state(struct __sk_buff *skb, struct flow_
         return current_state;
     eth_proto = eth->h_proto;
 
-    if (eth_proto != bpf_htons(ETH_P_IP))
-        return current_state;
+    void *tcph_ptr = NULL;
 
-    // 解析 IPv4 头
-    struct iphdr *iph = (void *)(eth + 1);
-    if ((void *)(iph + 1) > data_end)
-        return current_state;
+    // 根据 IP 版本解析不同的 IP 头
+    if (eth_proto == bpf_htons(ETH_P_IP)) {
+        // IPv4
+        struct iphdr *iph = (void *)(eth + 1);
+        if ((void *)(iph + 1) > data_end)
+            return current_state;
 
-    // 计算 TCP 头位置
-    void *tcph_ptr = (void *)iph + (iph->ihl * 4);
+        // 计算 TCP 头位置
+        tcph_ptr = (void *)iph + (iph->ihl * 4);
+
+    } else if (eth_proto == bpf_htons(ETH_P_IPV6)) {
+        // IPv6
+        struct ipv6hdr *ip6h = (void *)(eth + 1);
+        if ((void *)(ip6h + 1) > data_end)
+            return current_state;
+
+        // TCP 头位置 (IPv6 固定 40 字节头部，不考虑扩展头)
+        tcph_ptr = (void *)(ip6h + 1);
+
+    } else {
+        return current_state;
+    }
+
+    // 验证 TCP 头边界
     struct tcphdr *tcph = tcph_ptr;
-
     if ((void *)(tcph + 1) > data_end)
         return current_state;
 
@@ -185,9 +226,64 @@ static __always_inline __u8 update_tcp_state(struct __sk_buff *skb, struct flow_
     return new_state;
 }
 
-// Helper: Push flow event to user-space via Ring Buffer
+// Helper: Extract TCP details from packet (TC version)
+// Returns 0 on success, -1 on failure
+static __always_inline int extract_tcp_details(
+    struct __sk_buff *skb,
+    struct flow_key *key,
+    __u32 *seq,
+    __u32 *ack,
+    __u16 *window,
+    __u8 *flags)
+{
+    void *data = (void *)(long)skb->data;
+    void *data_end = (void *)(long)skb->data_end;
+
+    // Only process TCP protocol
+    if (key->protocol != IPPROTO_TCP)
+        return -1;
+
+    // Parse Ethernet header (skip VLAN if present)
+    __u16 eth_proto, vlan_id;
+    void *l3 = parse_ethernet(data, data_end, &eth_proto, &vlan_id);
+    if (!l3)
+        return -1;
+
+    void *tcph_ptr = NULL;
+
+    // Locate TCP header based on IP version
+    if (eth_proto == bpf_htons(ETH_P_IP)) {
+        struct iphdr *iph = l3;
+        if ((void *)(iph + 1) > data_end)
+            return -1;
+        tcph_ptr = (void *)iph + (iph->ihl * 4);
+    } else if (eth_proto == bpf_htons(ETH_P_IPV6)) {
+        struct ipv6hdr *ip6h = l3;
+        if ((void *)(ip6h + 1) > data_end)
+            return -1;
+        tcph_ptr = (void *)(ip6h + 1);
+    } else {
+        return -1;
+    }
+
+    // Validate TCP header
+    struct tcphdr *tcph = tcph_ptr;
+    if ((void *)(tcph + 1) > data_end)
+        return -1;
+
+    // Extract TCP fields
+    *seq = bpf_ntohl(tcph->seq);
+    *ack = bpf_ntohl(tcph->ack_seq);
+    *window = bpf_ntohs(tcph->window);
+    *flags = get_tcp_flags(tcph);
+
+    return 0;
+}
+
+// Helper: Push flow event to user-space via Ring Buffer (Enhanced with VLAN and TCP tracking)
 // Returns 0 on success, -1 on failure
 static __always_inline int push_flow_event(
+    struct __sk_buff *skb,
     struct flow_key *key,
     __u64 timestamp_ns,
     __u64 packet_count,
@@ -196,7 +292,9 @@ static __always_inline int push_flow_event(
     __u8 policy_action,
     __u32 policy_id,
     __u8 state,
-    __u8 direction)
+    __u8 direction,
+    __u8 tcp_state,
+    __u8 conn_flags)
 {
     // Reserve space in ring buffer (non-blocking)
     struct flow_event *event = bpf_ringbuf_reserve(&flow_events, sizeof(*event), 0);
@@ -205,21 +303,45 @@ static __always_inline int push_flow_event(
         return -1;
     }
 
-    // Populate event fields
-    event->src_ip = key->src_ip;
-    event->dst_ip = key->dst_ip;
+    // Populate event fields - IPv4/IPv6 + VLAN support
+    #pragma unroll
+    for (int i = 0; i < 4; i++) {
+        event->src_ip[i] = key->src_ip[i];
+        event->dst_ip[i] = key->dst_ip[i];
+    }
     event->src_port = key->src_port;
     event->dst_port = key->dst_port;
     event->protocol = key->protocol;
 
+    // Event metadata
     event->event_type = event_type;
     event->direction = direction;
-    event->padding = 0;
+    event->ip_version = key->ip_version;
+    event->vlan_id = key->vlan_id;
+    event->flags = conn_flags;
 
+    // Extract TCP details if TCP protocol
+    __u32 tcp_seq = 0, tcp_ack = 0;
+    __u16 tcp_window = 0;
+    __u8 tcp_flags = 0;
+    if (key->protocol == IPPROTO_TCP) {
+        extract_tcp_details(skb, key, &tcp_seq, &tcp_ack, &tcp_window, &tcp_flags);
+    }
+    event->tcp_flags = tcp_flags;
+
+    // Statistics
     event->packet_count = packet_count;
     event->byte_count = byte_count;
     event->timestamp_ns = timestamp_ns;
 
+    // Enhanced TCP tracking
+    event->tcp_seq = tcp_seq;
+    event->tcp_ack = tcp_ack;
+    event->tcp_window = tcp_window;
+    event->tcp_retrans = 0;  // Will be updated by session tracking
+    event->tcp_state = tcp_state;
+
+    // Policy context
     event->policy_id = policy_id;
     event->policy_action = policy_action;
     event->state = state;
@@ -261,6 +383,7 @@ static __always_inline int create_session(struct __sk_buff *skb, struct flow_key
         // Push flow event for all new connections (ALLOW, DENY, LOG)
         // Control plane will handle filtering based on configuration
         push_flow_event(
+            skb,                    // sk_buff context
             key,
             ts,
             1,                      // First packet
@@ -269,7 +392,9 @@ static __always_inline int create_session(struct __sk_buff *skb, struct flow_key
             action,                 // Policy action
             rule_id,                // Matched rule ID
             FLOW_STATE_ACTIVE,      // Initial state
-            direction               // Actual packet direction (ingress/egress)
+            direction,              // Actual packet direction (ingress/egress)
+            initial_tcp_state,      // TCP state
+            0                       // Connection flags (initial state)
         );
     }
 
@@ -331,15 +456,18 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
 
                 // Push connection closed event to control plane
                 push_flow_event(
+                    skb,                // sk_buff context
                     &key,
                     session->last_seen_ts,
                     session->packets_to_server + session->packets_to_client,
                     session->bytes_to_server + session->bytes_to_client,
                     FLOW_EVENT_CLOSED,
                     session->policy_action,
-                    0,  // policy_id not tracked in session
+                    0,                  // policy_id not tracked in session
                     SESSION_STATE_CLOSING,
-                    direction
+                    direction,
+                    session->tcp_state, // TCP state
+                    session->flags      // Connection flags
                 );
 
 #if DEBUG_MODE

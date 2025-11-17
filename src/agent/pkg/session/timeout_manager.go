@@ -158,8 +158,8 @@ func (tm *TimeoutManager) runScan() error {
 			deletedCount++
 
 			// Log detailed timeout event for each session
-			srcIP := intToIP(session.key.SrcIP)
-			dstIP := intToIP(session.key.DstIP)
+			srcIP := ipv6ToNetIP(session.key.SrcIP, session.key.IPVersion)
+			dstIP := ipv6ToNetIP(session.key.DstIP, session.key.IPVersion)
 			protocol := protocolToString(session.key.Protocol)
 
 			totalPackets := session.value.PacketsToServer + session.value.PacketsToClient
@@ -239,9 +239,27 @@ func (tm *TimeoutManager) GetStats() SessionTimeoutStats {
 	return tm.stats
 }
 
-// intToIP converts uint32 IP to net.IP (little-endian byte order)
-func intToIP(ip uint32) net.IP {
-	return net.IPv4(byte(ip), byte(ip>>8), byte(ip>>16), byte(ip>>24))
+// ipv6ToNetIP converts [4]uint32 IPv6 address to net.IP
+// Handles both native IPv6 and IPv4-mapped IPv6 addresses
+func ipv6ToNetIP(ipv6 [4]uint32, ipVersion uint8) net.IP {
+	// Check if this is IPv4-mapped IPv6 (::ffff:a.b.c.d)
+	// IPv4-mapped: [0, 0, 0xffff0000, ipv4_addr] in network byte order
+	if ipVersion == 4 || (ipv6[0] == 0 && ipv6[1] == 0 && ipv6[2] == 0x0000ffff) {
+		// Extract IPv4 address from last 32 bits (little-endian)
+		ip := ipv6[3]
+		return net.IPv4(byte(ip), byte(ip>>8), byte(ip>>16), byte(ip>>24))
+	}
+
+	// Native IPv6 address (convert 4 x uint32 to 16 bytes)
+	ipv6Bytes := make(net.IP, 16)
+	for i := 0; i < 4; i++ {
+		// Little-endian conversion
+		ipv6Bytes[i*4] = byte(ipv6[i])
+		ipv6Bytes[i*4+1] = byte(ipv6[i] >> 8)
+		ipv6Bytes[i*4+2] = byte(ipv6[i] >> 16)
+		ipv6Bytes[i*4+3] = byte(ipv6[i] >> 24)
+	}
+	return ipv6Bytes
 }
 
 // protocolToString converts protocol number to string

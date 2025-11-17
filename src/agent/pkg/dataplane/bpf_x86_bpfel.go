@@ -14,24 +14,28 @@ import (
 )
 
 type bpfFlowKey struct {
-	_        structs.HostLayout
-	SrcIp    uint32
-	DstIp    uint32
-	SrcPort  uint16
-	DstPort  uint16
-	Protocol uint8
-	Pad      [3]uint8
+	_         structs.HostLayout
+	SrcIp     [4]uint32
+	DstIp     [4]uint32
+	SrcPort   uint16
+	DstPort   uint16
+	Protocol  uint8
+	IpVersion uint8
+	VlanId    uint16
 }
 
 type bpfPolicyKey struct {
 	_         structs.HostLayout
-	SrcIp     uint32
-	DstIp     uint32
+	SrcIp     [4]uint32
+	DstIp     [4]uint32
 	SrcPort   uint16
 	DstPort   uint16
 	Protocol  uint8
 	Direction uint8
-	Pad       uint16
+	IpVersion uint8
+	Pad       uint8
+	VlanId    uint16
+	Pad2      uint16
 }
 
 type bpfPolicyValue struct {
@@ -51,27 +55,35 @@ type bpfSessionValue struct {
 	PacketsToClient uint64
 	BytesToServer   uint64
 	BytesToClient   uint64
+	TcpSeqClient    uint32
+	TcpSeqServer    uint32
+	TcpAckClient    uint32
+	TcpAckServer    uint32
+	TcpWindowSize   uint16
+	TcpRetransCount uint8
 	State           uint8
 	TcpState        uint8
 	PolicyAction    uint8
 	Flags           uint8
-	Pad             uint32
+	Pad             uint8
 }
 
 type bpfWildcardPolicy struct {
 	_          structs.HostLayout
-	SrcIp      uint32
-	SrcIpMask  uint32
-	DstIp      uint32
-	DstIpMask  uint32
+	SrcIp      [4]uint32
+	SrcIpMask  [4]uint32
+	DstIp      [4]uint32
+	DstIpMask  [4]uint32
 	SrcPort    uint16
 	DstPort    uint16
 	Protocol   uint8
 	Action     uint8
 	LogEnabled uint8
 	Direction  uint8
+	IpVersion  uint8
+	Pad        [3]uint8
 	Priority   uint16
-	Pad        uint16
+	VlanId     uint16
 	RuleId     uint32
 }
 

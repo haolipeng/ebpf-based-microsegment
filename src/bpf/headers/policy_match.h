@@ -24,7 +24,7 @@
  */
 #define MAX_WILDCARD_LOOP 50
 
-/* matches_wildcard - 检查流是否匹配通配符策略
+/* matches_wildcard - 检查流是否匹配通配符策略 (IPv4/IPv6 support)
  *
  * @key: 流的五元组键
  * @wildcard: 通配符策略规则
@@ -33,8 +33,8 @@
  * 返回: true 如果流匹配策略,否则 false
  *
  * 匹配逻辑:
- * 1. 源 IP 匹配: (key.src_ip & mask) == (wildcard.src_ip & mask)
- * 2. 目标 IP 匹配: (key.dst_ip & mask) == (wildcard.dst_ip & mask)
+ * 1. 源 IP 匹配: (key.src_ip & mask) == (wildcard.src_ip & mask) (逐 32位比较)
+ * 2. 目标 IP 匹配: (key.dst_ip & mask) == (wildcard.dst_ip & mask) (逐 32位比较)
  * 3. 源端口匹配: port == 0 (任意) 或精确匹配
  * 4. 目标端口匹配: port == 0 (任意) 或精确匹配
  * 5. 协议匹配: protocol == 0 (任意) 或精确匹配
@@ -51,16 +51,22 @@ static __always_inline bool matches_wildcard(
 	    wildcard->direction != direction)
 		return false;
 
-	// 源 IP 匹配检查
-	// 使用掩码支持 CIDR 范围匹配 (例如 192.168.1.0/24)
-	if ((key->src_ip & wildcard->src_ip_mask) !=
-	    (wildcard->src_ip & wildcard->src_ip_mask))
-		return false;
+	// 源 IP 匹配检查 (IPv6 format: 4 x 32-bit words)
+	// 使用掩码支持 CIDR 范围匹配
+	#pragma unroll
+	for (int i = 0; i < 4; i++) {
+		if ((key->src_ip[i] & wildcard->src_ip_mask[i]) !=
+		    (wildcard->src_ip[i] & wildcard->src_ip_mask[i]))
+			return false;
+	}
 
-	// 目标 IP 匹配检查
-	if ((key->dst_ip & wildcard->dst_ip_mask) !=
-	    (wildcard->dst_ip & wildcard->dst_ip_mask))
-		return false;
+	// 目标 IP 匹配检查 (IPv6 format: 4 x 32-bit words)
+	#pragma unroll
+	for (int i = 0; i < 4; i++) {
+		if ((key->dst_ip[i] & wildcard->dst_ip_mask[i]) !=
+		    (wildcard->dst_ip[i] & wildcard->dst_ip_mask[i]))
+			return false;
+	}
 
 	// 源端口匹配 (0 表示匹配任意端口)
 	if (wildcard->src_port != 0 && key->src_port != wildcard->src_port)
@@ -72,6 +78,10 @@ static __always_inline bool matches_wildcard(
 
 	// 协议匹配 (0 表示匹配任意协议)
 	if (wildcard->protocol != 0 && key->protocol != wildcard->protocol)
+		return false;
+
+	// VLAN ID 匹配 (0 表示匹配任意 VLAN)
+	if (wildcard->vlan_id != 0 && key->vlan_id != wildcard->vlan_id)
 		return false;
 
 	return true;
@@ -101,16 +111,24 @@ static __always_inline __u8 lookup_policy_action(
 	// ===== 快速路径: 精确匹配 =====
 	// O(1) hash 查找,处理绝大多数常见情况
 
-	// 构造 policy_key (包含方向)
+	// 构造 policy_key (包含方向、VLAN，IPv4/IPv6 support)
 	struct policy_key pkey = {
-		.src_ip = key->src_ip,
-		.dst_ip = key->dst_ip,
 		.src_port = key->src_port,
 		.dst_port = key->dst_port,
 		.protocol = key->protocol,
 		.direction = direction,  // 先尝试方向特定的策略
+		.ip_version = key->ip_version,
+		.vlan_id = key->vlan_id,
 		.pad = 0,
+		.pad2 = 0,
 	};
+
+	// Copy IP addresses (4 x 32-bit words for IPv6)
+	#pragma unroll
+	for (int i = 0; i < 4; i++) {
+		pkey.src_ip[i] = key->src_ip[i];
+		pkey.dst_ip[i] = key->dst_ip[i];
+	}
 
 	// 1. 尝试匹配方向特定的策略 (INGRESS 或 EGRESS)
 	struct policy_value *policy = bpf_map_lookup_elem(&policy_map, &pkey);
