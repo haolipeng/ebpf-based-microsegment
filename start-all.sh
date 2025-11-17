@@ -77,7 +77,8 @@ if pgrep -f "vite" > /dev/null; then
     echo -e "      ${YELLOW}Web UI 已在运行${NC}"
 else
     cd web
-    nohup npm run dev > /tmp/web.log 2>&1 &
+    # Use setsid to completely detach from terminal
+    setsid nohup npm run dev > /tmp/web.log 2>&1 < /dev/null &
     cd ..
     sleep 5
     if pgrep -f "vite" > /dev/null; then
