@@ -15,6 +15,7 @@ import (
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/conntrack"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/dataplane"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/fragment"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/policy"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/reporter"
 	log "github.com/sirupsen/logrus"
@@ -73,6 +74,16 @@ func runAgent(cmd *cobra.Command, args []string) {
 	} else if ctSyncer != nil {
 		defer ctSyncer.Stop()
 		log.Info("✓ NAT support initialized (conntrack sync started)")
+	}
+
+	// Initialize fragment cleanup (fragment timeout cleaner)
+	var fragCleaner *fragment.FragmentCleaner
+	fragCleaner, err = initFragmentSupport(dp)
+	if err != nil {
+		log.Warnf("Fragment support initialization failed: %v (continuing without fragment cleanup)", err)
+	} else if fragCleaner != nil {
+		defer fragCleaner.Stop()
+		log.Info("✓ Fragment support initialized (fragment cleaner started)")
 	}
 
 	// Create policy manager
@@ -464,6 +475,60 @@ func initNATSupport(dp *dataplane.DataPlane) (*conntrack.ConntrackSyncer, error)
 	}()
 
 	return syncer, nil
+}
+
+// initFragmentSupport initializes fragment handling and timeout cleanup
+func initFragmentSupport(dp *dataplane.DataPlane) (*fragment.FragmentCleaner, error) {
+	log.Info("Initializing fragment support...")
+
+	// Get fragment maps from dataplane
+	maps, err := dp.GetMaps()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dataplane maps: %w", err)
+	}
+
+	if maps.FragStateMap == nil {
+		return nil, fmt.Errorf("fragment state map not available")
+	}
+
+	if maps.FragStatsMap == nil {
+		return nil, fmt.Errorf("fragment stats map not available")
+	}
+
+	// Set default fragment configuration
+	fragConfig := &dataplane.FragmentConfig{
+		Mode:      dataplane.FragmentModeNormal, // NORMAL: allow first fragment, drop subsequent
+		LogEvents: true,                         // Enable fragment event logging
+		TimeoutNs: 30 * 1000000000,              // 30 seconds timeout
+	}
+
+	if err := dp.SetFragmentConfig(fragConfig); err != nil {
+		return nil, fmt.Errorf("failed to set fragment config: %w", err)
+	}
+
+	log.Infof("Fragment configuration set: mode=%s, timeout=30s", fragConfig.Mode.String())
+
+	// Create fragment cleaner with default config
+	cleanerConfig := fragment.DefaultFragmentCleanerConfig()
+	cleaner := fragment.NewFragmentCleaner(maps.FragStateMap, maps.FragStatsMap, cleanerConfig)
+
+	// Start fragment cleaner
+	if err := cleaner.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start fragment cleaner: %w", err)
+	}
+
+	// Log initial statistics after a short delay
+	go func() {
+		time.Sleep(2 * time.Second)
+		stats, err := dp.GetFragmentStats()
+		if err == nil && stats != nil {
+			log.Infof("Fragment statistics: first=%d, subsequent=%d, allowed=%d, denied=%d",
+				stats.FirstFragments, stats.SubsequentFragments,
+				stats.FragmentsAllowed, stats.FragmentsDenied)
+		}
+	}()
+
+	return cleaner, nil
 }
 
 func main() {
