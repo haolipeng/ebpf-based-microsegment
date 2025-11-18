@@ -12,6 +12,7 @@ import (
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/api"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/client"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/config"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/conntrack"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/dataplane"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/policy"
@@ -63,6 +64,16 @@ func runAgent(cmd *cobra.Command, args []string) {
 	defer dp.Close()
 
 	log.Info("✓ Data plane initialized")
+
+	// Initialize NAT support (conntrack synchronization)
+	var ctSyncer *conntrack.ConntrackSyncer
+	ctSyncer, err = initNATSupport(dp)
+	if err != nil {
+		log.Warnf("NAT support initialization failed: %v (continuing without NAT support)", err)
+	} else if ctSyncer != nil {
+		defer ctSyncer.Stop()
+		log.Info("✓ NAT support initialized (conntrack sync started)")
+	}
 
 	// Create policy manager
 	pm := policy.NewManager(dp)
@@ -395,6 +406,64 @@ func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPl
 	}
 
 	return collector
+}
+
+// initNATSupport initializes NAT detection and conntrack synchronization
+func initNATSupport(dp *dataplane.DataPlane) (*conntrack.ConntrackSyncer, error) {
+	log.Info("Initializing NAT support...")
+
+	// Get conntrack cache map from dataplane
+	maps, err := dp.GetMaps()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dataplane maps: %w", err)
+	}
+
+	if maps.ConntrackCacheMap == nil {
+		return nil, fmt.Errorf("conntrack cache map not available")
+	}
+
+	// Create conntrack syncer with default config
+	syncer, err := conntrack.NewConntrackSyncer(maps.ConntrackCacheMap, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create conntrack syncer: %w", err)
+	}
+
+	// Start conntrack synchronization
+	if err := syncer.Start(); err != nil {
+		syncer.Stop()
+		return nil, fmt.Errorf("failed to start conntrack syncer: %w", err)
+	}
+
+	// Configure NAT detection (enable cache lookup by default)
+	natConfig := &dataplane.NATConfig{
+		MatchMode:       dataplane.NATMatchModeOriginal, // Match using pre-NAT addresses
+		EnableCache:     true,                            // Enable conntrack cache lookup
+		EnableBPFHelper: false,                           // BPF helper not yet fully implemented
+		LogEvents:       false,                           // Disable event logging for performance
+	}
+
+	if err := dp.SetNATConfig(natConfig); err != nil {
+		log.Warnf("Failed to set NAT config: %v", err)
+	} else {
+		log.Info("NAT detection configured: match_mode=original, cache=enabled")
+	}
+
+	// Log initial sync statistics
+	go func() {
+		time.Sleep(2 * time.Second) // Wait for initial sync to complete
+		stats := syncer.GetStats()
+		log.Infof("Conntrack sync statistics: total=%d, last_sync=%v",
+			stats.TotalEntries, stats.LastSyncTime)
+
+		// Log NAT statistics
+		natStats, err := dp.GetNATStats()
+		if err == nil && natStats != nil {
+			log.Infof("NAT statistics: lookups=%d, cache_hits=%d, hit_rate=%.2f%%",
+				natStats.TotalLookups, natStats.CacheHits, natStats.CacheHitRate*100)
+		}
+	}()
+
+	return syncer, nil
 }
 
 func main() {

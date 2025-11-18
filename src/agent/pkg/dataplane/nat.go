@@ -193,11 +193,7 @@ func (dp *DataPlane) ResetNATStats() error {
 
 // getNATConfigMap retrieves the NAT config map from loaded programs
 func (dp *DataPlane) getNATConfigMap() (*ebpf.Map, error) {
-	if dp.tcManager == nil {
-		return nil, fmt.Errorf("TC manager not initialized")
-	}
-
-	maps, err := dp.tcManager.GetMaps()
+	maps, err := dp.GetMaps()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get maps: %w", err)
 	}
@@ -211,11 +207,7 @@ func (dp *DataPlane) getNATConfigMap() (*ebpf.Map, error) {
 
 // getNATStatsMap retrieves the NAT statistics map from loaded programs
 func (dp *DataPlane) getNATStatsMap() (*ebpf.Map, error) {
-	if dp.tcManager == nil {
-		return nil, fmt.Errorf("TC manager not initialized")
-	}
-
-	maps, err := dp.tcManager.GetMaps()
+	maps, err := dp.GetMaps()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get maps: %w", err)
 	}

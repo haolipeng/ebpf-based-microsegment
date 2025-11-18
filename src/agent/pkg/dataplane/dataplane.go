@@ -341,6 +341,11 @@ func (dp *DataPlane) GetManager() *Manager {
 	return dp.manager
 }
 
+// GetMaps returns all eBPF maps from the data plane
+func (dp *DataPlane) GetMaps() (*DataPlaneMaps, error) {
+	return dp.manager.GetMaps()
+}
+
 // EnableSessionTimeout enables and starts the session timeout manager
 // This should be called after the data plane is initialized
 func (dp *DataPlane) EnableSessionTimeout(config session.SessionTimeoutConfig) error {
