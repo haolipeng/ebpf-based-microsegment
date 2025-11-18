@@ -145,6 +145,14 @@ struct wildcard_policy {
     __u32 rule_id;            // Rule ID (0 = empty slot)
 } __attribute__((packed));
 
+// Protocol segment descriptor for indexed wildcard policy lookup
+// Used to track which range of wildcard_policy_map belongs to each protocol
+struct protocol_segment {
+    __u32 start_idx;           // Starting index in wildcard_policy_map
+    __u32 policy_count;        // Number of policies in this segment
+    __u32 reserved[2];         // Reserved for future use
+} __attribute__((packed));
+
 // Statistics counters (enhanced monitoring)
 enum stats_key {
     STATS_TOTAL_PACKETS = 0,

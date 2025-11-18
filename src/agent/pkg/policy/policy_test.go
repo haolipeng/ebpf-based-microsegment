@@ -42,6 +42,12 @@ func (m *MockEBPFMap) Delete(key interface{}) error {
 	return args.Error(0)
 }
 
+func (m *MockEBPFMap) Lookup(key, value interface{}) error {
+	args := m.Called(key, value)
+	// If a Run function was set, it will populate the value
+	return args.Error(0)
+}
+
 func (m *MockEBPFMap) Iterate() *MockMapIterator {
 	return &MockMapIterator{
 		data:     m.data,
@@ -85,18 +91,30 @@ func (m *MockMapIterator) Err() error {
 // MockDataPlane is a mock implementation of DataPlaneInterface
 type MockDataPlane struct {
 	mock.Mock
-	policyMap *MockEBPFMap
+	policyMap         *MockEBPFMap
+	wildcardPolicyMap *MockEBPFMap
+	protocolOffsetMap *MockEBPFMap
 }
 
 func NewMockDataPlane() *MockDataPlane {
 	return &MockDataPlane{
-		policyMap: NewMockEBPFMap(),
+		policyMap:         NewMockEBPFMap(),
+		wildcardPolicyMap: NewMockEBPFMap(),
+		protocolOffsetMap: NewMockEBPFMap(),
 	}
 }
 
 func (m *MockDataPlane) GetPolicyMap() *ebpf.Map {
 	// We can't return MockEBPFMap as *ebpf.Map, so we need to work around this
 	// For testing purposes, we'll test helper functions directly
+	return nil
+}
+
+func (m *MockDataPlane) GetWildcardPolicyMap() *ebpf.Map {
+	return nil
+}
+
+func (m *MockDataPlane) GetProtocolOffsetMap() *ebpf.Map {
 	return nil
 }
 

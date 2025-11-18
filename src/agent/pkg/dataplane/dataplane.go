@@ -321,6 +321,16 @@ func (dp *DataPlane) GetWildcardPolicyMap() *ebpf.Map {
 	return maps.WildcardPolicyMap
 }
 
+// GetProtocolOffsetMap 返回协议偏移 map 供索引策略管理器访问
+func (dp *DataPlane) GetProtocolOffsetMap() *ebpf.Map {
+	maps, err := dp.manager.GetMaps()
+	if err != nil {
+		log.Debugf("Failed to get maps: %v", err)
+		return nil
+	}
+	return maps.ProtocolOffsetMap
+}
+
 // GetMode 返回当前数据平面模式
 func (dp *DataPlane) GetMode() DataPlaneMode {
 	return dp.manager.GetMode()

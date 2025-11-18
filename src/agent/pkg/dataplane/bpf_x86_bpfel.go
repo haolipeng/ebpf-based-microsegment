@@ -47,6 +47,13 @@ type bpfPolicyValue struct {
 	HitCount   uint64
 }
 
+type bpfProtocolSegment struct {
+	_           structs.HostLayout
+	StartIdx    uint32
+	PolicyCount uint32
+	Reserved    [2]uint32
+}
+
 type bpfSessionValue struct {
 	_               structs.HostLayout
 	CreatedTs       uint64
@@ -138,8 +145,10 @@ type bpfProgramSpecs struct {
 type bpfMapSpecs struct {
 	FlowEvents        *ebpf.MapSpec `ebpf:"flow_events"`
 	PolicyMap         *ebpf.MapSpec `ebpf:"policy_map"`
+	ProtocolOffsetMap *ebpf.MapSpec `ebpf:"protocol_offset_map"`
 	SessionMap        *ebpf.MapSpec `ebpf:"session_map"`
 	StatsMap          *ebpf.MapSpec `ebpf:"stats_map"`
+	TimeoutConfigMap  *ebpf.MapSpec `ebpf:"timeout_config_map"`
 	WildcardPolicyMap *ebpf.MapSpec `ebpf:"wildcard_policy_map"`
 }
 
@@ -171,8 +180,10 @@ func (o *bpfObjects) Close() error {
 type bpfMaps struct {
 	FlowEvents        *ebpf.Map `ebpf:"flow_events"`
 	PolicyMap         *ebpf.Map `ebpf:"policy_map"`
+	ProtocolOffsetMap *ebpf.Map `ebpf:"protocol_offset_map"`
 	SessionMap        *ebpf.Map `ebpf:"session_map"`
 	StatsMap          *ebpf.Map `ebpf:"stats_map"`
+	TimeoutConfigMap  *ebpf.Map `ebpf:"timeout_config_map"`
 	WildcardPolicyMap *ebpf.Map `ebpf:"wildcard_policy_map"`
 }
 
@@ -180,8 +191,10 @@ func (m *bpfMaps) Close() error {
 	return _BpfClose(
 		m.FlowEvents,
 		m.PolicyMap,
+		m.ProtocolOffsetMap,
 		m.SessionMap,
 		m.StatsMap,
+		m.TimeoutConfigMap,
 		m.WildcardPolicyMap,
 	)
 }

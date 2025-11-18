@@ -17,6 +17,13 @@
 // Debug mode - disable for production to reduce latency
 #define DEBUG_MODE 0
 
+// Feature flag: Enable protocol-indexed wildcard lookup
+// Set to 1 to use indexed lookup (better performance for 200+ policies)
+// Set to 0 to use legacy linear scan (simpler, works for < 50 policies)
+#ifndef USE_INDEXED_LOOKUP
+#define USE_INDEXED_LOOKUP 1
+#endif
+
 #include "headers/common_types.h"
 #include "headers/tcp_state_machine.h"
 
@@ -51,6 +58,18 @@ struct {
     __type(value, struct wildcard_policy);
     __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
 } wildcard_policy_map SEC(".maps");
+
+// Protocol offset map for indexed wildcard lookup
+// Maps protocol number to segment descriptor (start index + count)
+// PINNED: TC 和 XDP 共享索引数据
+// Note: struct protocol_segment is defined in common_types.h
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 256);  // 256 possible protocol numbers (0-255)
+    __type(key, __u32);        // protocol number
+    __type(value, struct protocol_segment);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} protocol_offset_map SEC(".maps");
 
 // Statistics map (Per-CPU for lock-free updates)
 // PINNED: TC 和 XDP 共享统计数据
@@ -89,6 +108,11 @@ static __always_inline void update_stats(__u32 key) {
 
 // Include policy matching logic (requires update_stats to be defined first)
 #include "headers/policy_match.h"
+
+// Include indexed policy matching (optional, controlled by USE_INDEXED_LOOKUP)
+#if USE_INDEXED_LOOKUP
+#include "headers/indexed_policy_match_v2.h"
+#endif
 
 // Include flow processing logic (packet parsing)
 #include "headers/flow_processing.h"
@@ -508,7 +532,14 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
 
     __u64 now = get_timestamp_ns();
     __u32 matched_rule_id = 0;
+
+#if USE_INDEXED_LOOKUP
+    // Use protocol-indexed wildcard lookup (optimized for 200+ policies)
+    __u8 action = lookup_policy_action_indexed(&key, direction, &matched_rule_id);
+#else
+    // Use legacy linear wildcard scan (simpler, for < 50 policies)
     __u8 action = lookup_policy_action(&key, direction, &matched_rule_id);
+#endif
 
 #if DEBUG_MODE
     if (matched_rule_id != 0) {

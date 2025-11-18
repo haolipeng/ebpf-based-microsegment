@@ -46,6 +46,7 @@ type PolicyManager struct {
 type DataPlaneInterface interface {
 	GetPolicyMap() *ebpf.Map
 	GetWildcardPolicyMap() *ebpf.Map
+	GetProtocolOffsetMap() *ebpf.Map
 }
 
 // NewManager creates a new policy manager without persistence

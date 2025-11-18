@@ -343,6 +343,7 @@ func (l *TCLoader) GetMaps() (*DataPlaneMaps, error) {
 		SessionMap:        l.objs.SessionMap,
 		PolicyMap:         l.objs.PolicyMap,
 		WildcardPolicyMap: l.objs.WildcardPolicyMap,
+		ProtocolOffsetMap: l.objs.ProtocolOffsetMap,
 		StatsMap:          l.objs.StatsMap,
 		FlowEventsRB:      l.objs.FlowEvents,
 	}, nil

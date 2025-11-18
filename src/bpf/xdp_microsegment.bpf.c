@@ -70,6 +70,18 @@ struct {
 	__uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
 } wildcard_policy_map SEC(".maps");
 
+// Protocol offset map for indexed wildcard lookup
+// Maps protocol number to segment descriptor (start index + count)
+// PINNED: XDP 和 TC 共享索引数据
+// Note: struct protocol_segment is defined in common_types.h
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 256);  // 256 possible protocol numbers (0-255)
+	__type(key, __u32);        // protocol number
+	__type(value, struct protocol_segment);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} protocol_offset_map SEC(".maps");
+
 // Statistics map (Per-CPU for lock-free updates)
 // PINNED: XDP 和 TC 共享统计数据
 struct {
