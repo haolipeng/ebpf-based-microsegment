@@ -567,22 +567,51 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
     __u64 now = get_timestamp_ns();
     __u32 matched_rule_id = 0;
 
+    // NAT Detection: Restore original addresses for policy matching
+    // This enables correct policy matching in Docker/Kubernetes environments
+    struct flow_key original_key = key;  // Default to current key
+    __u8 nat_type = NAT_TYPE_NONE;
+
+    detect_nat_and_restore_with_maps(
+        skb,                       // Context (TC __sk_buff)
+        false,                     // is_xdp = false (this is TC)
+        &key,                      // Current flow key (post-NAT)
+        &original_key,             // Output: original flow key (pre-NAT)
+        &nat_type,                 // Output: NAT type detected
+        &nat_config_map,           // NAT configuration map
+        &conntrack_cache_map,      // Conntrack cache map
+        &nat_stats_map             // NAT statistics map
+    );
+
+    // Use original addresses for policy matching (pre-NAT addresses)
+    // This ensures policies match the actual source/destination, not NAT'd addresses
 #if USE_INDEXED_LOOKUP
     // Use protocol-indexed wildcard lookup (optimized for 200+ policies)
-    __u8 action = lookup_policy_action_indexed(&key, direction, &matched_rule_id);
+    __u8 action = lookup_policy_action_indexed(&original_key, direction, &matched_rule_id);
 #else
     // Use legacy linear wildcard scan (simpler, for < 50 policies)
-    __u8 action = lookup_policy_action(&key, direction, &matched_rule_id);
+    __u8 action = lookup_policy_action(&original_key, direction, &matched_rule_id);
 #endif
 
 #if DEBUG_MODE
+    // Log NAT detection if NAT is present
+    if (nat_type != NAT_TYPE_NONE) {
+        bpf_printk("NAT detected: type=%d, orig=%pI4:%d->%pI4:%d, nat=%pI4:%d->%pI4:%d\n",
+                   nat_type,
+                   &original_key.src_ip[3], bpf_ntohs(original_key.src_port),
+                   &original_key.dst_ip[3], bpf_ntohs(original_key.dst_port),
+                   &key.src_ip[3], bpf_ntohs(key.src_port),
+                   &key.dst_ip[3], bpf_ntohs(key.dst_port));
+    }
+
     if (matched_rule_id != 0) {
-        bpf_printk("Policy %d matched: %pI4:%d -> %pI4:%d action=%d dir=%d\n",
+        bpf_printk("Policy %d matched: %pI4:%d -> %pI4:%d action=%d dir=%d NAT=%d\n",
                    matched_rule_id,
-                   &key.src_ip, bpf_ntohs(key.src_port),
-                   &key.dst_ip, bpf_ntohs(key.dst_port),
+                   &original_key.src_ip[3], bpf_ntohs(original_key.src_port),
+                   &original_key.dst_ip[3], bpf_ntohs(original_key.dst_port),
                    action,
-                   direction);
+                   direction,
+                   nat_type);
     }
 #endif
 

@@ -516,17 +516,45 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 	// 计算数据包长度 (XDP context 提供 data 和 data_end 指针)
 	__u32 packet_len = (void *)(long)ctx->data_end - (void *)(long)ctx->data;
 
+	// NAT Detection: Restore original addresses for policy matching
+	// This enables correct policy matching in Docker/Kubernetes environments
+	struct flow_key original_key = key;  // Default to current key
+	__u8 nat_type = NAT_TYPE_NONE;
+
+	detect_nat_and_restore_with_maps(
+		ctx,                       // Context (XDP xdp_md)
+		true,                      // is_xdp = true (this is XDP)
+		&key,                      // Current flow key (post-NAT)
+		&original_key,             // Output: original flow key (pre-NAT)
+		&nat_type,                 // Output: NAT type detected
+		&nat_config_map,           // NAT configuration map
+		&conntrack_cache_map,      // Conntrack cache map
+		&nat_stats_map             // NAT statistics map
+	);
+
 	// 3. 查询策略 (使用共享的策略匹配逻辑)
 	// XDP 只能在 ingress 方向运行,所以方向固定为 INGRESS
-	__u8 action = lookup_policy_action(&key, POLICY_DIR_INGRESS, &matched_rule_id);
+	// Use original addresses for policy matching (pre-NAT addresses)
+	__u8 action = lookup_policy_action(&original_key, POLICY_DIR_INGRESS, &matched_rule_id);
 
 #if DEBUG_MODE
+	// Log NAT detection if NAT is present
+	if (nat_type != NAT_TYPE_NONE) {
+		bpf_printk("XDP NAT detected: type=%d, orig=%pI4:%d->%pI4:%d, nat=%pI4:%d->%pI4:%d\n",
+			   nat_type,
+			   &original_key.src_ip[3], bpf_ntohs(original_key.src_port),
+			   &original_key.dst_ip[3], bpf_ntohs(original_key.dst_port),
+			   &key.src_ip[3], bpf_ntohs(key.src_port),
+			   &key.dst_ip[3], bpf_ntohs(key.dst_port));
+	}
+
 	if (matched_rule_id != 0) {
-		bpf_printk("XDP Policy %d matched: %pI4:%d -> %pI4:%d action=%d\n",
+		bpf_printk("XDP Policy %d matched: %pI4:%d -> %pI4:%d action=%d NAT=%d\n",
 			   matched_rule_id,
-			   &key.src_ip, bpf_ntohs(key.src_port),
-			   &key.dst_ip, bpf_ntohs(key.dst_port),
-			   action);
+			   &original_key.src_ip[3], bpf_ntohs(original_key.src_port),
+			   &original_key.dst_ip[3], bpf_ntohs(original_key.dst_port),
+			   action,
+			   nat_type);
 	}
 #endif
 

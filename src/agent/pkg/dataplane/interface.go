@@ -13,12 +13,16 @@ type DataPlaneInterface interface {
 
 // DataPlaneMaps 封装所有数据平面 eBPF Map 的引用
 type DataPlaneMaps struct {
-	SessionMap        *ebpf.Map      // 会话表
-	PolicyMap         *ebpf.Map      // 策略表
-	WildcardPolicyMap *ebpf.Map      // 通配符策略表
-	ProtocolOffsetMap *ebpf.Map      // 协议偏移表（用于索引查找）
-	StatsMap          *ebpf.Map      // 统计表
-	FlowEventsRB      *ebpf.Map      // 流事件 Ring Buffer
+	SessionMap         *ebpf.Map      // 会话表
+	PolicyMap          *ebpf.Map      // 策略表
+	WildcardPolicyMap  *ebpf.Map      // 通配符策略表
+	ProtocolOffsetMap  *ebpf.Map      // 协议偏移表（用于索引查找）
+	StatsMap           *ebpf.Map      // 统计表
+	FlowEventsRB       *ebpf.Map      // 流事件 Ring Buffer
+	ConntrackCacheMap  *ebpf.Map      // Conntrack缓存表（NAT支持）
+	NATConfigMap       *ebpf.Map      // NAT配置表
+	NATStatsMap        *ebpf.Map      // NAT统计表
+	TimeoutConfigMap   *ebpf.Map      // 超时配置表
 }
 
 // Ensure DataPlane implements DataPlaneInterface

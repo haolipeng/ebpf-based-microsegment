@@ -201,12 +201,16 @@ func (l *XDPLoader) GetMaps() (*DataPlaneMaps, error) {
 	}
 
 	return &DataPlaneMaps{
-		SessionMap:        l.objs.SessionMap,
-		PolicyMap:         l.objs.PolicyMap,
-		WildcardPolicyMap: l.objs.WildcardPolicyMap,
-		ProtocolOffsetMap: l.objs.ProtocolOffsetMap,
-		StatsMap:          l.objs.StatsMap,
-		FlowEventsRB:      l.objs.FlowEvents,
+		SessionMap:         l.objs.SessionMap,
+		PolicyMap:          l.objs.PolicyMap,
+		WildcardPolicyMap:  l.objs.WildcardPolicyMap,
+		ProtocolOffsetMap:  l.objs.ProtocolOffsetMap,
+		StatsMap:           l.objs.StatsMap,
+		FlowEventsRB:       l.objs.FlowEvents,
+		ConntrackCacheMap:  l.objs.ConntrackCacheMap,
+		NATConfigMap:       l.objs.NatConfigMap,
+		NATStatsMap:        l.objs.NatStatsMap,
+		TimeoutConfigMap:   l.objs.TimeoutConfigMap,
 	}, nil
 }
 
