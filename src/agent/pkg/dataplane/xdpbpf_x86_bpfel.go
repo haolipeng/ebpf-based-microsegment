@@ -45,6 +45,34 @@ type xdpbpfFlowKey struct {
 	VlanId    uint16
 }
 
+type xdpbpfFragConfig struct {
+	_         structs.HostLayout
+	Mode      uint8
+	LogEvents uint8
+	Reserved  uint16
+	_         [4]byte
+	TimeoutNs uint64
+	Reserved2 [2]uint64
+}
+
+type xdpbpfFragKey struct {
+	_         structs.HostLayout
+	SrcIp     [4]uint32
+	DstIp     [4]uint32
+	FragId    uint32
+	Protocol  uint8
+	IpVersion uint8
+	Reserved  uint16
+}
+
+type xdpbpfFragValue struct {
+	_            structs.HostLayout
+	CompleteKey  xdpbpfFlowKey
+	Timestamp    uint64
+	PolicyAction uint8
+	Reserved     [7]uint8
+}
+
 type xdpbpfNatConfig struct {
 	_               structs.HostLayout
 	MatchMode       uint8
@@ -180,6 +208,9 @@ type xdpbpfProgramSpecs struct {
 type xdpbpfMapSpecs struct {
 	ConntrackCacheMap *ebpf.MapSpec `ebpf:"conntrack_cache_map"`
 	FlowEvents        *ebpf.MapSpec `ebpf:"flow_events"`
+	FragConfigMap     *ebpf.MapSpec `ebpf:"frag_config_map"`
+	FragStateMap      *ebpf.MapSpec `ebpf:"frag_state_map"`
+	FragStatsMap      *ebpf.MapSpec `ebpf:"frag_stats_map"`
 	NatConfigMap      *ebpf.MapSpec `ebpf:"nat_config_map"`
 	NatStatsMap       *ebpf.MapSpec `ebpf:"nat_stats_map"`
 	PolicyMap         *ebpf.MapSpec `ebpf:"policy_map"`
@@ -218,6 +249,9 @@ func (o *xdpbpfObjects) Close() error {
 type xdpbpfMaps struct {
 	ConntrackCacheMap *ebpf.Map `ebpf:"conntrack_cache_map"`
 	FlowEvents        *ebpf.Map `ebpf:"flow_events"`
+	FragConfigMap     *ebpf.Map `ebpf:"frag_config_map"`
+	FragStateMap      *ebpf.Map `ebpf:"frag_state_map"`
+	FragStatsMap      *ebpf.Map `ebpf:"frag_stats_map"`
 	NatConfigMap      *ebpf.Map `ebpf:"nat_config_map"`
 	NatStatsMap       *ebpf.Map `ebpf:"nat_stats_map"`
 	PolicyMap         *ebpf.Map `ebpf:"policy_map"`
@@ -232,6 +266,9 @@ func (m *xdpbpfMaps) Close() error {
 	return _XdpbpfClose(
 		m.ConntrackCacheMap,
 		m.FlowEvents,
+		m.FragConfigMap,
+		m.FragStateMap,
+		m.FragStatsMap,
 		m.NatConfigMap,
 		m.NatStatsMap,
 		m.PolicyMap,

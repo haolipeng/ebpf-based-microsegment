@@ -211,6 +211,9 @@ func (l *XDPLoader) GetMaps() (*DataPlaneMaps, error) {
 		NATConfigMap:       l.objs.NatConfigMap,
 		NATStatsMap:        l.objs.NatStatsMap,
 		TimeoutConfigMap:   l.objs.TimeoutConfigMap,
+		FragStateMap:       l.objs.FragStateMap,
+		FragConfigMap:      l.objs.FragConfigMap,
+		FragStatsMap:       l.objs.FragStatsMap,
 	}, nil
 }
 

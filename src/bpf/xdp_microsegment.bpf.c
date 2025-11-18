@@ -36,6 +36,7 @@
 #include "headers/common_types.h"
 #include "headers/tcp_state_machine.h"
 #include "headers/nat_support.h"
+#include "headers/fragment_tracking.h"
 
 char LICENSE[] SEC("license") = "GPL";
 
@@ -143,6 +144,40 @@ struct {
 	__uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
 } nat_stats_map SEC(".maps");
 
+// Fragment state map
+// Tracks first fragment information for subsequent fragment policy matching
+// PINNED: XDP 和 TC 共享分片状态数据
+#define MAX_FRAG_ENTRIES 10000
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, MAX_FRAG_ENTRIES);
+	__type(key, struct frag_key);
+	__type(value, struct frag_value);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} frag_state_map SEC(".maps");
+
+// Fragment configuration map
+// Controls fragment handling mode and timeout settings
+// PINNED: XDP 和 TC 共享分片配置
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);  // Always 0 (single config entry)
+	__type(value, struct frag_config);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} frag_config_map SEC(".maps");
+
+// Fragment statistics map
+// Tracks fragment processing performance and behavior
+// PINNED: XDP 和 TC 共享分片统计数据
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, FRAG_STAT_MAX);
+	__type(key, __u32);  // enum frag_stats_key
+	__type(value, __u64);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} frag_stats_map SEC(".maps");
+
 // ========== Helper Functions ==========
 
 // Helper: Update statistics counter (optimized - no error checking for speed)
@@ -159,6 +194,9 @@ static __always_inline void update_stats(__u32 key) {
 
 // Include shared flow processing logic
 #include "headers/flow_processing.h"
+
+// Include fragment processing logic (after flow_processing.h)
+#include "headers/fragment_handler.h"
 
 // Helper: Get current timestamp in nanoseconds
 static __always_inline __u64 get_timestamp_ns() {
@@ -516,6 +554,134 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 	// 计算数据包长度 (XDP context 提供 data 和 data_end 指针)
 	__u32 packet_len = (void *)(long)ctx->data_end - (void *)(long)ctx->data;
 
+	// Fragment Detection: Handle fragmented packets (IPv4/IPv6)
+	// For subsequent fragments: apply cached policy (no L4 headers available)
+	// For first fragments: continue to policy matching (has L4 headers)
+	void *data = (void *)(long)ctx->data;
+	void *data_end = (void *)(long)ctx->data_end;
+	bool is_first_fragment = false;
+	struct frag_key fkey = {0};  // Fragment key for caching (first fragments only)
+
+	// Parse Ethernet and check IP version for fragment detection
+	struct ethhdr *eth = data;
+	if ((void *)(eth + 1) > data_end) {
+		return XDP_PASS;  // Invalid packet
+	}
+	__u16 eth_proto = eth->h_proto;
+
+	if (eth_proto == bpf_htons(ETH_P_IP)) {
+		// IPv4 fragment detection
+		struct iphdr *iph = (struct iphdr *)(eth + 1);
+		if ((void *)(iph + 1) > data_end) {
+			return XDP_PASS;  // Invalid packet
+		}
+
+		// Check if packet is fragmented
+		if (is_ipv4_fragment(iph)) {
+			if (is_ipv4_first_fragment(iph)) {
+				// First fragment: has L4 headers, continue to policy matching
+				extract_ipv4_frag_key(iph, &fkey);
+				is_first_fragment = true;
+				update_frag_stats(&frag_stats_map, FRAG_STAT_FIRST_FRAGMENTS);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_IPV4_FRAGMENTS);
+			} else if (is_ipv4_subsequent_fragment(iph)) {
+				// Subsequent fragment: no L4 headers, look up cached policy
+				extract_ipv4_frag_key(iph, &fkey);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_SUBSEQUENT_FRAGMENTS);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_IPV4_FRAGMENTS);
+
+				struct frag_value *fval = bpf_map_lookup_elem(&frag_state_map, &fkey);
+				if (fval) {
+					// Cache hit: use cached policy action
+					update_frag_stats(&frag_stats_map, FRAG_STAT_CACHE_HITS);
+
+					// Get fragment configuration to check mode
+					__u32 config_key = 0;
+					struct frag_config *config = bpf_map_lookup_elem(&frag_config_map, &config_key);
+					__u8 mode = config ? config->mode : FRAG_MODE_NORMAL;
+
+					if (mode == FRAG_MODE_NORMAL) {
+						// NORMAL mode: deny subsequent fragments
+						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+						update_stats(STATS_DENIED_PACKETS);
+						return XDP_DROP;
+					} else if (mode == FRAG_MODE_PERMISSIVE && fval->policy_action == POLICY_ACTION_ALLOW) {
+						// PERMISSIVE mode: allow if first fragment was allowed
+						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_ALLOWED);
+						update_stats(STATS_ALLOWED_PACKETS);
+						return XDP_PASS;
+					} else {
+						// Deny otherwise
+						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+						update_stats(STATS_DENIED_PACKETS);
+						return XDP_DROP;
+					}
+				} else {
+					// Cache miss: first fragment not seen or timed out, deny for safety
+					update_frag_stats(&frag_stats_map, FRAG_STAT_CACHE_MISSES);
+					update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+					update_stats(STATS_DENIED_PACKETS);
+					return XDP_DROP;
+				}
+			}
+		}
+	} else if (eth_proto == bpf_htons(ETH_P_IPV6)) {
+		// IPv6 fragment detection (similar logic to IPv4)
+		struct ipv6hdr *ip6h = (struct ipv6hdr *)(eth + 1);
+		if ((void *)(ip6h + 1) > data_end) {
+			return XDP_PASS;  // Invalid packet
+		}
+
+		// Check if packet has fragment extension header
+		if (is_ipv6_fragment(ip6h->nexthdr)) {
+			struct ipv6_frag_hdr *frag_hdr = (struct ipv6_frag_hdr *)(ip6h + 1);
+			if ((void *)(frag_hdr + 1) > data_end) {
+				return XDP_PASS;  // Invalid packet
+			}
+
+			if (is_ipv6_first_fragment(frag_hdr)) {
+				// First fragment: continue to policy matching
+				extract_ipv6_frag_key(ip6h, frag_hdr, &fkey);
+				is_first_fragment = true;
+				update_frag_stats(&frag_stats_map, FRAG_STAT_FIRST_FRAGMENTS);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_IPV6_FRAGMENTS);
+			} else if (is_ipv6_subsequent_fragment(frag_hdr)) {
+				// Subsequent fragment: look up cached policy
+				extract_ipv6_frag_key(ip6h, frag_hdr, &fkey);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_SUBSEQUENT_FRAGMENTS);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_IPV6_FRAGMENTS);
+
+				struct frag_value *fval = bpf_map_lookup_elem(&frag_state_map, &fkey);
+				if (fval) {
+					update_frag_stats(&frag_stats_map, FRAG_STAT_CACHE_HITS);
+
+					__u32 config_key = 0;
+					struct frag_config *config = bpf_map_lookup_elem(&frag_config_map, &config_key);
+					__u8 mode = config ? config->mode : FRAG_MODE_NORMAL;
+
+					if (mode == FRAG_MODE_NORMAL) {
+						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+						update_stats(STATS_DENIED_PACKETS);
+						return XDP_DROP;
+					} else if (mode == FRAG_MODE_PERMISSIVE && fval->policy_action == POLICY_ACTION_ALLOW) {
+						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_ALLOWED);
+						update_stats(STATS_ALLOWED_PACKETS);
+						return XDP_PASS;
+					} else {
+						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+						update_stats(STATS_DENIED_PACKETS);
+						return XDP_DROP;
+					}
+				} else {
+					update_frag_stats(&frag_stats_map, FRAG_STAT_CACHE_MISSES);
+					update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+					update_stats(STATS_DENIED_PACKETS);
+					return XDP_DROP;
+				}
+			}
+		}
+	}
+
 	// NAT Detection: Restore original addresses for policy matching
 	// This enables correct policy matching in Docker/Kubernetes environments
 	struct flow_key original_key = key;  // Default to current key
@@ -600,6 +766,22 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 			initial_tcp_state,
 			(key.vlan_id != 0) ? CONN_FLAG_VLAN : 0
 		);
+
+		// Cache fragment state for first fragments
+		if (is_first_fragment) {
+			struct frag_value fval = {0};
+			__builtin_memcpy(&fval.complete_key, &key, sizeof(struct flow_key));
+			fval.policy_action = action;
+			fval.timestamp = now;
+			bpf_map_update_elem(&frag_state_map, &fkey, &fval, BPF_ANY);
+
+			// Update statistics
+			if (action == POLICY_ACTION_ALLOW) {
+				update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_ALLOWED);
+			} else {
+				update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+			}
+		}
 	}
 
 	// 5. 执行策略动作

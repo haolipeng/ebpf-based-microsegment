@@ -23,6 +23,9 @@ type DataPlaneMaps struct {
 	NATConfigMap       *ebpf.Map      // NAT配置表
 	NATStatsMap        *ebpf.Map      // NAT统计表
 	TimeoutConfigMap   *ebpf.Map      // 超时配置表
+	FragStateMap       *ebpf.Map      // 分片状态表（分片跟踪）
+	FragConfigMap      *ebpf.Map      // 分片配置表
+	FragStatsMap       *ebpf.Map      // 分片统计表
 }
 
 // Ensure DataPlane implements DataPlaneInterface
