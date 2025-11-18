@@ -628,16 +628,18 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
             return TC_ACT_OK;  // Invalid packet
         }
 
-        // Check if packet is fragmented
-        if (is_ipv4_fragment(iph)) {
-            if (is_ipv4_first_fragment(iph)) {
+        // Check if packet is fragmented (optimized: single bpf_ntohs call)
+        enum ipv4_frag_type frag_type = get_ipv4_frag_type(iph);
+
+        if (frag_type != IPV4_FRAG_TYPE_NONE) {
+            if (frag_type == IPV4_FRAG_TYPE_FIRST) {
                 // First fragment: has L4 headers, continue to policy matching
                 // Extract fragment key for caching after policy match
                 extract_ipv4_frag_key(iph, &fkey);
                 is_first_fragment = true;
                 update_frag_stats(&frag_stats_map, FRAG_STAT_FIRST_FRAGMENTS);
                 update_frag_stats(&frag_stats_map, FRAG_STAT_IPV4_FRAGMENTS);
-            } else if (is_ipv4_subsequent_fragment(iph)) {
+            } else {  // IPV4_FRAG_TYPE_SUBSEQUENT
                 // Subsequent fragment: no L4 headers, look up cached policy
                 extract_ipv4_frag_key(iph, &fkey);
                 update_frag_stats(&frag_stats_map, FRAG_STAT_SUBSEQUENT_FRAGMENTS);

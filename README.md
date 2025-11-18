@@ -100,7 +100,12 @@ Flags:
 - [Architecture Design](design-docs/architecture/design.md) - Technical architecture details
 - [Weekly Guide](docs/weekly-guide/) - 6-week learning and implementation guide
 
-### Flow Collection API (NEW! 🎉)
+### eBPF Data Plane Development (NEW! 🔥)
+- **[Quick Start Guide](docs/EBPF_QUICK_START_GUIDE.md)** - Priority roadmap and implementation guide
+- **[Full Roadmap](docs/EBPF_MICROSEGMENTATION_ROADMAP.md)** - Complete feature development plan (15-20 days)
+- **Current Status**: ~60-65% complete | **Next Priority**: NAT Support (P0)
+
+### Flow Collection API (Phase 1-3 ✅)
 - [Quick Start Guide](docs/flow-quick-start.md) - Get started with Flow Collection API in 10 minutes
 - [Implementation Summary](docs/flow-collection-implementation-summary.md) - Complete technical documentation (32,000 words)
 - [Progress Report](docs/flow-implementation-progress.md) - Current status and roadmap

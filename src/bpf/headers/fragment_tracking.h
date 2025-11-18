@@ -102,6 +102,70 @@ enum frag_stats_key {
 	FRAG_STAT_MAX
 };
 
+/* IPv4 Fragment Type Classification
+ *
+ * Enumeration for efficient fragment type detection.
+ * This enum is used by get_ipv4_frag_type() to classify packets
+ * in a single pass, avoiding multiple bpf_ntohs() calls.
+ */
+enum ipv4_frag_type {
+	IPV4_FRAG_TYPE_NONE = 0,       // Non-fragmented packet (MF=0, Offset=0)
+	IPV4_FRAG_TYPE_FIRST,          // First fragment (MF=1, Offset=0)
+	IPV4_FRAG_TYPE_SUBSEQUENT,     // Subsequent fragment (Offset>0)
+};
+
+/* get_ipv4_frag_type - Optimized IPv4 fragment type detection
+ *
+ * @iph: IPv4 header pointer
+ *
+ * Returns:
+ *   IPV4_FRAG_TYPE_NONE       - Non-fragmented packet
+ *   IPV4_FRAG_TYPE_FIRST      - First fragment (contains L4 headers)
+ *   IPV4_FRAG_TYPE_SUBSEQUENT - Subsequent fragment (no L4 headers)
+ *
+ * Performance Optimization:
+ * This function performs only ONE bpf_ntohs() call and determines
+ * the fragment type in a single pass. This is significantly more
+ * efficient than calling is_ipv4_fragment(), is_ipv4_first_fragment(),
+ * and is_ipv4_subsequent_fragment() separately (which would call
+ * bpf_ntohs() three times).
+ *
+ * Fragment Type Logic:
+ * - Non-Fragment: MF=0 AND Offset=0
+ * - First Fragment: MF=1 AND Offset=0
+ * - Subsequent Fragment: Offset>0 (MF can be 0 or 1)
+ *
+ * Usage Example:
+ *   enum ipv4_frag_type frag_type = get_ipv4_frag_type(iph);
+ *   if (frag_type != IPV4_FRAG_TYPE_NONE) {
+ *       if (frag_type == IPV4_FRAG_TYPE_FIRST) {
+ *           // Handle first fragment
+ *       } else {
+ *           // Handle subsequent fragment
+ *       }
+ *   }
+ */
+static __always_inline enum ipv4_frag_type get_ipv4_frag_type(struct iphdr *iph)
+{
+	__u16 frag_off = bpf_ntohs(iph->frag_off);  // Single byte order conversion
+
+	bool has_mf = frag_off & (IP_MF >> 8);      // More Fragments flag set?
+	bool has_offset = frag_off & (IP_OFFSET >> 8);  // Fragment offset > 0?
+
+	// Non-fragmented packet: MF=0 and Offset=0
+	if (!has_mf && !has_offset) {
+		return IPV4_FRAG_TYPE_NONE;
+	}
+
+	// First fragment: MF=1 and Offset=0
+	if (has_mf && !has_offset) {
+		return IPV4_FRAG_TYPE_FIRST;
+	}
+
+	// Subsequent fragment: Offset>0 (regardless of MF flag)
+	return IPV4_FRAG_TYPE_SUBSEQUENT;
+}
+
 /* is_ipv4_fragment - Check if IPv4 packet is a fragment
  *
  * @iph: IPv4 header pointer

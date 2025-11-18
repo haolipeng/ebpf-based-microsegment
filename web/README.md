@@ -200,14 +200,43 @@ If you encounter build errors:
 3. Reinstall dependencies: `npm install`
 4. Try building again: `npm run build`
 
-## Future Enhancements
+## Development Roadmap
 
-- [ ] WebSocket support for real-time updates
+We have a comprehensive development plan for upcoming features and enhancements.
+
+📚 **Documentation**:
+- **[Quick Reference](./QUICK_REFERENCE.md)** - Core tasks, priorities, and time estimates at a glance
+- **[Visual Roadmap](./ROADMAP_VISUAL.md)** - Timeline overview and key milestones
+- **[Detailed Development Plan](./DEVELOPMENT_ROADMAP.md)** - Complete task breakdown with acceptance criteria
+
+**Current Status**: ~70-75% complete | **Remaining Work**: 18-23 days
+
+### Upcoming Features
+
+**Phase 1: Core Features (P0 - 4-5 days)**
+- [x] Dashboard with key metrics and charts
+- [x] Agent management and monitoring
+- [x] Flow analytics and visualization
+- [x] Policy management (CRUD operations)
+- [x] Network topology with graph database
+- [ ] User authentication system (JWT)
+- [ ] Policy statistics API integration
+
+**Phase 2: User Experience (P1 - 7-8 days)**
 - [ ] Dark mode theme
-- [ ] Internationalization (i18n)
-- [ ] User authentication
-- [ ] Advanced data visualization charts
-- [ ] Export reports functionality
+- [ ] Report export (PDF/CSV)
+- [ ] Test coverage (70%+ target)
+
+**Phase 3: Advanced Features (P1 - 4-5 days)**
+- [ ] Advanced data visualizations (Heatmap, Sankey, Funnel)
+- [ ] Performance optimization (code splitting, caching)
+
+**Phase 4: Long-term Enhancements (P2 - 3-5 days)**
+- [ ] Internationalization (i18n) - Chinese/English
+- [ ] Mobile optimization
+- [ ] PWA support (optional)
+
+**Excluded**: WebSocket real-time updates (future consideration)
 
 ## License
 
