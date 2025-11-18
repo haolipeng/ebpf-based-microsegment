@@ -26,6 +26,7 @@
 
 #include "headers/common_types.h"
 #include "headers/tcp_state_machine.h"
+#include "headers/nat_support.h"
 
 char LICENSE[] SEC("license") = "GPL";
 
@@ -96,6 +97,39 @@ struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 256 * 1024);  // 256KB ring buffer
 } flow_events SEC(".maps");
+
+// NAT conntrack cache map
+// Stores NAT connection tracking information for address restoration
+// PINNED: TC 和 XDP 共享 NAT 缓存数据
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, MAX_CONNTRACK_ENTRIES);
+    __type(key, struct conntrack_key);
+    __type(value, struct conntrack_entry);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} conntrack_cache_map SEC(".maps");
+
+// NAT configuration map
+// Controls NAT detection behavior and policy matching mode
+// PINNED: TC 和 XDP 共享 NAT 配置
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);  // Always 0 (single config entry)
+    __type(value, struct nat_config);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} nat_config_map SEC(".maps");
+
+// NAT statistics map
+// Tracks NAT detection performance and behavior
+// PINNED: TC 和 XDP 共享 NAT 统计数据
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, NAT_STATS_MAX);
+    __type(key, __u32);  // enum nat_stats_key
+    __type(value, struct nat_stats_value);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} nat_stats_map SEC(".maps");
 
 // Helper: Update statistics counter (optimized - no error checking for speed)
 static __always_inline void update_stats(__u32 key) {

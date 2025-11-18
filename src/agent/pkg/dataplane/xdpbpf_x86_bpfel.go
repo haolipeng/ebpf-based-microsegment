@@ -13,6 +13,27 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type xdpbpfConntrackEntry struct {
+	_             structs.HostLayout
+	OriginalTuple xdpbpfFlowKey
+	ReplyTuple    xdpbpfFlowKey
+	Timestamp     uint64
+	Status        uint32
+	NatType       uint8
+	Pad           [3]uint8
+}
+
+type xdpbpfConntrackKey struct {
+	_         structs.HostLayout
+	SrcIp     [4]uint32
+	DstIp     [4]uint32
+	SrcPort   uint16
+	DstPort   uint16
+	Protocol  uint8
+	IpVersion uint8
+	Pad       uint16
+}
+
 type xdpbpfFlowKey struct {
 	_         structs.HostLayout
 	SrcIp     [4]uint32
@@ -22,6 +43,20 @@ type xdpbpfFlowKey struct {
 	Protocol  uint8
 	IpVersion uint8
 	VlanId    uint16
+}
+
+type xdpbpfNatConfig struct {
+	_               structs.HostLayout
+	MatchMode       uint8
+	EnableCache     uint8
+	EnableBpfHelper uint8
+	LogEvents       uint8
+	Reserved        [4]uint32
+}
+
+type xdpbpfNatStatsValue struct {
+	_     structs.HostLayout
+	Count uint64
 }
 
 type xdpbpfPolicyKey struct {
@@ -143,7 +178,10 @@ type xdpbpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type xdpbpfMapSpecs struct {
+	ConntrackCacheMap *ebpf.MapSpec `ebpf:"conntrack_cache_map"`
 	FlowEvents        *ebpf.MapSpec `ebpf:"flow_events"`
+	NatConfigMap      *ebpf.MapSpec `ebpf:"nat_config_map"`
+	NatStatsMap       *ebpf.MapSpec `ebpf:"nat_stats_map"`
 	PolicyMap         *ebpf.MapSpec `ebpf:"policy_map"`
 	ProtocolOffsetMap *ebpf.MapSpec `ebpf:"protocol_offset_map"`
 	SessionMap        *ebpf.MapSpec `ebpf:"session_map"`
@@ -178,7 +216,10 @@ func (o *xdpbpfObjects) Close() error {
 //
 // It can be passed to loadXdpbpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type xdpbpfMaps struct {
+	ConntrackCacheMap *ebpf.Map `ebpf:"conntrack_cache_map"`
 	FlowEvents        *ebpf.Map `ebpf:"flow_events"`
+	NatConfigMap      *ebpf.Map `ebpf:"nat_config_map"`
+	NatStatsMap       *ebpf.Map `ebpf:"nat_stats_map"`
 	PolicyMap         *ebpf.Map `ebpf:"policy_map"`
 	ProtocolOffsetMap *ebpf.Map `ebpf:"protocol_offset_map"`
 	SessionMap        *ebpf.Map `ebpf:"session_map"`
@@ -189,7 +230,10 @@ type xdpbpfMaps struct {
 
 func (m *xdpbpfMaps) Close() error {
 	return _XdpbpfClose(
+		m.ConntrackCacheMap,
 		m.FlowEvents,
+		m.NatConfigMap,
+		m.NatStatsMap,
 		m.PolicyMap,
 		m.ProtocolOffsetMap,
 		m.SessionMap,
