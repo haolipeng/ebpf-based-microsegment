@@ -36,7 +36,7 @@
 #define __INDEXED_POLICY_MATCH_V2_H__
 
 /* Maximum policies per protocol segment */
-#define MAX_POLICIES_PER_PROTOCOL 200
+#define MAX_POLICIES_PER_PROTOCOL 16
 
 // Note: struct protocol_segment is defined in common_types.h
 

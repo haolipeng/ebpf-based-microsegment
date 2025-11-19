@@ -87,9 +87,8 @@ static __always_inline int handle_ipv4_fragment(
 		return FRAG_RESULT_NOT_FRAGMENT;
 	}
 
-	// Update IPv4 fragment statistics
-	__u32 stat_key = FRAG_STAT_IPV4_FRAGMENTS;
-	update_frag_stats(frag_stats_map, stat_key);
+	// Update total fragment statistics
+	update_frag_stats(frag_stats_map, FRAG_STAT_TOTAL);
 
 	// Extract fragment key for cache lookup
 	struct frag_key fkey = {0};
@@ -108,8 +107,7 @@ static __always_inline int handle_ipv4_fragment(
 	// STRICT mode: Deny all fragments
 	if (mode == FRAG_MODE_STRICT) {
 		*policy_action = POLICY_ACTION_DENY;
-		stat_key = FRAG_STAT_FRAGMENTS_DENIED;
-		update_frag_stats(frag_stats_map, stat_key);
+		update_frag_stats(frag_stats_map, FRAG_STAT_DENIED);
 		return FRAG_RESULT_DENIED;
 	}
 
@@ -118,9 +116,6 @@ static __always_inline int handle_ipv4_fragment(
 		// First fragment: has L4 headers, complete 5-tuple available
 		// Policy action is already determined by caller
 		// Cache the flow key and policy action for subsequent fragments
-
-		stat_key = FRAG_STAT_FIRST_FRAGMENTS;
-		update_frag_stats(frag_stats_map, stat_key);
 
 		if (frag_state_map && flow_key) {
 			struct frag_value fval = {0};
@@ -140,21 +135,16 @@ static __always_inline int handle_ipv4_fragment(
 
 		// Return FIRST_FRAGMENT, caller will decide based on policy action
 		if (*policy_action == POLICY_ACTION_ALLOW) {
-			stat_key = FRAG_STAT_FRAGMENTS_ALLOWED;
-			update_frag_stats(frag_stats_map, stat_key);
+			update_frag_stats(frag_stats_map, FRAG_STAT_ALLOWED);
 			return FRAG_RESULT_FIRST_FRAGMENT;
 		} else {
-			stat_key = FRAG_STAT_FRAGMENTS_DENIED;
-			update_frag_stats(frag_stats_map, stat_key);
+			update_frag_stats(frag_stats_map, FRAG_STAT_DENIED);
 			return FRAG_RESULT_DENIED;
 		}
 	}
 
 	// Subsequent fragment: no L4 headers, look up cached policy
 	if (is_ipv4_subsequent_fragment(iph)) {
-		stat_key = FRAG_STAT_SUBSEQUENT_FRAGMENTS;
-		update_frag_stats(frag_stats_map, stat_key);
-
 		// Look up fragment state
 		struct frag_value *fval = NULL;
 		if (frag_state_map) {
@@ -163,38 +153,27 @@ static __always_inline int handle_ipv4_fragment(
 
 		if (fval) {
 			// Cache hit: use cached policy action
-			stat_key = FRAG_STAT_CACHE_HITS;
-			update_frag_stats(frag_stats_map, stat_key);
-
 			*policy_action = fval->policy_action;
 
 			// In NORMAL mode: deny subsequent fragments
 			// In PERMISSIVE mode: allow subsequent fragments if first was allowed
 			if (mode == FRAG_MODE_NORMAL) {
 				*policy_action = POLICY_ACTION_DENY;
-				stat_key = FRAG_STAT_FRAGMENTS_DENIED;
-				update_frag_stats(frag_stats_map, stat_key);
+				update_frag_stats(frag_stats_map, FRAG_STAT_DENIED);
 				return FRAG_RESULT_DENIED;
 			} else if (mode == FRAG_MODE_PERMISSIVE) {
 				if (fval->policy_action == POLICY_ACTION_ALLOW) {
-					stat_key = FRAG_STAT_FRAGMENTS_ALLOWED;
-					update_frag_stats(frag_stats_map, stat_key);
+					update_frag_stats(frag_stats_map, FRAG_STAT_ALLOWED);
 					return FRAG_RESULT_SUBSEQUENT_OK;
 				} else {
-					stat_key = FRAG_STAT_FRAGMENTS_DENIED;
-					update_frag_stats(frag_stats_map, stat_key);
+					update_frag_stats(frag_stats_map, FRAG_STAT_DENIED);
 					return FRAG_RESULT_DENIED;
 				}
 			}
 		} else {
-			// Cache miss: first fragment not seen or timed out
-			stat_key = FRAG_STAT_CACHE_MISSES;
-			update_frag_stats(frag_stats_map, stat_key);
-
-			// In NORMAL/PERMISSIVE mode without first fragment: deny for safety
+			// Cache miss: first fragment not seen or timed out, deny for safety
 			*policy_action = POLICY_ACTION_DENY;
-			stat_key = FRAG_STAT_FRAGMENTS_DENIED;
-			update_frag_stats(frag_stats_map, stat_key);
+			update_frag_stats(frag_stats_map, FRAG_STAT_DENIED);
 			return FRAG_RESULT_DENIED;
 		}
 	}
@@ -235,9 +214,8 @@ static __always_inline int handle_ipv6_fragment(
 		return FRAG_RESULT_NOT_FRAGMENT;
 	}
 
-	// Update IPv6 fragment statistics
-	__u32 stat_key = FRAG_STAT_IPV6_FRAGMENTS;
-	update_frag_stats(frag_stats_map, stat_key);
+	// Update total fragment statistics
+	update_frag_stats(frag_stats_map, FRAG_STAT_TOTAL);
 
 	// Parse fragment extension header
 	struct ipv6_frag_hdr *frag_hdr = (struct ipv6_frag_hdr *)(ip6h + 1);
@@ -262,17 +240,13 @@ static __always_inline int handle_ipv6_fragment(
 	// STRICT mode: Deny all fragments
 	if (mode == FRAG_MODE_STRICT) {
 		*policy_action = POLICY_ACTION_DENY;
-		stat_key = FRAG_STAT_FRAGMENTS_DENIED;
-		update_frag_stats(frag_stats_map, stat_key);
+		update_frag_stats(frag_stats_map, FRAG_STAT_DENIED);
 		return FRAG_RESULT_DENIED;
 	}
 
 	// Check if this is the first fragment
 	if (is_ipv6_first_fragment(frag_hdr)) {
 		// First fragment: has L4 headers, complete 5-tuple available
-
-		stat_key = FRAG_STAT_FIRST_FRAGMENTS;
-		update_frag_stats(frag_stats_map, stat_key);
 
 		if (frag_state_map && flow_key) {
 			struct frag_value fval = {0};
@@ -292,21 +266,16 @@ static __always_inline int handle_ipv6_fragment(
 
 		// Return based on policy action
 		if (*policy_action == POLICY_ACTION_ALLOW) {
-			stat_key = FRAG_STAT_FRAGMENTS_ALLOWED;
-			update_frag_stats(frag_stats_map, stat_key);
+			update_frag_stats(frag_stats_map, FRAG_STAT_ALLOWED);
 			return FRAG_RESULT_FIRST_FRAGMENT;
 		} else {
-			stat_key = FRAG_STAT_FRAGMENTS_DENIED;
-			update_frag_stats(frag_stats_map, stat_key);
+			update_frag_stats(frag_stats_map, FRAG_STAT_DENIED);
 			return FRAG_RESULT_DENIED;
 		}
 	}
 
 	// Subsequent fragment: no L4 headers, look up cached policy
 	if (is_ipv6_subsequent_fragment(frag_hdr)) {
-		stat_key = FRAG_STAT_SUBSEQUENT_FRAGMENTS;
-		update_frag_stats(frag_stats_map, stat_key);
-
 		// Look up fragment state
 		struct frag_value *fval = NULL;
 		if (frag_state_map) {
@@ -314,39 +283,28 @@ static __always_inline int handle_ipv6_fragment(
 		}
 
 		if (fval) {
-			// Cache hit
-			stat_key = FRAG_STAT_CACHE_HITS;
-			update_frag_stats(frag_stats_map, stat_key);
-
+			// Cache hit: use cached policy action
 			*policy_action = fval->policy_action;
 
 			// In NORMAL mode: deny subsequent fragments
 			// In PERMISSIVE mode: allow subsequent fragments if first was allowed
 			if (mode == FRAG_MODE_NORMAL) {
 				*policy_action = POLICY_ACTION_DENY;
-				stat_key = FRAG_STAT_FRAGMENTS_DENIED;
-				update_frag_stats(frag_stats_map, stat_key);
+				update_frag_stats(frag_stats_map, FRAG_STAT_DENIED);
 				return FRAG_RESULT_DENIED;
 			} else if (mode == FRAG_MODE_PERMISSIVE) {
 				if (fval->policy_action == POLICY_ACTION_ALLOW) {
-					stat_key = FRAG_STAT_FRAGMENTS_ALLOWED;
-					update_frag_stats(frag_stats_map, stat_key);
+					update_frag_stats(frag_stats_map, FRAG_STAT_ALLOWED);
 					return FRAG_RESULT_SUBSEQUENT_OK;
 				} else {
-					stat_key = FRAG_STAT_FRAGMENTS_DENIED;
-					update_frag_stats(frag_stats_map, stat_key);
+					update_frag_stats(frag_stats_map, FRAG_STAT_DENIED);
 					return FRAG_RESULT_DENIED;
 				}
 			}
 		} else {
-			// Cache miss
-			stat_key = FRAG_STAT_CACHE_MISSES;
-			update_frag_stats(frag_stats_map, stat_key);
-
-			// Deny without first fragment
+			// Cache miss: first fragment not seen or timed out, deny for safety
 			*policy_action = POLICY_ACTION_DENY;
-			stat_key = FRAG_STAT_FRAGMENTS_DENIED;
-			update_frag_stats(frag_stats_map, stat_key);
+			update_frag_stats(frag_stats_map, FRAG_STAT_DENIED);
 			return FRAG_RESULT_DENIED;
 		}
 	}

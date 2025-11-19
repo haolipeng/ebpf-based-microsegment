@@ -213,57 +213,6 @@ static __always_inline int extract_flow_key(struct xdp_md *ctx, struct flow_key 
 	return extract_flow_key_from_packet(data, data_end, key);
 }
 
-// Helper: Check if TCP connection is closing (FIN or RST) - IPv4/IPv6 support
-// 检查 TCP 连接是否正在关闭 (FIN 或 RST 标志)
-static __always_inline bool is_tcp_closing_xdp(struct xdp_md *ctx, struct flow_key *key) {
-	void *data = (void *)(long)ctx->data;
-	void *data_end = (void *)(long)ctx->data_end;
-
-	// 仅处理 TCP 协议
-	if (key->protocol != IPPROTO_TCP)
-		return false;
-
-	// 解析以太网头
-	__u16 eth_proto;
-	struct ethhdr *eth = data;
-	if ((void *)(eth + 1) > data_end)
-		return false;
-	eth_proto = eth->h_proto;
-
-	void *tcph_ptr = NULL;
-
-	// 根据 IP 版本解析不同的 IP 头
-	if (eth_proto == bpf_htons(ETH_P_IP)) {
-		// IPv4
-		struct iphdr *iph = (void *)(eth + 1);
-		if ((void *)(iph + 1) > data_end)
-			return false;
-
-		// 计算 TCP 头位置
-		tcph_ptr = (void *)iph + (iph->ihl * 4);
-
-	} else if (eth_proto == bpf_htons(ETH_P_IPV6)) {
-		// IPv6
-		struct ipv6hdr *ip6h = (void *)(eth + 1);
-		if ((void *)(ip6h + 1) > data_end)
-			return false;
-
-		// TCP 头位置 (IPv6 固定 40 字节头部，不考虑扩展头)
-		tcph_ptr = (void *)(ip6h + 1);
-
-	} else {
-		return false;
-	}
-
-	// 验证 TCP 头边界
-	struct tcphdr *tcph = tcph_ptr;
-	if ((void *)(tcph + 1) > data_end)
-		return false;
-
-	// 检查 FIN 或 RST 标志
-	return (tcph->fin || tcph->rst);
-}
-
 // Helper: Update TCP state machine (XDP version) - IPv4/IPv6 support
 // 更新 TCP 状态机
 static __always_inline __u8 update_tcp_state_xdp(struct xdp_md *ctx, struct flow_key *key, __u8 current_state) {
@@ -584,19 +533,15 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 				// First fragment: has L4 headers, continue to policy matching
 				extract_ipv4_frag_key(iph, &fkey);
 				is_first_fragment = true;
-				update_frag_stats(&frag_stats_map, FRAG_STAT_FIRST_FRAGMENTS);
-				update_frag_stats(&frag_stats_map, FRAG_STAT_IPV4_FRAGMENTS);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
 			} else {  // IPV4_FRAG_TYPE_SUBSEQUENT
 				// Subsequent fragment: no L4 headers, look up cached policy
 				extract_ipv4_frag_key(iph, &fkey);
-				update_frag_stats(&frag_stats_map, FRAG_STAT_SUBSEQUENT_FRAGMENTS);
-				update_frag_stats(&frag_stats_map, FRAG_STAT_IPV4_FRAGMENTS);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
 
 				struct frag_value *fval = bpf_map_lookup_elem(&frag_state_map, &fkey);
 				if (fval) {
 					// Cache hit: use cached policy action
-					update_frag_stats(&frag_stats_map, FRAG_STAT_CACHE_HITS);
-
 					// Get fragment configuration to check mode
 					__u32 config_key = 0;
 					struct frag_config *config = bpf_map_lookup_elem(&frag_config_map, &config_key);
@@ -604,24 +549,23 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 
 					if (mode == FRAG_MODE_NORMAL) {
 						// NORMAL mode: deny subsequent fragments
-						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+						update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
 						update_stats(STATS_DENIED_PACKETS);
 						return XDP_DROP;
 					} else if (mode == FRAG_MODE_PERMISSIVE && fval->policy_action == POLICY_ACTION_ALLOW) {
 						// PERMISSIVE mode: allow if first fragment was allowed
-						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_ALLOWED);
+						update_frag_stats(&frag_stats_map, FRAG_STAT_ALLOWED);
 						update_stats(STATS_ALLOWED_PACKETS);
 						return XDP_PASS;
 					} else {
 						// Deny otherwise
-						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+						update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
 						update_stats(STATS_DENIED_PACKETS);
 						return XDP_DROP;
 					}
 				} else {
 					// Cache miss: first fragment not seen or timed out, deny for safety
-					update_frag_stats(&frag_stats_map, FRAG_STAT_CACHE_MISSES);
-					update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+					update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
 					update_stats(STATS_DENIED_PACKETS);
 					return XDP_DROP;
 				}
@@ -645,38 +589,35 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 				// First fragment: continue to policy matching
 				extract_ipv6_frag_key(ip6h, frag_hdr, &fkey);
 				is_first_fragment = true;
-				update_frag_stats(&frag_stats_map, FRAG_STAT_FIRST_FRAGMENTS);
-				update_frag_stats(&frag_stats_map, FRAG_STAT_IPV6_FRAGMENTS);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
 			} else if (is_ipv6_subsequent_fragment(frag_hdr)) {
 				// Subsequent fragment: look up cached policy
 				extract_ipv6_frag_key(ip6h, frag_hdr, &fkey);
-				update_frag_stats(&frag_stats_map, FRAG_STAT_SUBSEQUENT_FRAGMENTS);
-				update_frag_stats(&frag_stats_map, FRAG_STAT_IPV6_FRAGMENTS);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
 
 				struct frag_value *fval = bpf_map_lookup_elem(&frag_state_map, &fkey);
 				if (fval) {
-					update_frag_stats(&frag_stats_map, FRAG_STAT_CACHE_HITS);
-
+					// Cache hit: use cached policy action
 					__u32 config_key = 0;
 					struct frag_config *config = bpf_map_lookup_elem(&frag_config_map, &config_key);
 					__u8 mode = config ? config->mode : FRAG_MODE_NORMAL;
 
 					if (mode == FRAG_MODE_NORMAL) {
-						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+						update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
 						update_stats(STATS_DENIED_PACKETS);
 						return XDP_DROP;
 					} else if (mode == FRAG_MODE_PERMISSIVE && fval->policy_action == POLICY_ACTION_ALLOW) {
-						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_ALLOWED);
+						update_frag_stats(&frag_stats_map, FRAG_STAT_ALLOWED);
 						update_stats(STATS_ALLOWED_PACKETS);
 						return XDP_PASS;
 					} else {
-						update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+						update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
 						update_stats(STATS_DENIED_PACKETS);
 						return XDP_DROP;
 					}
 				} else {
-					update_frag_stats(&frag_stats_map, FRAG_STAT_CACHE_MISSES);
-					update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+					// Cache miss: first fragment not seen or timed out, deny for safety
+					update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
 					update_stats(STATS_DENIED_PACKETS);
 					return XDP_DROP;
 				}
@@ -779,9 +720,9 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 
 			// Update statistics
 			if (action == POLICY_ACTION_ALLOW) {
-				update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_ALLOWED);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_ALLOWED);
 			} else {
-				update_frag_stats(&frag_stats_map, FRAG_STAT_FRAGMENTS_DENIED);
+				update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
 			}
 		}
 	}

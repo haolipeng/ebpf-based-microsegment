@@ -90,15 +90,9 @@ struct frag_config {
  * Statistics keys (must match enum in Go code)
  */
 enum frag_stats_key {
-	FRAG_STAT_FIRST_FRAGMENTS = 0,   // First fragments processed
-	FRAG_STAT_SUBSEQUENT_FRAGMENTS,  // Subsequent fragments processed
-	FRAG_STAT_FRAGMENTS_ALLOWED,     // Fragments allowed through
-	FRAG_STAT_FRAGMENTS_DENIED,      // Fragments denied
-	FRAG_STAT_FRAGMENTS_TIMEOUT,     // Fragments timed out
-	FRAG_STAT_CACHE_HITS,            // Fragment cache hits
-	FRAG_STAT_CACHE_MISSES,          // Fragment cache misses
-	FRAG_STAT_IPV4_FRAGMENTS,        // IPv4 fragments detected
-	FRAG_STAT_IPV6_FRAGMENTS,        // IPv6 fragments detected
+	FRAG_STAT_TOTAL = 0,      // Total fragments detected (IPv4 + IPv6)
+	FRAG_STAT_ALLOWED,        // Fragments allowed through
+	FRAG_STAT_DENIED,         // Fragments denied
 	FRAG_STAT_MAX
 };
 
