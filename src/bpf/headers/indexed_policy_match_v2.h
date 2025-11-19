@@ -83,8 +83,8 @@ static __always_inline __u32 scan_protocol_segment(
     struct wildcard_policy *current_best = *best_match;
     __u16 current_priority = *best_priority;
 
-    // Bounded loop for eBPF verifier
-    #pragma unroll
+    // Bounded loop for eBPF verifier (max iterations: 16)
+    // Note: Loop is not unrolled to reduce instruction count and complexity
     for (__u32 i = 0; i < MAX_POLICIES_PER_PROTOCOL; i++) {
         if (i >= count) {
             break;

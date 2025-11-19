@@ -241,8 +241,6 @@ Breakdown:
 
 ### Compilation Status
 - ✅ bpf2go generation successful
-- ⚠️ 2 unused function warnings (legacy `is_tcp_closing*` functions)
-- Recommendation: Remove unused functions in cleanup task
 
 ## Future Enhancements
 
@@ -269,7 +267,6 @@ These were identified as out-of-scope but valuable future work:
    - Regression test suite
 
 5. **Code Cleanup** (LOW PRIORITY)
-   - Remove unused `is_tcp_closing()` functions
    - Consolidate duplicate packet parsing
    - Optimize verifier instruction count
 
