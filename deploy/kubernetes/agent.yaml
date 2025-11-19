@@ -1,0 +1,116 @@
+# Agent DaemonSet (runs on each node)
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: microsegment-agent
+  namespace: microsegment
+  labels:
+    app: microsegment-agent
+spec:
+  selector:
+    matchLabels:
+      app: microsegment-agent
+  template:
+    metadata:
+      labels:
+        app: microsegment-agent
+    spec:
+      serviceAccountName: microsegment-agent
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      initContainers:
+      # Wait for server to be ready
+      - name: wait-for-server
+        image: busybox:1.36
+        command: ['sh', '-c', 'until nc -z microsegment-server.microsegment.svc.cluster.local 8080; do echo waiting for server; sleep 2; done;']
+      containers:
+      - name: agent
+        image: microsegment-agent:latest
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+            - SYS_ADMIN
+            - NET_ADMIN
+            - BPF
+            - PERFMON
+            - SYS_RESOURCE
+        env:
+        - name: SERVER_URL
+          value: "http://microsegment-server.microsegment.svc.cluster.local:8080"
+        - name: GRPC_SERVER_URL
+          value: "microsegment-server.microsegment.svc.cluster.local:9090"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        # BPF filesystem
+        - name: bpf
+          mountPath: /sys/fs/bpf
+          mountPropagation: Bidirectional
+        # Kernel headers (if needed for eBPF compilation)
+        - name: lib-modules
+          mountPath: /lib/modules
+          readOnly: true
+        - name: usr-src
+          mountPath: /usr/src
+          readOnly: true
+        # System directories
+        - name: sys
+          mountPath: /sys
+          readOnly: true
+        - name: proc
+          mountPath: /proc
+          readOnly: true
+      volumes:
+      - name: bpf
+        hostPath:
+          path: /sys/fs/bpf
+          type: DirectoryOrCreate
+      - name: lib-modules
+        hostPath:
+          path: /lib/modules
+          type: Directory
+      - name: usr-src
+        hostPath:
+          path: /usr/src
+          type: DirectoryOrCreate
+      - name: sys
+        hostPath:
+          path: /sys
+          type: Directory
+      - name: proc
+        hostPath:
+          path: /proc
+          type: Directory
+      # Optional: use nodeSelector to run on specific nodes only
+      # nodeSelector:
+      #   kubernetes.io/os: linux
+      # Optional: tolerations to run on control plane nodes
+      # tolerations:
+      # - key: node-role.kubernetes.io/control-plane
+      #   operator: Exists
+      #   effect: NoSchedule
+      # - key: node-role.kubernetes.io/master
+      #   operator: Exists
+      #   effect: NoSchedule

@@ -1,0 +1,28 @@
+# ConfigMap for microsegment basic configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: microsegment-config
+  namespace: microsegment
+data:
+  # Server configuration
+  server.yaml: |
+    server:
+      http_port: 8080
+      grpc_port: 9090
+      log_level: info
+    database:
+      host: microsegment-postgres
+      port: 5432
+      name: microsegment
+      user: microsegment_user
+      password: secret
+      max_connections: 20
+
+  # Agent configuration
+  agent.yaml: |
+    agent:
+      server_url: http://microsegment-server:8080
+      grpc_server_url: microsegment-server:9090
+      log_level: info
+      report_interval: 30s

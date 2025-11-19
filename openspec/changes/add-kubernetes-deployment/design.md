@@ -1,127 +1,139 @@
-# 设计文档: Kubernetes 部署
+# 设计文档: Kubernetes 部署 (测试环境)
 
 ## 架构概览
 
-本文档描述 eBPF 微分段系统的 Kubernetes 部署架构,涵盖资源清单设计、RBAC 配置、存储管理和服务编排。
+本文档描述 eBPF 微分段系统在 Kubernetes 测试环境的基础部署架构。
 
 ## 系统组件
 
-### 1. 部署架构
+### 部署架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                  Kubernetes Cluster                          │
-│                                                               │
-│  Namespace: microsegment                                     │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  ConfigMap/Secret                                     │  │
-│  │  ┌─────────────────┐  ┌─────────────────┐            │  │
-│  │  │  microsegment-  │  │  microsegment-  │            │  │
-│  │  │     config      │  │     secret      │            │  │
-│  │  └─────────────────┘  └─────────────────┘            │  │
-│  └───────────────────────────────────────────────────────┘  │
-│                          ↓                                   │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  PostgreSQL StatefulSet                               │  │
-│  │  ┌─────────────────┐  ┌─────────────────┐            │  │
-│  │  │  postgres-0     │→ │  PVC: data-0    │            │  │
-│  │  └─────────────────┘  └─────────────────┘            │  │
-│  └───────────────────────────────────────────────────────┘  │
-│                          ↓                                   │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  Server Deployment (2 replicas)                       │  │
-│  │  ┌─────────────────┐  ┌─────────────────┐            │  │
-│  │  │  server-pod-1   │  │  server-pod-2   │            │  │
-│  │  └─────────────────┘  └─────────────────┘            │  │
-│  │  Service: microsegment-server (LoadBalancer)         │  │
-│  │  Ingress: microsegment-ingress (可选)                 │  │
-│  └───────────────────────────────────────────────────────┘  │
-│                          ↓                                   │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  Agent DaemonSet (每节点一个)                          │  │
-│  │  Node1        Node2        Node3                      │  │
-│  │  ┌──────┐    ┌──────┐    ┌──────┐                    │  │
-│  │  │agent │    │agent │    │agent │                    │  │
-│  │  │(priv)│    │(priv)│    │(priv)│                    │  │
-│  │  └──────┘    └──────┘    └──────┘                    │  │
-│  │  ServiceAccount: microsegment-agent                   │  │
-│  │  ClusterRole + ClusterRoleBinding                     │  │
-│  └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│              Kubernetes Cluster (测试环境)                │
+│                                                           │
+│  Namespace: microsegment                                 │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  ConfigMap: microsegment-config (基础配置)         │  │
+│  └───────────────────────────────────────────────────┘  │
+│                          ↓                               │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  PostgreSQL Deployment (1 replica)                │  │
+│  │  ┌─────────────────┐                              │  │
+│  │  │  postgres-pod   │                              │  │
+│  │  └─────────────────┘                              │  │
+│  │  Service: microsegment-postgres (ClusterIP)       │  │
+│  └───────────────────────────────────────────────────┘  │
+│                          ↓                               │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  Server Deployment (1 replica)                    │  │
+│  │  ┌─────────────────┐                              │  │
+│  │  │  server-pod     │                              │  │
+│  │  └─────────────────┘                              │  │
+│  │  Service: microsegment-server (ClusterIP)         │  │
+│  └───────────────────────────────────────────────────┘  │
+│                          ↓                               │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  Agent DaemonSet (每节点一个)                      │  │
+│  │  Node1        Node2        Node3                  │  │
+│  │  ┌──────┐    ┌──────┐    ┌──────┐                │  │
+│  │  │agent │    │agent │    │agent │                │  │
+│  │  └──────┘    └──────┘    └──────┘                │  │
+│  │  ServiceAccount + RBAC                            │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ## 关键设计决策
 
-### 1. Server 使用 Deployment (高可用)
+### 1. 简化配置用于测试
 
-**原因**: Server 是无状态服务,适合使用 Deployment 实现多副本
+**原因**: 测试环境优先考虑简单性和快速部署
 **配置**:
-- 2 个副本实现高可用
-- RollingUpdate 策略实现无中断更新
-- PodAntiAffinity 确保副本分散到不同节点
-- Liveness 和 Readiness probes 实现健康检查
+- 所有服务使用单副本 (PostgreSQL, Server)
+- 不配置持久化存储 (数据丢失可接受)
+- 使用 ClusterIP Service (集群内访问)
 
-### 2. Agent 使用 DaemonSet (每节点一个)
+### 2. Agent 使用 DaemonSet
 
 **原因**: Agent 需要在每个节点收集网络流量
 **配置**:
 - DaemonSet 确保每个节点运行一个 Agent
-- hostNetwork: true 访问主机网络
-- hostPID: true 访问主机进程
-- privileged: true 加载 eBPF 程序
+- hostNetwork: true - 访问主机网络
+- hostPID: true - 访问主机进程信息
+- privileged: true - 加载 eBPF 程序
 
-### 3. PostgreSQL 使用 StatefulSet
+### 3. 最小化 RBAC 权限
 
-**原因**: 数据库需要持久化存储和稳定的网络标识
 **配置**:
-- StatefulSet 提供稳定的 Pod 名称和存储
-- PVC 实现数据持久化
-- Headless Service 提供稳定的 DNS 名称
+- ServiceAccount: microsegment-agent
+- ClusterRole: 仅授予必要的 API 访问权限
+- ClusterRoleBinding: 绑定角色到 ServiceAccount
 
-### 4. 配置使用 ConfigMap 和 Secret
+### 4. 配置使用 ConfigMap
 
-**原因**: 分离配置和代码,方便管理
+**原因**: 简化配置管理
 **配置**:
-- ConfigMap 存储非敏感配置 (server.yaml, agent.yaml)
-- Secret 存储敏感信息 (数据库密码)
-- 挂载为文件或环境变量
+- ConfigMap 存储基础配置
+- 环境变量方式注入配置
 
-## 资源清单详细设计
+## 资源清单设计
 
-由于篇幅限制,完整的清单文件将在 deploy/kubernetes/ 目录中提供。关键配置点:
+### 文件结构
 
-1. **Namespace**: 资源隔离
-2. **RBAC**: Agent 需要访问 nodes 和 pods 信息
-3. **NetworkPolicy**: 网络隔离 (可选)
-4. **ResourceQuota**: 资源配额限制 (可选)
-5. **PodSecurityPolicy**: 安全策略 (可选,已废弃,使用 PodSecurity)
+```
+deploy/kubernetes/
+├── namespace.yaml          # Namespace 定义
+├── rbac.yaml              # RBAC 配置
+├── configmap.yaml         # ConfigMap 配置
+├── postgres.yaml          # PostgreSQL Deployment + Service
+├── server.yaml            # Server Deployment + Service
+└── agent.yaml             # Agent DaemonSet
+```
+
+### 关键配置项
+
+#### Agent DaemonSet
+- **特权容器**: privileged: true (加载 eBPF 程序)
+- **主机访问**: hostNetwork, hostPID
+- **卷挂载**: /sys/fs/bpf (BPF 文件系统)
+
+#### Server Deployment
+- **环境变量**: 数据库连接信息
+- **Service**: ClusterIP 类型,供 Agent 连接
+
+#### PostgreSQL Deployment
+- **环境变量**: 数据库初始化配置
+- **Service**: ClusterIP 类型,供 Server 连接
 
 ## 部署流程
 
 1. 创建 Namespace
-2. 应用 ConfigMap 和 Secret
-3. 部署 PostgreSQL StatefulSet
-4. 等待 PostgreSQL 就绪
-5. 部署 Server Deployment
-6. 创建 Server Service
-7. 等待 Server 就绪
-8. 创建 Agent RBAC
-9. 部署 Agent DaemonSet
-10. 创建 Ingress (可选)
+2. 应用 RBAC 配置
+3. 应用 ConfigMap
+4. 部署 PostgreSQL
+5. 部署 Server
+6. 部署 Agent
+7. 验证所有 Pod 运行正常
 
-## 监控和日志
+## 验证测试
 
-- Prometheus 集成: /metrics 端点
-- 日志: stdout/stderr → Kubernetes 日志系统
-- 健康检查: liveness 和 readiness probes
+1. **Pod 状态检查**: 所有 Pod 为 Running 状态
+2. **eBPF 加载检查**: Agent 成功加载 eBPF 程序
+3. **连接性检查**: Agent 可连接 Server
+4. **功能检查**: 基本的流量捕获功能正常
 
-## 安全考虑
+## 限制和注意事项
 
-1. **RBAC 最小权限**: Agent 仅授予必要权限
-2. **Secret 加密**: 使用 K8s Secret 存储敏感信息
-3. **Network Policy**: 限制 Pod 间网络访问
-4. **Pod Security**: 限制特权容器使用
+1. **无持久化**: 数据库数据不持久化,Pod 重启后丢失
+2. **无高可用**: 所有服务单副本,不适合生产环境
+3. **安全性**: Agent 使用特权容器,仅适用于测试环境
+4. **外部访问**: 无 Ingress,仅支持集群内访问
 
-## 总结
+## 未来扩展
 
-本设计提供生产级别的 Kubernetes 部署方案,支持高可用、自动扩展、滚动更新和自愈能力。
+测试环境验证通过后,可考虑:
+1. 生产级配置 (StatefulSet, 多副本)
+2. 持久化存储 (PVC)
+3. Ingress 配置
+4. 监控和日志集成

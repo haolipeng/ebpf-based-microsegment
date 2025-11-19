@@ -1,0 +1,37 @@
+# ServiceAccount for microsegment-agent
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: microsegment-agent
+  namespace: microsegment
+---
+# ClusterRole for microsegment-agent
+# Agent needs to access node and pod information
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: microsegment-agent
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch"]
+---
+# ClusterRoleBinding for microsegment-agent
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: microsegment-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: microsegment-agent
+subjects:
+- kind: ServiceAccount
+  name: microsegment-agent
+  namespace: microsegment

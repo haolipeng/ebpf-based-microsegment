@@ -1,0 +1,8 @@
+# Namespace for microsegment components
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: microsegment
+  labels:
+    name: microsegment
+    app: microsegment
