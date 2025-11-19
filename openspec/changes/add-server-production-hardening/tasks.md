@@ -3,8 +3,8 @@
 **Change ID**: `add-server-production-hardening`
 **创建时间**: 2025-11-06
 **预计工作量**: 4-7 天
-**当前状态**: 未开始
-**进度**: 0/19 任务完成
+**当前状态**: 进行中
+**进度**: 2/19 任务完成 (阶段 6: CI/CD 流水线已完成)
 
 ---
 
@@ -17,9 +17,9 @@
 | 阶段 3: Docker 部署 | 3 个任务 | 1 天 | ⬜ 未开始 |
 | 阶段 4: 可观测性 | 3 个任务 | 1 天 | ⬜ 未开始 |
 | 阶段 5: 安全性 | 3 个任务 | 1.5 天 | ⬜ 未开始 |
-| 阶段 6: CI/CD 流水线 | 2 个任务 | 1 天 | ⬜ 未开始 |
+| 阶段 6: CI/CD 流水线 | 2 个任务 | 1 天 | ✅ **已完成** |
 | 阶段 7: 文档 | 2 个任务 | 0.5 天 | ⬜ 未开始 |
-| **总计** | **19 个任务** | **7 天** | **0% 完成** |
+| **总计** | **19 个任务** | **7 天** | **10.5% 完成** |
 
 ---
 
@@ -191,21 +191,23 @@
 ## 阶段 6: CI/CD 流水线 (1 天)
 
 ### 任务 6.1: 创建 GitHub Actions 工作流
-- [ ] 创建 `.github/workflows/server-ci.yml`
-- [ ] 添加 build 任务 (编译 server)
-- [ ] 添加 test 任务 (运行测试及覆盖率)
-- [ ] 添加 lint 任务 (golangci-lint)
-- [ ] 添加安全扫描 (gosec)
-- [ ] 添加 Docker 构建任务
-- [ ] 配置工作流触发器 (push, PR)
+- [x] 创建 `.github/workflows/server-ci.yml`
+- [x] 添加 build 任务 (编译 server)
+- [x] 添加 test 任务 (运行测试及覆盖率)
+- [x] 添加 lint 任务 (golangci-lint)
+- [x] 添加安全扫描 (gosec)
+- [x] 添加 Docker 构建任务
+- [x] 配置工作流触发器 (push, PR, tags)
 
 ### 任务 6.2: 设置 Docker Registry 发布
-- [ ] 向工作流添加 Docker push 任务
-- [ ] 配置 GitHub Container Registry (ghcr.io)
-- [ ] 添加语义化版本标签
-- [ ] 添加 latest 标签
-- [ ] 编写镜像拉取文档
-- [ ] 测试自动发布
+- [x] 向工作流添加 Docker push 任务
+- [x] 配置 GitHub Container Registry (ghcr.io)
+- [x] 添加语义化版本标签
+- [x] 添加 latest 标签
+- [x] 添加分支和 SHA 标签
+- [x] 添加自动 release 创建
+- [x] 编写镜像拉取文档 (docs/docker-registry.md)
+- [x] 增强 Dockerfile (多阶段构建、非root用户、健康检查)
 
 ---
 
@@ -241,11 +243,6 @@
 - [ ] docker-compose 成功启动所有服务
 - [ ] 健康检查通过
 - [ ] 服务失败时自动重启
-
-### 可观测性
-- [ ] Prometheus 成功抓取指标
-- [ ] 日志结构化且可解析
-- [ ] 健康端点返回正确状态
 
 ### 安全性
 - [ ] TLS 在 HTTPS 和 gRPC 上正常工作

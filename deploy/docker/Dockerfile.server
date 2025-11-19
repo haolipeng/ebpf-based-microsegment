@@ -1,33 +1,86 @@
-# 阶段 1: 构建阶段
-FROM golang:1.24 AS builder
+# ============================================
+# Stage 1: Builder
+# ============================================
+FROM golang:1.23-alpine AS builder
 
-# 设置工作目录
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
+
+# Set working directory
 WORKDIR /build
 
-# 设置 Go 代理 (加速依赖下载)
+# Set Go proxy (speed up dependency download)
 ENV GOPROXY=https://goproxy.cn,direct
 
-# 复制所有源代码 (因为 go.mod 中有 replace 指令需要本地路径)
+# Copy go mod files first for better caching
+COPY src/server/go.mod src/server/go.sum ./src/server/
+WORKDIR /build/src/server
+RUN go mod download
+
+# Copy all source code
+WORKDIR /build
 COPY . .
 
-# 构建 Server 二进制文件
-RUN CGO_ENABLED=0 GOOS=linux go build -o microsegment-server ./src/server/cmd
+# Build arguments for versioning
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
 
-# 阶段 2: 运行时阶段
-FROM ubuntu:22.04
+# Build server binary with optimizations
+WORKDIR /build/src/server
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath \
+    -ldflags="-w -s \
+    -X main.Version=${VERSION} \
+    -X main.Commit=${COMMIT} \
+    -X main.BuildDate=${BUILD_DATE}" \
+    -o /build/microsegment-server \
+    ./cmd
 
-# 安装必要的运行时依赖
-RUN apt-get update && \
-    apt-get install -y ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+# ============================================
+# Stage 2: Runtime
+# ============================================
+FROM alpine:3.19
 
-# 从构建阶段复制二进制文件
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user
+RUN addgroup -g 1000 microsegment && \
+    adduser -D -u 1000 -G microsegment microsegment
+
+# Create necessary directories
+RUN mkdir -p /etc/microsegment /var/log/microsegment && \
+    chown -R microsegment:microsegment /etc/microsegment /var/log/microsegment
+
+# Copy binary from builder
 COPY --from=builder /build/microsegment-server /usr/local/bin/
 
-# 暴露端口
+# Copy default configuration (if exists)
+COPY --from=builder /build/src/server/config.yaml /etc/microsegment/config.yaml.example
+
+# Set ownership
+RUN chown microsegment:microsegment /usr/local/bin/microsegment-server
+
+# Switch to non-root user
+USER microsegment
+
+# Expose ports
 # 8080: HTTP API
 # 9090: gRPC API
 EXPOSE 8080 9090
 
-# 启动命令
-CMD ["/usr/local/bin/microsegment-server", "--config", "/etc/microsegment/docker-server.yaml"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Set working directory
+WORKDIR /home/microsegment
+
+# Startup command
+ENTRYPOINT ["/usr/local/bin/microsegment-server"]
+CMD ["--config", "/etc/microsegment/config.yaml"]
