@@ -13,6 +13,17 @@ PROTO_OUT := api/proto
 GO := go
 CLANG := clang
 
+# eBPF Feature Flags (can be overridden)
+# Set to 1 to enable, 0 to disable
+DEBUG_MODE ?= 0
+ENABLE_IP_FRAGMENT_HANDLING ?= 1
+ENABLE_NAT_SUPPORT ?= 1
+
+# Build eBPF CFLAGS with feature flags
+BPF_CFLAGS := -DDEBUG_MODE=$(DEBUG_MODE) \
+              -DENABLE_IP_FRAGMENT_HANDLING=$(ENABLE_IP_FRAGMENT_HANDLING) \
+              -DENABLE_NAT_SUPPORT=$(ENABLE_NAT_SUPPORT)
+
 # Colors for output
 GREEN := \033[0;32m
 YELLOW := \033[0;33m
@@ -58,7 +69,10 @@ clean-proto: ## Clean generated Protocol Buffers code
 
 bpf: ## Generate eBPF Go bindings using bpf2go
 	@echo "$(YELLOW)Generating eBPF Go bindings...$(NC)"
-	cd $(SRC_AGENT)/pkg/dataplane && $(GO) generate
+	@echo "  DEBUG_MODE=$(DEBUG_MODE)"
+	@echo "  ENABLE_IP_FRAGMENT_HANDLING=$(ENABLE_IP_FRAGMENT_HANDLING)"
+	@echo "  ENABLE_NAT_SUPPORT=$(ENABLE_NAT_SUPPORT)"
+	BPF_CFLAGS="$(BPF_CFLAGS)" cd $(SRC_AGENT)/pkg/dataplane && $(GO) generate
 	@echo "$(GREEN)✓ eBPF bindings generated$(NC)"
 
 agent: $(BIN_DIR) ## Build the microsegmentation agent
@@ -114,6 +128,43 @@ deps: ## Download Go dependencies
 run: agent ## Run the agent (requires sudo)
 	@echo "$(YELLOW)Starting agent...$(NC)"
 	sudo $(AGENT_BIN) --interface lo --log-level info
+
+# Predefined build configurations
+
+.PHONY: build-production build-debug build-minimal build-no-nat build-no-fragment show-config
+
+build-production: ## Build with production settings (all features enabled, no debug)
+	@echo "$(GREEN)Building PRODUCTION version...$(NC)"
+	$(MAKE) clean
+	$(MAKE) all DEBUG_MODE=0 ENABLE_IP_FRAGMENT_HANDLING=1 ENABLE_NAT_SUPPORT=1
+
+build-debug: ## Build with debug enabled (all features + debug logging)
+	@echo "$(GREEN)Building DEBUG version...$(NC)"
+	$(MAKE) clean
+	$(MAKE) all DEBUG_MODE=1 ENABLE_IP_FRAGMENT_HANDLING=1 ENABLE_NAT_SUPPORT=1
+
+build-minimal: ## Build minimal version (no fragment handling, no NAT, no debug)
+	@echo "$(GREEN)Building MINIMAL version...$(NC)"
+	$(MAKE) clean
+	$(MAKE) all DEBUG_MODE=0 ENABLE_IP_FRAGMENT_HANDLING=0 ENABLE_NAT_SUPPORT=0
+
+build-no-nat: ## Build without NAT support (fragment handling enabled)
+	@echo "$(GREEN)Building version WITHOUT NAT...$(NC)"
+	$(MAKE) clean
+	$(MAKE) all DEBUG_MODE=0 ENABLE_IP_FRAGMENT_HANDLING=1 ENABLE_NAT_SUPPORT=0
+
+build-no-fragment: ## Build without IP fragment handling (NAT enabled)
+	@echo "$(GREEN)Building version WITHOUT IP FRAGMENT HANDLING...$(NC)"
+	$(MAKE) clean
+	$(MAKE) all DEBUG_MODE=0 ENABLE_IP_FRAGMENT_HANDLING=0 ENABLE_NAT_SUPPORT=1
+
+show-config: ## Show current build configuration
+	@echo "$(GREEN)Current eBPF Build Configuration:$(NC)"
+	@echo "  DEBUG_MODE                  = $(DEBUG_MODE)"
+	@echo "  ENABLE_IP_FRAGMENT_HANDLING = $(ENABLE_IP_FRAGMENT_HANDLING)"
+	@echo "  ENABLE_NAT_SUPPORT          = $(ENABLE_NAT_SUPPORT)"
+	@echo ""
+	@echo "$(YELLOW)BPF_CFLAGS:$(NC) $(BPF_CFLAGS)"
 
 .DEFAULT_GOAL := help
 
