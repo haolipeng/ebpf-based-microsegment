@@ -17,6 +17,8 @@
 #ifndef __FRAGMENT_HANDLER_H__
 #define __FRAGMENT_HANDLER_H__
 
+#ifdef ENABLE_IP_FRAGMENT_HANDLING
+
 #include "fragment_tracking.h"
 #include "common_types.h"
 
@@ -26,6 +28,41 @@
 #define FRAG_RESULT_SUBSEQUENT_OK   2  // Subsequent fragment, allowed
 #define FRAG_RESULT_DENIED          3  // Fragment denied by policy or mode
 #define FRAG_RESULT_ERROR           4  // Processing error
+
+// Fragment state map
+// Tracks first fragment information for subsequent fragment policy matching
+// PINNED: TC 和 XDP 共享分片状态数据
+// Note: struct frag_key and frag_value are defined in fragment_tracking.h
+#define MAX_FRAG_ENTRIES 10000
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, MAX_FRAG_ENTRIES);
+    __type(key, struct frag_key);
+    __type(value, struct frag_value);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} frag_state_map SEC(".maps");
+
+// Fragment configuration map
+// Controls fragment handling mode and timeout settings
+// PINNED: TC 和 XDP 共享分片配置
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);  // Always 0 (single config entry)
+    __type(value, struct frag_config);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} frag_config_map SEC(".maps");
+
+// Fragment statistics map
+// Tracks fragment processing performance and behavior
+// PINNED: TC 和 XDP 共享分片统计数据
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, FRAG_STAT_MAX);
+    __type(key, __u32);  // enum frag_stats_key
+    __type(value, __u64);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
+} frag_stats_map SEC(".maps");
 
 /* update_frag_stats - Update fragment statistics
  *
@@ -311,5 +348,7 @@ static __always_inline int handle_ipv6_fragment(
 
 	return FRAG_RESULT_ERROR;
 }
+
+#endif /* ENABLE_IP_FRAGMENT_HANDLING */
 
 #endif /* __FRAGMENT_HANDLER_H__ */

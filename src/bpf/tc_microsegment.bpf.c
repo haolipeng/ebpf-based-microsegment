@@ -14,18 +14,28 @@
 #define ETH_P_IP 0x0800
 #define ETH_P_IPV6 0x86DD
 
-// Debug mode - disable for production to reduce latency
-#define DEBUG_MODE 0
+// Feature flags with default values (can be overridden via -D flags)
 
-// Feature flag: Enable IP fragment handling
+// Debug mode - disable for production to reduce latency
+#ifndef DEBUG_MODE
+#define DEBUG_MODE 0
+#endif
+
+// Enable IP fragment handling
 // Set to 1 to enable fragment detection and tracking (recommended for production)
 // Set to 0 to disable fragment handling (reduces complexity by ~2000 instructions)
-// When disabled, fragmented packets will be processed as normal packets (may fail policy matching)
 #ifndef ENABLE_IP_FRAGMENT_HANDLING
 #define ENABLE_IP_FRAGMENT_HANDLING 1
 #endif
 
-// Feature flag: Enable protocol-indexed wildcard lookup
+// Enable NAT (Network Address Translation) support
+// Set to 1 to enable NAT detection and address restoration (recommended for Docker/K8s)
+// Set to 0 to disable NAT support (reduces complexity by ~1500 instructions)
+#ifndef ENABLE_NAT_SUPPORT
+#define ENABLE_NAT_SUPPORT 1
+#endif
+
+// Enable protocol-indexed wildcard lookup
 // Set to 1 to use indexed lookup (better performance for 200+ policies)
 // Set to 0 to use legacy linear scan (simpler, works for < 50 policies)
 #ifndef USE_INDEXED_LOOKUP
@@ -34,8 +44,15 @@
 
 #include "headers/common_types.h"
 #include "headers/tcp_state_machine.h"
-#include "headers/nat_support.h"
+
+// Conditionally include headers based on feature flags
+#if ENABLE_IP_FRAGMENT_HANDLING
 #include "headers/fragment_tracking.h"
+#endif
+
+#if ENABLE_NAT_SUPPORT
+#include "headers/nat_support.h"
+#endif
 
 char LICENSE[] SEC("license") = "GPL";
 
@@ -106,76 +123,6 @@ struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 256 * 1024);  // 256KB ring buffer
 } flow_events SEC(".maps");
-
-// NAT conntrack cache map
-// Stores NAT connection tracking information for address restoration
-// PINNED: TC 和 XDP 共享 NAT 缓存数据
-struct {
-    __uint(type, BPF_MAP_TYPE_LRU_HASH);
-    __uint(max_entries, MAX_CONNTRACK_ENTRIES);
-    __type(key, struct conntrack_key);
-    __type(value, struct conntrack_entry);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
-} conntrack_cache_map SEC(".maps");
-
-// NAT configuration map
-// Controls NAT detection behavior and policy matching mode
-// PINNED: TC 和 XDP 共享 NAT 配置
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(max_entries, 1);
-    __type(key, __u32);  // Always 0 (single config entry)
-    __type(value, struct nat_config);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
-} nat_config_map SEC(".maps");
-
-// NAT statistics map
-// Tracks NAT detection performance and behavior
-// PINNED: TC 和 XDP 共享 NAT 统计数据
-struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-    __uint(max_entries, NAT_STATS_MAX);
-    __type(key, __u32);  // enum nat_stats_key
-    __type(value, struct nat_stats_value);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
-} nat_stats_map SEC(".maps");
-
-#if ENABLE_IP_FRAGMENT_HANDLING
-// Fragment state map
-// Tracks first fragment information for subsequent fragment policy matching
-// PINNED: TC 和 XDP 共享分片状态数据
-// Note: struct frag_key and frag_value are defined in fragment_tracking.h
-#define MAX_FRAG_ENTRIES 10000
-struct {
-    __uint(type, BPF_MAP_TYPE_LRU_HASH);
-    __uint(max_entries, MAX_FRAG_ENTRIES);
-    __type(key, struct frag_key);
-    __type(value, struct frag_value);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
-} frag_state_map SEC(".maps");
-
-// Fragment configuration map
-// Controls fragment handling mode and timeout settings
-// PINNED: TC 和 XDP 共享分片配置
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(max_entries, 1);
-    __type(key, __u32);  // Always 0 (single config entry)
-    __type(value, struct frag_config);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
-} frag_config_map SEC(".maps");
-
-// Fragment statistics map
-// Tracks fragment processing performance and behavior
-// PINNED: TC 和 XDP 共享分片统计数据
-struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-    __uint(max_entries, FRAG_STAT_MAX);
-    __type(key, __u32);  // enum frag_stats_key
-    __type(value, __u64);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
-} frag_stats_map SEC(".maps");
-#endif /* ENABLE_IP_FRAGMENT_HANDLING */
 
 // Helper: Update statistics counter (optimized - no error checking for speed)
 static __always_inline void update_stats(__u32 key) {

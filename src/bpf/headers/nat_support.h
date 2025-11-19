@@ -97,6 +97,48 @@ struct nat_stats_value {
 };
 
 //
+// eBPF Map Definitions (controlled by ENABLE_NAT_SUPPORT macro)
+//
+
+#ifdef ENABLE_NAT_SUPPORT
+
+// NAT conntrack cache map
+// Stores NAT connection tracking information for address restoration
+// PINNED: Shared between TC and XDP programs
+// Note: This map is only defined when ENABLE_NAT_SUPPORT=1
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, MAX_CONNTRACK_ENTRIES);
+    __type(key, struct conntrack_key);
+    __type(value, struct conntrack_entry);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // Pin to /sys/fs/bpf/
+} conntrack_cache_map SEC(".maps");
+
+// NAT configuration map
+// Controls NAT detection behavior and policy matching mode
+// PINNED: Shared between TC and XDP programs
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);  // Always 0 (single config entry)
+    __type(value, struct nat_config);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // Pin to /sys/fs/bpf/
+} nat_config_map SEC(".maps");
+
+// NAT statistics map
+// Tracks NAT detection performance and behavior
+// PINNED: Shared between TC and XDP programs
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, NAT_STATS_MAX);
+    __type(key, __u32);  // enum nat_stats_key
+    __type(value, struct nat_stats_value);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);  // Pin to /sys/fs/bpf/
+} nat_stats_map SEC(".maps");
+
+#endif /* ENABLE_NAT_SUPPORT */
+
+//
 // Helper function declarations
 //
 
