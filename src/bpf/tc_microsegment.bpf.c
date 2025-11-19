@@ -17,6 +17,14 @@
 // Debug mode - disable for production to reduce latency
 #define DEBUG_MODE 0
 
+// Feature flag: Enable IP fragment handling
+// Set to 1 to enable fragment detection and tracking (recommended for production)
+// Set to 0 to disable fragment handling (reduces complexity by ~2000 instructions)
+// When disabled, fragmented packets will be processed as normal packets (may fail policy matching)
+#ifndef ENABLE_IP_FRAGMENT_HANDLING
+#define ENABLE_IP_FRAGMENT_HANDLING 1
+#endif
+
 // Feature flag: Enable protocol-indexed wildcard lookup
 // Set to 1 to use indexed lookup (better performance for 200+ policies)
 // Set to 0 to use legacy linear scan (simpler, works for < 50 policies)
@@ -132,6 +140,7 @@ struct {
     __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
 } nat_stats_map SEC(".maps");
 
+#if ENABLE_IP_FRAGMENT_HANDLING
 // Fragment state map
 // Tracks first fragment information for subsequent fragment policy matching
 // PINNED: TC 和 XDP 共享分片状态数据
@@ -166,6 +175,7 @@ struct {
     __type(value, __u64);
     __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
 } frag_stats_map SEC(".maps");
+#endif /* ENABLE_IP_FRAGMENT_HANDLING */
 
 // Helper: Update statistics counter (optimized - no error checking for speed)
 static __always_inline void update_stats(__u32 key) {
@@ -447,6 +457,159 @@ static __always_inline int create_session(struct __sk_buff *skb, struct flow_key
     return ret;
 }
 
+#if ENABLE_IP_FRAGMENT_HANDLING
+/* process_ip_fragment - Unified IPv4/IPv6 fragment processing
+ *
+ * Extracts fragment detection logic into a dedicated function to keep
+ * the main processing flow clean and readable.
+ *
+ * @skb: Socket buffer context
+ * @key: Flow key (may be incomplete for fragments)
+ * @action: Output - policy action determined after lookup (for first fragments)
+ * @is_first_fragment: Output - set to true if this is a first fragment
+ *
+ * Returns:
+ *   TC_ACT_OK   - Allow packet (non-fragment or allowed first fragment)
+ *   TC_ACT_SHOT - Drop packet (denied fragment or subsequent fragment)
+ *   -1          - Not a fragment, continue normal processing
+ *
+ * Fragment Processing Logic:
+ * 1. Detect if packet is fragmented (IPv4 or IPv6)
+ * 2. For non-fragments: return -1 (caller handles normal flow)
+ * 3. For first fragments: set is_first_fragment flag, return -1 (caller does policy lookup and caching)
+ * 4. For subsequent fragments: look up cached policy and enforce immediately
+ */
+static __noinline int process_ip_fragment(
+    struct __sk_buff *skb,
+    struct flow_key *key,
+    __u8 *action,
+    bool *is_first_fragment)
+{
+    void *data = (void *)(long)skb->data;
+    void *data_end = (void *)(long)skb->data_end;
+
+    // Parse Ethernet header
+    struct ethhdr *eth = data;
+    if ((void *)(eth + 1) > data_end) {
+        return TC_ACT_OK;  // Invalid packet
+    }
+    __u16 eth_proto = eth->h_proto;
+
+    // IPv4 Fragment Detection and Handling
+    if (eth_proto == bpf_htons(ETH_P_IP)) {
+        struct iphdr *iph = (struct iphdr *)(eth + 1);
+        if ((void *)(iph + 1) > data_end) {
+            return TC_ACT_OK;  // Invalid packet
+        }
+
+        // Check if packet is fragmented (single optimized call)
+        enum ipv4_frag_type frag_type = get_ipv4_frag_type(iph);
+
+        if (frag_type != IPV4_FRAG_TYPE_NONE) {
+            if (frag_type == IPV4_FRAG_TYPE_FIRST) {
+                // First fragment: has L4 headers, continue to policy matching
+                // Set flag so caller can cache policy decision
+                *is_first_fragment = true;
+                update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
+                return -1;  // Continue normal processing
+            } else {  // IPV4_FRAG_TYPE_SUBSEQUENT
+                // Subsequent fragment: no L4 headers, look up cached policy
+                struct frag_key fkey = {0};
+                extract_ipv4_frag_key(iph, &fkey);
+                update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
+
+                struct frag_value *fval = bpf_map_lookup_elem(&frag_state_map, &fkey);
+                if (fval) {
+                    // Cache hit: use cached policy action
+                    __u32 config_key = 0;
+                    struct frag_config *config = bpf_map_lookup_elem(&frag_config_map, &config_key);
+                    __u8 mode = config ? config->mode : FRAG_MODE_NORMAL;
+
+                    if (mode == FRAG_MODE_NORMAL) {
+                        // NORMAL mode: deny subsequent fragments
+                        update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
+                        update_stats(STATS_DENIED_PACKETS);
+                        return TC_ACT_SHOT;
+                    } else if (mode == FRAG_MODE_PERMISSIVE && fval->policy_action == POLICY_ACTION_ALLOW) {
+                        // PERMISSIVE mode: allow if first fragment was allowed
+                        update_frag_stats(&frag_stats_map, FRAG_STAT_ALLOWED);
+                        update_stats(STATS_ALLOWED_PACKETS);
+                        return TC_ACT_OK;
+                    } else {
+                        // Deny otherwise
+                        update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
+                        update_stats(STATS_DENIED_PACKETS);
+                        return TC_ACT_SHOT;
+                    }
+                } else {
+                    // Cache miss: first fragment not seen or timed out, deny for safety
+                    update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
+                    update_stats(STATS_DENIED_PACKETS);
+                    return TC_ACT_SHOT;
+                }
+            }
+        }
+    }
+    // IPv6 Fragment Detection and Handling
+    else if (eth_proto == bpf_htons(ETH_P_IPV6)) {
+        struct ipv6hdr *ip6h = (struct ipv6hdr *)(eth + 1);
+        if ((void *)(ip6h + 1) > data_end) {
+            return TC_ACT_OK;  // Invalid packet
+        }
+
+        // Check if packet has fragment extension header
+        if (is_ipv6_fragment(ip6h->nexthdr)) {
+            struct ipv6_frag_hdr *frag_hdr = (struct ipv6_frag_hdr *)(ip6h + 1);
+            if ((void *)(frag_hdr + 1) > data_end) {
+                return TC_ACT_OK;  // Invalid packet
+            }
+
+            if (is_ipv6_first_fragment(frag_hdr)) {
+                // First fragment: continue to policy matching
+                *is_first_fragment = true;
+                update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
+                return -1;  // Continue normal processing
+            } else if (is_ipv6_subsequent_fragment(frag_hdr)) {
+                // Subsequent fragment: look up cached policy
+                struct frag_key fkey = {0};
+                extract_ipv6_frag_key(ip6h, frag_hdr, &fkey);
+                update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
+
+                struct frag_value *fval = bpf_map_lookup_elem(&frag_state_map, &fkey);
+                if (fval) {
+                    // Cache hit: use cached policy action
+                    __u32 config_key = 0;
+                    struct frag_config *config = bpf_map_lookup_elem(&frag_config_map, &config_key);
+                    __u8 mode = config ? config->mode : FRAG_MODE_NORMAL;
+
+                    if (mode == FRAG_MODE_NORMAL) {
+                        update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
+                        update_stats(STATS_DENIED_PACKETS);
+                        return TC_ACT_SHOT;
+                    } else if (mode == FRAG_MODE_PERMISSIVE && fval->policy_action == POLICY_ACTION_ALLOW) {
+                        update_frag_stats(&frag_stats_map, FRAG_STAT_ALLOWED);
+                        update_stats(STATS_ALLOWED_PACKETS);
+                        return TC_ACT_OK;
+                    } else {
+                        update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
+                        update_stats(STATS_DENIED_PACKETS);
+                        return TC_ACT_SHOT;
+                    }
+                } else {
+                    // Cache miss: first fragment not seen or timed out, deny for safety
+                    update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
+                    update_stats(STATS_DENIED_PACKETS);
+                    return TC_ACT_SHOT;
+                }
+            }
+        }
+    }
+
+    // Not a fragment
+    return -1;
+}
+#endif /* ENABLE_IP_FRAGMENT_HANDLING */
+
 // Main TC program (optimized for minimal latency)
 SEC("tc")
 int tc_microsegment_filter(struct __sk_buff *skb) {
@@ -555,128 +718,21 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
     __u64 now = get_timestamp_ns();
     __u32 matched_rule_id = 0;
 
+#if ENABLE_IP_FRAGMENT_HANDLING
     // Fragment Detection: Handle fragmented packets (IPv4/IPv6)
-    // For subsequent fragments: apply cached policy (no L4 headers available)
-    // For first fragments: continue to policy matching (has L4 headers)
-    void *data = (void *)(long)skb->data;
-    void *data_end = (void *)(long)skb->data_end;
+    // - Non-fragments: continue to policy matching
+    // - First fragments: continue to policy matching, cache result after
+    // - Subsequent fragments: use cached policy (handled in process_ip_fragment)
     bool is_first_fragment = false;
-    struct frag_key fkey = {0};  // Fragment key for caching (first fragments only)
+    __u8 frag_action = POLICY_ACTION_DENY;  // Temporary for fragment processing
 
-    // Parse Ethernet and check IP version for fragment detection
-    struct ethhdr *eth = data;
-    if ((void *)(eth + 1) > data_end) {
-        return TC_ACT_OK;  // Invalid packet
+    int frag_result = process_ip_fragment(skb, &key, &frag_action, &is_first_fragment);
+    if (frag_result != -1) {
+        // Fragment was handled (subsequent fragment or error), return immediately
+        return frag_result;
     }
-    __u16 eth_proto = eth->h_proto;
-
-    if (eth_proto == bpf_htons(ETH_P_IP)) {
-        // IPv4 fragment detection
-        struct iphdr *iph = (struct iphdr *)(eth + 1);
-        if ((void *)(iph + 1) > data_end) {
-            return TC_ACT_OK;  // Invalid packet
-        }
-
-        // Check if packet is fragmented (optimized: single bpf_ntohs call)
-        enum ipv4_frag_type frag_type = get_ipv4_frag_type(iph);
-
-        if (frag_type != IPV4_FRAG_TYPE_NONE) {
-            if (frag_type == IPV4_FRAG_TYPE_FIRST) {
-                // First fragment: has L4 headers, continue to policy matching
-                // Extract fragment key for caching after policy match
-                extract_ipv4_frag_key(iph, &fkey);
-                is_first_fragment = true;
-                update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
-            } else {  // IPV4_FRAG_TYPE_SUBSEQUENT
-                // Subsequent fragment: no L4 headers, look up cached policy
-                extract_ipv4_frag_key(iph, &fkey);
-                update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
-
-                struct frag_value *fval = bpf_map_lookup_elem(&frag_state_map, &fkey);
-                if (fval) {
-                    // Cache hit: use cached policy action
-                    // Get fragment configuration to check mode
-                    __u32 config_key = 0;
-                    struct frag_config *config = bpf_map_lookup_elem(&frag_config_map, &config_key);
-                    __u8 mode = config ? config->mode : FRAG_MODE_NORMAL;
-
-                    if (mode == FRAG_MODE_NORMAL) {
-                        // NORMAL mode: deny subsequent fragments
-                        update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
-                        update_stats(STATS_DENIED_PACKETS);
-                        return TC_ACT_SHOT;
-                    } else if (mode == FRAG_MODE_PERMISSIVE && fval->policy_action == POLICY_ACTION_ALLOW) {
-                        // PERMISSIVE mode: allow if first fragment was allowed
-                        update_frag_stats(&frag_stats_map, FRAG_STAT_ALLOWED);
-                        update_stats(STATS_ALLOWED_PACKETS);
-                        return TC_ACT_OK;
-                    } else {
-                        // Deny otherwise
-                        update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
-                        update_stats(STATS_DENIED_PACKETS);
-                        return TC_ACT_SHOT;
-                    }
-                } else {
-                    // Cache miss: first fragment not seen or timed out, deny for safety
-                    update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
-                    update_stats(STATS_DENIED_PACKETS);
-                    return TC_ACT_SHOT;
-                }
-            }
-        }
-    } else if (eth_proto == bpf_htons(ETH_P_IPV6)) {
-        // IPv6 fragment detection (similar logic to IPv4)
-        struct ipv6hdr *ip6h = (struct ipv6hdr *)(eth + 1);
-        if ((void *)(ip6h + 1) > data_end) {
-            return TC_ACT_OK;  // Invalid packet
-        }
-
-        // Check if packet has fragment extension header
-        if (is_ipv6_fragment(ip6h->nexthdr)) {
-            struct ipv6_frag_hdr *frag_hdr = (struct ipv6_frag_hdr *)(ip6h + 1);
-            if ((void *)(frag_hdr + 1) > data_end) {
-                return TC_ACT_OK;  // Invalid packet
-            }
-
-            if (is_ipv6_first_fragment(frag_hdr)) {
-                // First fragment: continue to policy matching
-                extract_ipv6_frag_key(ip6h, frag_hdr, &fkey);
-                is_first_fragment = true;
-                update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
-            } else if (is_ipv6_subsequent_fragment(frag_hdr)) {
-                // Subsequent fragment: look up cached policy
-                extract_ipv6_frag_key(ip6h, frag_hdr, &fkey);
-                update_frag_stats(&frag_stats_map, FRAG_STAT_TOTAL);
-
-                struct frag_value *fval = bpf_map_lookup_elem(&frag_state_map, &fkey);
-                if (fval) {
-                    // Cache hit: use cached policy action
-                    __u32 config_key = 0;
-                    struct frag_config *config = bpf_map_lookup_elem(&frag_config_map, &config_key);
-                    __u8 mode = config ? config->mode : FRAG_MODE_NORMAL;
-
-                    if (mode == FRAG_MODE_NORMAL) {
-                        update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
-                        update_stats(STATS_DENIED_PACKETS);
-                        return TC_ACT_SHOT;
-                    } else if (mode == FRAG_MODE_PERMISSIVE && fval->policy_action == POLICY_ACTION_ALLOW) {
-                        update_frag_stats(&frag_stats_map, FRAG_STAT_ALLOWED);
-                        update_stats(STATS_ALLOWED_PACKETS);
-                        return TC_ACT_OK;
-                    } else {
-                        update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
-                        update_stats(STATS_DENIED_PACKETS);
-                        return TC_ACT_SHOT;
-                    }
-                } else {
-                    // Cache miss: first fragment not seen or timed out, deny for safety
-                    update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
-                    update_stats(STATS_DENIED_PACKETS);
-                    return TC_ACT_SHOT;
-                }
-            }
-        }
-    }
+    // If frag_result == -1: not a fragment or first fragment, continue to policy matching
+#endif /* ENABLE_IP_FRAGMENT_HANDLING */
 
     // NAT Detection: Restore original addresses for policy matching
     // This enables correct policy matching in Docker/Kubernetes environments
@@ -729,21 +785,51 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
     // Create new session with policy action (includes first packet stats)
     create_session(skb, &key, action, now, skb->len, matched_rule_id, direction);
 
-    // Cache fragment state for first fragments
+#if ENABLE_IP_FRAGMENT_HANDLING
+    // Cache fragment state for first fragments (after policy lookup)
     if (is_first_fragment) {
-        struct frag_value fval = {0};
-        __builtin_memcpy(&fval.complete_key, &key, sizeof(struct flow_key));
-        fval.policy_action = action;
-        fval.timestamp = now;
-        bpf_map_update_elem(&frag_state_map, &fkey, &fval, BPF_ANY);
+        void *data = (void *)(long)skb->data;
+        void *data_end = (void *)(long)skb->data_end;
+        struct ethhdr *eth = data;
+        if ((void *)(eth + 1) <= data_end) {
+            __u16 eth_proto = eth->h_proto;
+            struct frag_key fkey = {0};
+            bool cache_success = false;
 
-        // Update statistics
-        if (action == POLICY_ACTION_ALLOW) {
-            update_frag_stats(&frag_stats_map, FRAG_STAT_ALLOWED);
-        } else {
-            update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
+            // Extract fragment key based on IP version
+            if (eth_proto == bpf_htons(ETH_P_IP)) {
+                struct iphdr *iph = (struct iphdr *)(eth + 1);
+                if ((void *)(iph + 1) <= data_end) {
+                    extract_ipv4_frag_key(iph, &fkey);
+                    cache_success = true;
+                }
+            } else if (eth_proto == bpf_htons(ETH_P_IPV6)) {
+                struct ipv6hdr *ip6h = (struct ipv6hdr *)(eth + 1);
+                struct ipv6_frag_hdr *frag_hdr = (struct ipv6_frag_hdr *)(ip6h + 1);
+                if ((void *)(frag_hdr + 1) <= data_end) {
+                    extract_ipv6_frag_key(ip6h, frag_hdr, &fkey);
+                    cache_success = true;
+                }
+            }
+
+            // Cache policy decision for subsequent fragments
+            if (cache_success) {
+                struct frag_value fval = {0};
+                __builtin_memcpy(&fval.complete_key, &key, sizeof(struct flow_key));
+                fval.policy_action = action;
+                fval.timestamp = now;
+                bpf_map_update_elem(&frag_state_map, &fkey, &fval, BPF_ANY);
+
+                // Update statistics
+                if (action == POLICY_ACTION_ALLOW) {
+                    update_frag_stats(&frag_stats_map, FRAG_STAT_ALLOWED);
+                } else {
+                    update_frag_stats(&frag_stats_map, FRAG_STAT_DENIED);
+                }
+            }
         }
     }
+#endif /* ENABLE_IP_FRAGMENT_HANDLING */
 
     // Enforce policy
     if (action == POLICY_ACTION_DENY) {
