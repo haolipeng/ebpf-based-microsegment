@@ -1,8 +1,9 @@
 ---
 name: process-level-policy
-status: backlog
+status: in_progress
 created: 2025-11-19T11:43:06Z
-progress: 0%
+updated: 2025-11-20T00:00:00Z
+progress: 10%
 prd: .claude/prds/process-level-policy.md
 github: https://github.com/haolipeng/ebpf-based-microsegment/issues/45
 ---
@@ -518,7 +519,7 @@ GET /api/v1/security/suspicious-processes - 获取可疑进程列表
 
 ## Tasks Created
 
-- [ ] #46 - eBPF Tracepoint 和进程监控 (parallel: true)
+- [x] #46 - eBPF Tracepoint 和进程监控 (parallel: true) ✅ **已完成 (68h/80h)**
 - [ ] #47 - TC/XDP 程序进程策略匹配 (parallel: false, depends: [46])
 - [ ] #48 - ProcessMonitor 组件实现 (parallel: false, depends: [46])
 - [ ] #49 - FlowCollector 和 PolicyManager 扩展 (parallel: false, depends: [48])
