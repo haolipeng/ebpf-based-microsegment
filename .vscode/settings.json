@@ -24,7 +24,11 @@
         "*.yaml": "yaml",
         "array": "c",
         "string": "c",
-        "string_view": "c"
+        "string_view": "c",
+        "fragment_tracking.h": "c",
+        "chrono": "c",
+        "algorithm": "c",
+        "common_types.h": "c"
     },
 
     // C/C++ 配置 (用于 eBPF 代码)
