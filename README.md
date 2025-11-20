@@ -363,5 +363,14 @@ sudo ./tests/test_process_monitor.sh
   - Database storage layer: AlertStorage with QueryAlerts, GetAlertByID, CreateAlert, GetAlertStats
   - Type-safe IP address conversion (uint32 ↔ string) and proper NULL handling
   - Request validation, error handling, and comprehensive logging
-- **Future**: gRPC Alert Service, Advanced validation, Unit tests, API documentation (Swagger/OpenAPI)
+- **Issue #53**: Dashboard Process Visibility ✅ **COMPLETED**
+  - Flow table extended with Process and Container columns
+  - Process filtering by name, path, and container ID
+  - Process statistics visualization with Recharts (Top processes by bandwidth, Connection distribution)
+  - ProcessStats component with sortable tables and interactive charts
+  - useProcessFilter hook for client-side filtering and aggregation
+  - Expandable row details showing full process information (executable path, cmdline, UID/GID, PPID)
+  - Security indicators for suspicious processes (⚠️ red tags)
+  - Graceful handling of missing process data (kernel processes)
+- **Future**: Security Alert Panel (Issue #54), Integration Testing (Issue #55), gRPC Alert Service
 
