@@ -292,6 +292,27 @@ func (dp *DataPlane) GetFlowRingBuffer() *ringbuf.Reader {
 	return dp.rbReader
 }
 
+// GetProcessRingBuffer returns process events ring buffer map
+// This allows external components (like ProcessMonitor) to create ring buffer reader (Issue #48)
+func (dp *DataPlane) GetProcessRingBuffer() *ebpf.Map {
+	maps, err := dp.manager.GetMaps()
+	if err != nil {
+		log.Debugf("Failed to get maps: %v", err)
+		return nil
+	}
+	return maps.ProcessEventsRB
+}
+
+// GetProcessInfoMap returns process info map for cache queries (Issue #46)
+func (dp *DataPlane) GetProcessInfoMap() *ebpf.Map {
+	maps, err := dp.manager.GetMaps()
+	if err != nil {
+		log.Debugf("Failed to get maps: %v", err)
+		return nil
+	}
+	return maps.ProcessInfoMap
+}
+
 // GetSessionMap 返回会话 map 供外部访问
 func (dp *DataPlane) GetSessionMap() *ebpf.Map {
 	maps, err := dp.manager.GetMaps()

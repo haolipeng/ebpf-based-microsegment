@@ -19,6 +19,8 @@ type DataPlaneMaps struct {
 	ProtocolOffsetMap  *ebpf.Map      // 协议偏移表（用于索引查找）
 	StatsMap           *ebpf.Map      // 统计表
 	FlowEventsRB       *ebpf.Map      // 流事件 Ring Buffer
+	ProcessEventsRB    *ebpf.Map      // 进程事件 Ring Buffer (Issue #48)
+	ProcessInfoMap     *ebpf.Map      // 进程信息缓存表 (Issue #46)
 	ConntrackCacheMap  *ebpf.Map      // Conntrack缓存表（NAT支持）
 	NATConfigMap       *ebpf.Map      // NAT配置表
 	NATStatsMap        *ebpf.Map      // NAT统计表

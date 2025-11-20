@@ -346,6 +346,8 @@ func (l *TCLoader) GetMaps() (*DataPlaneMaps, error) {
 		ProtocolOffsetMap:  l.objs.ProtocolOffsetMap,
 		StatsMap:           l.objs.StatsMap,
 		FlowEventsRB:       l.objs.FlowEvents,
+		ProcessEventsRB:    l.objs.ProcessEvents,   // Issue #48
+		ProcessInfoMap:     l.objs.ProcessInfoMap,   // Issue #46
 		ConntrackCacheMap:  l.objs.ConntrackCacheMap,
 		NATConfigMap:       l.objs.NatConfigMap,
 		NATStatsMap:        l.objs.NatStatsMap,

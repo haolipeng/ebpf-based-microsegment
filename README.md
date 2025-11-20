@@ -329,6 +329,10 @@ sudo ./tests/test_process_monitor.sh
   - Wildcard policies now support `process_name` field
   - Process-aware policy matching with priority (process policies > network policies)
   - Flow events enriched with process information (PID, comm, container ID)
-- **Issue #48**: ProcessMonitor daemon will consume ring buffer events (Next)
+- **Issue #48**: ProcessMonitor daemon consumes ring buffer events ✅ **COMPLETED**
+  - LRU+TTL cache (20000 entries, 5min TTL)
+  - Process path resolution via /proc/<pid>/exe
+  - GetProcessInfo(pid) API for FlowCollector
+  - Background cleanup of expired cache entries
 - **Future**: Process path validation and container-level policy enforcement
 

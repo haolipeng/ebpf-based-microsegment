@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cilium/ebpf/ringbuf"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/api"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/client"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/config"
@@ -17,6 +18,7 @@ import (
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/fragment"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/process"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/reporter"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -84,6 +86,16 @@ func runAgent(cmd *cobra.Command, args []string) {
 	} else if fragCleaner != nil {
 		defer fragCleaner.Stop()
 		log.Info("✓ Fragment support initialized (fragment cleaner started)")
+	}
+
+	// Initialize process monitor (Issue #48)
+	var processMonitor *process.ProcessMonitor
+	processMonitor, err = initProcessMonitor(dp)
+	if err != nil {
+		log.Warnf("Process monitor initialization failed: %v (continuing without process monitoring)", err)
+	} else if processMonitor != nil {
+		defer processMonitor.Stop()
+		log.Info("✓ Process monitor initialized (process event tracking started)")
 	}
 
 	// Create policy manager
@@ -529,6 +541,43 @@ func initFragmentSupport(dp *dataplane.DataPlane) (*fragment.FragmentCleaner, er
 	}()
 
 	return cleaner, nil
+}
+
+// initProcessMonitor initializes process monitoring (Issue #48)
+func initProcessMonitor(dp *dataplane.DataPlane) (*process.ProcessMonitor, error) {
+	log.Info("Initializing process monitor...")
+
+	// Get process events ring buffer map from dataplane
+	processEventsMap := dp.GetProcessRingBuffer()
+	if processEventsMap == nil {
+		return nil, fmt.Errorf("process events ring buffer not available")
+	}
+
+	// Create ring buffer reader for process events
+	ringBuf, err := ringbuf.NewReader(processEventsMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create process events ring buffer reader: %w", err)
+	}
+
+	// Create process monitor with default configuration
+	monitorConfig := process.DefaultMonitorConfig()
+	monitor := process.NewProcessMonitor(ringBuf, monitorConfig)
+
+	// Start process monitor
+	if err := monitor.Start(); err != nil {
+		ringBuf.Close()
+		return nil, fmt.Errorf("failed to start process monitor: %w", err)
+	}
+
+	// Log initial statistics after a short delay
+	go func() {
+		time.Sleep(2 * time.Second)
+		metrics := monitor.GetMetrics()
+		log.Infof("Process monitor statistics: events_processed=%d, events_dropped=%d, cache_size=%d",
+			metrics.EventsProcessed, metrics.EventsDropped, metrics.CacheStats.Size)
+	}()
+
+	return monitor, nil
 }
 
 func main() {
