@@ -127,6 +127,7 @@ struct policy_value {
 // Wildcard policy for matching with wildcards (0 = match any)
 // Used in array map for linear searching (IPv4/IPv6 + VLAN support)
 // All IP addresses are stored in 128-bit format
+// Extended with process-level policy support (Issue #47)
 struct wildcard_policy {
     __u32 src_ip[4];          // Source IP address (128 bits)
     __u32 src_ip_mask[4];     // Mask for source IP (all 1s = exact, all 0s = any)
@@ -143,6 +144,10 @@ struct wildcard_policy {
     __u16 priority;           // Policy priority (higher = more important)
     __u16 vlan_id;            // VLAN ID (0 = match any VLAN)
     __u32 rule_id;            // Rule ID (0 = empty slot)
+
+    // Process-level policy fields (Issue #47)
+    char process_name[16];    // Process command name (empty string = match any process)
+                              // Note: process_path matching is deferred to userspace (Task #48)
 } __attribute__((packed));
 
 // Protocol segment descriptor for indexed wildcard policy lookup

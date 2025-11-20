@@ -110,6 +110,13 @@ type bpfPolicyValue struct {
 	HitCount   uint64
 }
 
+type bpfProcessCacheEntry struct {
+	_           structs.HostLayout
+	Comm        [16]int8
+	ExecTime    uint64
+	ContainerId [64]int8
+}
+
 type bpfProtocolSegment struct {
 	_           structs.HostLayout
 	StartIdx    uint32
@@ -139,22 +146,23 @@ type bpfSessionValue struct {
 }
 
 type bpfWildcardPolicy struct {
-	_          structs.HostLayout
-	SrcIp      [4]uint32
-	SrcIpMask  [4]uint32
-	DstIp      [4]uint32
-	DstIpMask  [4]uint32
-	SrcPort    uint16
-	DstPort    uint16
-	Protocol   uint8
-	Action     uint8
-	LogEnabled uint8
-	Direction  uint8
-	IpVersion  uint8
-	Pad        [3]uint8
-	Priority   uint16
-	VlanId     uint16
-	RuleId     uint32
+	_           structs.HostLayout
+	SrcIp       [4]uint32
+	SrcIpMask   [4]uint32
+	DstIp       [4]uint32
+	DstIpMask   [4]uint32
+	SrcPort     uint16
+	DstPort     uint16
+	Protocol    uint8
+	Action      uint8
+	LogEnabled  uint8
+	Direction   uint8
+	IpVersion   uint8
+	Pad         [3]uint8
+	Priority    uint16
+	VlanId      uint16
+	RuleId      uint32
+	ProcessName [16]int8
 }
 
 // loadBpf returns the embedded CollectionSpec for bpf.
@@ -214,6 +222,8 @@ type bpfMapSpecs struct {
 	NatConfigMap      *ebpf.MapSpec `ebpf:"nat_config_map"`
 	NatStatsMap       *ebpf.MapSpec `ebpf:"nat_stats_map"`
 	PolicyMap         *ebpf.MapSpec `ebpf:"policy_map"`
+	ProcessEvents     *ebpf.MapSpec `ebpf:"process_events"`
+	ProcessInfoMap    *ebpf.MapSpec `ebpf:"process_info_map"`
 	ProtocolOffsetMap *ebpf.MapSpec `ebpf:"protocol_offset_map"`
 	SessionMap        *ebpf.MapSpec `ebpf:"session_map"`
 	StatsMap          *ebpf.MapSpec `ebpf:"stats_map"`
@@ -255,6 +265,8 @@ type bpfMaps struct {
 	NatConfigMap      *ebpf.Map `ebpf:"nat_config_map"`
 	NatStatsMap       *ebpf.Map `ebpf:"nat_stats_map"`
 	PolicyMap         *ebpf.Map `ebpf:"policy_map"`
+	ProcessEvents     *ebpf.Map `ebpf:"process_events"`
+	ProcessInfoMap    *ebpf.Map `ebpf:"process_info_map"`
 	ProtocolOffsetMap *ebpf.Map `ebpf:"protocol_offset_map"`
 	SessionMap        *ebpf.Map `ebpf:"session_map"`
 	StatsMap          *ebpf.Map `ebpf:"stats_map"`
@@ -272,6 +284,8 @@ func (m *bpfMaps) Close() error {
 		m.NatConfigMap,
 		m.NatStatsMap,
 		m.PolicyMap,
+		m.ProcessEvents,
+		m.ProcessInfoMap,
 		m.ProtocolOffsetMap,
 		m.SessionMap,
 		m.StatsMap,

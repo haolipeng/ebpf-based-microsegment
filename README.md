@@ -17,6 +17,10 @@
   - Application dependency mapping
   - Top Talkers analysis
 - **🏷️ Label-based Policies**: Cloud-native policy management (in progress)
+- **👤 Process-Level Policies**: Application-aware microsegmentation (Issue #47 ✅)
+  - Process name-based policy matching in TC/XDP programs
+  - Integration with eBPF tracepoint process monitoring (Issue #46)
+  - Flow events enriched with process context (PID, comm, container ID)
 - **🔴 Real-time Flow Streaming**: WebSocket push for live flow events (Phase 4, coming soon)
 - **🤖 Auto Policy Generation**: ML-powered policy recommendations (planned)
 - **🛡️ Zero Trust Ready**: Built for zero trust network architecture
@@ -321,7 +325,10 @@ sudo ./tests/test_process_monitor.sh
 
 ### Integration
 
-- **Task #47**: TC/XDP programs will query `process_info_map` for process context
-- **Task #48**: ProcessMonitor daemon will consume ring buffer events
-- **Future**: Process-based policy matching and enforcement
+- **Issue #47**: TC/XDP programs query `process_info_map` for process context ✅ **COMPLETED**
+  - Wildcard policies now support `process_name` field
+  - Process-aware policy matching with priority (process policies > network policies)
+  - Flow events enriched with process information (PID, comm, container ID)
+- **Issue #48**: ProcessMonitor daemon will consume ring buffer events (Next)
+- **Future**: Process path validation and container-level policy enforcement
 

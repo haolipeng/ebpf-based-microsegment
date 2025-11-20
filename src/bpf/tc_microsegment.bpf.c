@@ -44,6 +44,7 @@
 
 #include "headers/common_types.h"
 #include "headers/tcp_state_machine.h"
+#include "headers/process_monitor.h"  // Issue #47: Process monitoring support
 
 // Conditionally include headers based on feature flags
 #if ENABLE_IP_FRAGMENT_HANDLING
@@ -124,6 +125,9 @@ struct {
     __uint(max_entries, 256 * 1024);  // 256KB ring buffer
 } flow_events SEC(".maps");
 
+// Issue #47: process_info_map is defined in process_monitor.h (included above)
+// No need for extern declaration here - it's already available
+
 // Helper: Update statistics counter (optimized - no error checking for speed)
 static __always_inline void update_stats(__u32 key) {
     __u64 *count = bpf_map_lookup_elem(&stats_map, &key);
@@ -135,6 +139,9 @@ static __always_inline void update_stats(__u32 key) {
 
 // Include policy matching logic (requires update_stats to be defined first)
 #include "headers/policy_match.h"
+
+// Include process-aware policy matching (Issue #47)
+#include "headers/process_policy_match.h"
 
 // Include indexed policy matching (optional, controlled by USE_INDEXED_LOOKUP)
 #if USE_INDEXED_LOOKUP
@@ -285,6 +292,7 @@ static __always_inline int extract_tcp_details(
 
 // Helper: Push flow event to user-space via Ring Buffer (Enhanced with VLAN and TCP tracking)
 // Returns 0 on success, -1 on failure
+// Issue #47: Added proc_info parameter for process-level policy support
 static __always_inline int push_flow_event(
     struct __sk_buff *skb,
     struct flow_key *key,
@@ -297,7 +305,8 @@ static __always_inline int push_flow_event(
     __u8 state,
     __u8 direction,
     __u8 tcp_state,
-    __u8 conn_flags)
+    __u8 conn_flags,
+    struct process_match_info *proc_info)  // Issue #47: Process information
 {
     // Reserve space in ring buffer (non-blocking)
     struct flow_event *event = bpf_ringbuf_reserve(&flow_events, sizeof(*event), 0);
@@ -350,6 +359,17 @@ static __always_inline int push_flow_event(
     event->state = state;
     event->reserved = 0;
 
+    // Issue #47: Fill process context fields
+    if (proc_info) {
+        fill_flow_event_process_fields(event, proc_info);
+    } else {
+        // No process info available - zero out process fields
+        event->process_name[0] = '\0';
+        event->pid = 0;
+        event->container_id[0] = '\0';
+        event->process_exec_time = 0;
+    }
+
     // Submit to ring buffer (non-blocking, will not fail)
     bpf_ringbuf_submit(event, 0);
 
@@ -357,7 +377,8 @@ static __always_inline int push_flow_event(
 }
 
 // Helper: Create new session (optimized - minimal initialization)
-static __always_inline int create_session(struct __sk_buff *skb, struct flow_key *key, __u8 action, __u64 ts, __u32 packet_len, __u32 rule_id, __u8 direction) {
+// Issue #47: Added proc_info parameter for process-level policy support
+static __always_inline int create_session(struct __sk_buff *skb, struct flow_key *key, __u8 action, __u64 ts, __u32 packet_len, __u32 rule_id, __u8 direction, struct process_match_info *proc_info) {
     // 初始化 TCP 状态 (根据第一个数据包的标志)
     __u8 initial_tcp_state = TCP_STATE_CLOSED;
     if (key->protocol == IPPROTO_TCP) {
@@ -385,6 +406,7 @@ static __always_inline int create_session(struct __sk_buff *skb, struct flow_key
 
         // Push flow event for all new connections (ALLOW, DENY, LOG)
         // Control plane will handle filtering based on configuration
+        // Issue #47: Include process information for new connections
         push_flow_event(
             skb,                    // sk_buff context
             key,
@@ -397,7 +419,8 @@ static __always_inline int create_session(struct __sk_buff *skb, struct flow_key
             FLOW_STATE_ACTIVE,      // Initial state
             direction,              // Actual packet direction (ingress/egress)
             initial_tcp_state,      // TCP state
-            0                       // Connection flags (initial state)
+            0,                      // Connection flags (initial state)
+            proc_info               // Issue #47: Process information
         );
     }
 
@@ -623,7 +646,8 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
                     SESSION_STATE_CLOSING,
                     direction,
                     session->tcp_state, // TCP state
-                    session->flags      // Connection flags
+                    session->flags,     // Connection flags
+                    NULL                // Issue #47: No proc_info in HOT PATH (performance)
                 );
 
 #if DEBUG_MODE
@@ -697,15 +721,25 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
         &nat_stats_map             // NAT statistics map
     );
 
+    // Issue #47: Get current process information for process-level policy matching
+    struct process_match_info proc_info = {0};
+    get_current_process_info(&proc_info);
+    lookup_process_cache(&proc_info, &process_info_map);
+
     // Use original addresses for policy matching (pre-NAT addresses)
     // This ensures policies match the actual source/destination, not NAT'd addresses
-#if USE_INDEXED_LOOKUP
-    // Use protocol-indexed wildcard lookup (optimized for 200+ policies)
-    __u8 action = lookup_policy_action_indexed(&original_key, direction, &matched_rule_id);
-#else
-    // Use legacy linear wildcard scan (simpler, for < 50 policies)
-    __u8 action = lookup_policy_action(&original_key, direction, &matched_rule_id);
-#endif
+    // Issue #47: Use process-aware policy matching
+    __u8 action = lookup_policy_action_with_process(
+        &original_key, &proc_info, direction, &matched_rule_id,
+        &policy_map, &wildcard_policy_map);
+
+    // Note: INDEX lookup is disabled for now to support process policies
+    // Future optimization: extend indexed lookup to support process fields
+// #if USE_INDEXED_LOOKUP
+//     __u8 action = lookup_policy_action_indexed(&original_key, direction, &matched_rule_id);
+// #else
+//     __u8 action = lookup_policy_action(&original_key, direction, &matched_rule_id);
+// #endif
 
 #if DEBUG_MODE
     // Log NAT detection if NAT is present
@@ -730,7 +764,8 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
 #endif
 
     // Create new session with policy action (includes first packet stats)
-    create_session(skb, &key, action, now, skb->len, matched_rule_id, direction);
+    // Issue #47: Pass process information to create_session
+    create_session(skb, &key, action, now, skb->len, matched_rule_id, direction, &proc_info);
 
 #if ENABLE_IP_FRAGMENT_HANDLING
     // Cache fragment state for first fragments (after policy lookup)
