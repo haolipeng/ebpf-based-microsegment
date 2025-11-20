@@ -10,6 +10,14 @@ bin/
 *.bpf.o
 *.skel.h
 
+# Generated eBPF Go bindings (bpf2go output)
+src/agent/pkg/dataplane/bpf_*.go
+src/agent/pkg/dataplane/bpf_*.o
+src/agent/pkg/dataplane/xdpbpf_*.go
+src/agent/pkg/dataplane/xdpbpf_*.o
+src/agent/pkg/dataplane/processbpf_*.go
+src/agent/pkg/dataplane/processbpf_*.o
+
 # Executables
 tc_microsegment
 microsegment

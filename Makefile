@@ -107,6 +107,10 @@ clean: clean-proto ## Clean build artifacts
 	rm -rf $(BIN_DIR)
 	rm -f $(SRC_AGENT)/pkg/dataplane/bpf_*.go
 	rm -f $(SRC_AGENT)/pkg/dataplane/bpf_*.o
+	rm -f $(SRC_AGENT)/pkg/dataplane/xdpbpf_*.go
+	rm -f $(SRC_AGENT)/pkg/dataplane/xdpbpf_*.o
+	rm -f $(SRC_AGENT)/pkg/dataplane/processbpf_*.go
+	rm -f $(SRC_AGENT)/pkg/dataplane/processbpf_*.o
 	@echo "$(GREEN)✓ Cleaned$(NC)"
 
 fmt: ## Format Go code

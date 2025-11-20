@@ -16,6 +16,7 @@ import (
 
 //go:generate sh -c "go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags \"-O2 -g -Wall ${BPF_CFLAGS}\" -target amd64 bpf ../../../bpf/tc_microsegment.bpf.c -- -I../../../bpf -I../../../../vmlinux/x86"
 //go:generate sh -c "go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags \"-O2 -g -Wall ${BPF_CFLAGS}\" -target amd64 xdpbpf ../../../bpf/xdp_microsegment.bpf.c -- -I../../../bpf -I../../../../vmlinux/x86"
+//go:generate sh -c "go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags \"-O2 -g -Wall ${BPF_CFLAGS}\" -target amd64 processbpf ../../../bpf/process_monitor.bpf.c -- -I../../../bpf -I../../../../vmlinux/x86"
 
 // eBPF 统计指标索引常量
 // 这些常量必须与 eBPF C 代码保持严格一致

@@ -254,6 +254,13 @@ struct flow_event {
     __u8  policy_action;  // enum policy_action
     __u8  state;          // enum flow_state
     __u16 reserved;       // Reserved for future use
+
+    // Process context (92 bytes)
+    // These fields are populated by looking up process_info_map using socket inode or PID
+    char process_name[16];      // Process command name (from process_cache_entry.comm)
+    __u32 pid;                  // Process ID (0 if not available)
+    char container_id[64];      // Container ID (from process_cache_entry.container_id)
+    __u64 process_exec_time;    // Process execution timestamp (from process_cache_entry.exec_time)
 } __attribute__((packed));
 
 #endif /* __COMMON_TYPES_H__ */
