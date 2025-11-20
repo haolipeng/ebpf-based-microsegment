@@ -355,5 +355,13 @@ sudo ./tests/test_process_monitor.sh
   - Database schema migrations for process policies, flow process info, and security alerts
   - Backward compatibility maintained (all new fields are optional)
   - Generated Go code compiles successfully
-- **Future**: Advanced security features (K8s Pod metadata, process hash verification)
+- **Issue #52**: Process Policy and Security Alert APIs ✅ **COMPLETED**
+  - Process Policy CRUD API with process matching fields (process_name, process_path, match_mode)
+  - Security Alert Query API with pagination and multi-dimensional filtering
+  - Alert Statistics API with aggregation by level, type, top processes, and timeline
+  - HTTP endpoints: POST/GET/PUT/DELETE /api/v1/policies (extended), GET /api/v1/alerts, GET /api/v1/alerts/:id, GET /api/v1/alerts/stats
+  - Database storage layer: AlertStorage with QueryAlerts, GetAlertByID, CreateAlert, GetAlertStats
+  - Type-safe IP address conversion (uint32 ↔ string) and proper NULL handling
+  - Request validation, error handling, and comprehensive logging
+- **Future**: gRPC Alert Service, Advanced validation, Unit tests, API documentation (Swagger/OpenAPI)
 
