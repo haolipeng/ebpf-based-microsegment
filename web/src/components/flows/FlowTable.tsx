@@ -92,6 +92,43 @@ export default function FlowTable({
       width: 100,
     },
     {
+      title: 'Process',
+      key: 'process',
+      width: 180,
+      render: (_, record) => {
+        if (!record.processInfo) {
+          return <span style={{ color: '#999', fontStyle: 'italic' }}>-</span>
+        }
+        return (
+          <div>
+            <div style={{ fontWeight: 500 }}>{record.processInfo.comm}</div>
+            {record.processInfo.pid && (
+              <div style={{ fontSize: 12, color: '#666' }}>PID: {record.processInfo.pid}</div>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      title: 'Container',
+      key: 'container',
+      width: 140,
+      ellipsis: true,
+      render: (_, record) => {
+        if (!record.processInfo?.containerId) {
+          return <span style={{ color: '#999', fontStyle: 'italic' }}>Host</span>
+        }
+        return (
+          <span
+            style={{ fontFamily: 'monospace', fontSize: 11 }}
+            title={record.processInfo.containerId}
+          >
+            {record.processInfo.containerId.slice(0, 12)}
+          </span>
+        )
+      },
+    },
+    {
       title: 'State',
       dataIndex: 'state',
       key: 'state',
@@ -210,6 +247,48 @@ export default function FlowTable({
               <p>
                 <strong>Policy ID:</strong> {record.policyId}
               </p>
+            )}
+            {/* Process information details */}
+            {record.processInfo && (
+              <>
+                <p style={{ marginTop: 12, fontWeight: 600, color: '#1890ff' }}>
+                  Process Information:
+                </p>
+                {record.processInfo.exePath && (
+                  <p>
+                    <strong>Executable Path:</strong>{' '}
+                    <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
+                      {record.processInfo.exePath}
+                    </span>
+                  </p>
+                )}
+                {record.processInfo.cmdline && (
+                  <p>
+                    <strong>Command Line:</strong>{' '}
+                    <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
+                      {record.processInfo.cmdline}
+                    </span>
+                  </p>
+                )}
+                {(record.processInfo.uid !== undefined || record.processInfo.gid !== undefined) && (
+                  <p>
+                    <strong>UID/GID:</strong> {record.processInfo.uid ?? 'N/A'}/
+                    {record.processInfo.gid ?? 'N/A'}
+                  </p>
+                )}
+                {record.processInfo.ppid && (
+                  <p>
+                    <strong>Parent PID:</strong> {record.processInfo.ppid}
+                  </p>
+                )}
+                {record.processInfo.isSuspicious && (
+                  <p>
+                    <Tag color="error" style={{ marginTop: 4 }}>
+                      ⚠️ Suspicious Process
+                    </Tag>
+                  </p>
+                )}
+              </>
             )}
             <p>
               <strong>Last Seen:</strong> {formatRelativeTime(record.lastSeen)}

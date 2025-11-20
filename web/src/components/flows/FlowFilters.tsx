@@ -32,6 +32,14 @@ export default function FlowFilters({ filters, onFiltersChange, onReset }: FlowF
     onFiltersChange({ ...filters, policyAction: value === 'ALL' ? undefined : value })
   }
 
+  const handleProcessNameChange = (value: string) => {
+    onFiltersChange({ ...filters, processName: value || undefined })
+  }
+
+  const handleContainerIdChange = (value: string) => {
+    onFiltersChange({ ...filters, containerId: value || undefined })
+  }
+
   const handleTimeRangeChange = (dates: null | [Dayjs | null, Dayjs | null]) => {
     if (dates && dates[0] && dates[1]) {
       onFiltersChange({
@@ -114,6 +122,24 @@ export default function FlowFilters({ filters, onFiltersChange, onReset }: FlowF
             showTime
             format="YYYY-MM-DD HH:mm"
             onChange={handleTimeRangeChange}
+          />
+        </Col>
+        <Col xs={24} sm={12} md={8} lg={6}>
+          <Input
+            placeholder="Process Name"
+            prefix={<SearchOutlined />}
+            value={filters.processName}
+            onChange={e => handleProcessNameChange(e.target.value)}
+            allowClear
+          />
+        </Col>
+        <Col xs={24} sm={12} md={8} lg={6}>
+          <Input
+            placeholder="Container ID"
+            prefix={<SearchOutlined />}
+            value={filters.containerId}
+            onChange={e => handleContainerIdChange(e.target.value)}
+            allowClear
           />
         </Col>
         <Col xs={24} sm={12} md={6} lg={4}>
