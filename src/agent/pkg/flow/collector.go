@@ -62,14 +62,21 @@ type ProcessMonitor interface {
 	GetProcessInfo(pid uint32) (interface{}, bool)
 }
 
+// SecurityAlertManager interface for security alert generation (Issue #50)
+type SecurityAlertManager interface {
+	// CheckProcessSuspicion checks if a process is suspicious and generates alerts
+	CheckProcessSuspicion(procInfo interface{}, flowInfo interface{}) interface{}
+}
+
 // Collector collects flow events from eBPF Ring Buffer
 type Collector struct {
 	ringBuf          *ringbuf.Reader
 	storage          Storage
 	workloadMgr      WorkloadManager
-	reporter         Reporter          // Reporter for sending flows to control plane (agent-server mode)
-	lifecycleManager *LifecycleManager // Lifecycle manager for data cleanup
-	processMonitor   ProcessMonitor    // Process monitor for process info enrichment (Issue #48/#49)
+	reporter         Reporter                // Reporter for sending flows to control plane (agent-server mode)
+	lifecycleManager *LifecycleManager       // Lifecycle manager for data cleanup
+	processMonitor   ProcessMonitor          // Process monitor for process info enrichment (Issue #48/#49)
+	alertManager     SecurityAlertManager    // Security alert manager (Issue #50)
 
 	// Flow tracking
 	activeFlows map[string]*Flow // Keyed by flow ID
@@ -164,6 +171,17 @@ func (c *Collector) SetProcessMonitor(monitor ProcessMonitor) {
 // GetProcessMonitor returns the process monitor
 func (c *Collector) GetProcessMonitor() ProcessMonitor {
 	return c.processMonitor
+}
+
+// SetAlertManager sets the security alert manager for security monitoring (Issue #50)
+func (c *Collector) SetAlertManager(manager SecurityAlertManager) {
+	c.alertManager = manager
+	log.Println("[Flow Collector] Security alert manager configured")
+}
+
+// GetAlertManager returns the security alert manager
+func (c *Collector) GetAlertManager() SecurityAlertManager {
+	return c.alertManager
 }
 
 // Start begins collecting flow events from Ring Buffer
@@ -384,6 +402,51 @@ func (c *Collector) enrichWithProcessInfo(flow *Flow) {
 			}
 			// Note: ProcessName, ProcessPID, ContainerID, ProcessExecTime
 			// are already set from FlowEvent during ToFlow()
+
+			// Check for suspicious process activity (Issue #50)
+			if c.alertManager != nil && pi.PathResolved {
+				// Convert to security package types for checking
+				secProcInfo := struct {
+					PID         uint32
+					Comm        string
+					Path        string
+					ContainerID string
+					UID         uint32
+				}{
+					PID:         pi.PID,
+					Comm:        pi.Comm,
+					Path:        pi.Path,
+					ContainerID: pi.ContainerID,
+					UID:         0, // TODO: Extract UID from process info if available
+				}
+
+				// Convert flow to security package types
+				var secFlowInfo *struct {
+					SourceIP   string
+					SourcePort uint16
+					DestIP     string
+					DestPort   uint16
+					Protocol   string
+				}
+				if flow.SourceIP != "" {
+					secFlowInfo = &struct {
+						SourceIP   string
+						SourcePort uint16
+						DestIP     string
+						DestPort   uint16
+						Protocol   string
+					}{
+						SourceIP:   flow.SourceIP,
+						SourcePort: flow.SourcePort,
+						DestIP:     flow.DestIP,
+						DestPort:   flow.DestPort,
+						Protocol:   flow.Protocol,
+					}
+				}
+
+				// Check for suspicious activity and generate alerts
+				c.alertManager.CheckProcessSuspicion(secProcInfo, secFlowInfo)
+			}
 		}
 	}
 	// If not found in cache, we still have basic info from eBPF (ProcessName, PID, ContainerID)

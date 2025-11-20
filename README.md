@@ -22,6 +22,7 @@
   - Integration with eBPF tracepoint process monitoring (Issue #46 ✅)
   - Flow events enriched with process context (PID, comm, container ID, path) (Issue #49 ✅)
   - ProcessMonitor daemon for process info enrichment (Issue #48 ✅)
+  - Security monitoring and suspicious process detection (Issue #50 ✅)
 - **🔴 Real-time Flow Streaming**: WebSocket push for live flow events (Phase 4, coming soon)
 - **🤖 Auto Policy Generation**: ML-powered policy recommendations (planned)
 - **🛡️ Zero Trust Ready**: Built for zero trust network architecture
@@ -340,5 +341,12 @@ sudo ./tests/test_process_monitor.sh
   - Flow structure enriched with process context
   - ProcessMonitor integration for full process path enrichment
   - Process info available in flow events for analysis and policy decisions
-- **Future**: Process path validation and container-level policy enforcement
+- **Issue #50**: Security hardening implementation ✅ **COMPLETED**
+  - Process path legitimacy validation (system vs suspicious directories)
+  - Suspicious process detection (deleted executables, hidden files, privilege escalation)
+  - Structured security alert generation with severity levels (INFO, WARNING, CRITICAL)
+  - Alert rate limiting to prevent flooding (10 alerts per minute)
+  - Real-time security monitoring integrated with FlowCollector
+  - LogAlertHandler for immediate security alert logging
+- **Future**: Advanced security features (K8s Pod metadata, process hash verification)
 

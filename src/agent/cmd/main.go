@@ -20,6 +20,7 @@ import (
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/policy"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/process"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/reporter"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/security"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -98,6 +99,14 @@ func runAgent(cmd *cobra.Command, args []string) {
 		log.Info("✓ Process monitor initialized (process event tracking started)")
 	}
 
+	// Initialize security alert manager (Issue #50)
+	var alertManager *security.AlertManager
+	alertManager = initAlertManager()
+	if alertManager != nil {
+		defer alertManager.Stop()
+		log.Info("✓ Security alert manager initialized (security monitoring started)")
+	}
+
 	// Create policy manager
 	pm := policy.NewManager(dp)
 
@@ -145,10 +154,17 @@ func runAgent(cmd *cobra.Command, args []string) {
 	// Initialize flow collector (always enabled as it's core functionality)
 	log.Info("Initializing flow collection...")
 	var flowCollector *flow.Collector
+
+	// Wrap alert manager in adapter to match flow.SecurityAlertManager interface
+	var alertAdapter flow.SecurityAlertManager
+	if alertManager != nil {
+		alertAdapter = security.NewAlertManagerAdapter(alertManager)
+	}
+
 	if cfg.IsAgentServerMode() {
-		flowCollector = initFlowCollectorForServerMode(cfg, dp, rep, processMonitor)
+		flowCollector = initFlowCollectorForServerMode(cfg, dp, rep, processMonitor, alertAdapter)
 	} else {
-		flowCollector = initFlowCollectorForStandaloneMode(cfg, dp, flowStorage, processMonitor)
+		flowCollector = initFlowCollectorForStandaloneMode(cfg, dp, flowStorage, processMonitor, alertAdapter)
 	}
 
 	if flowCollector != nil {
@@ -344,7 +360,7 @@ func initStorage(cfg *config.Config) flow.Storage {
 // initFlowCollectorForServerMode initializes flow collector for agent-server mode.
 // In this mode, flows are sent to the control plane server via gRPC reporter.
 // No local storage or lifecycle management is configured.
-func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane, rep reporter.Reporter, procMon *process.ProcessMonitor) *flow.Collector {
+func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane, rep reporter.Reporter, procMon *process.ProcessMonitor, alertMgr flow.SecurityAlertManager) *flow.Collector {
 	// Get Ring Buffer from dataplane
 	ringBuf := dp.GetFlowRingBuffer()
 	if ringBuf == nil {
@@ -369,6 +385,11 @@ func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane,
 		collector.SetProcessMonitor(procMon)
 	}
 
+	// Configure security alert manager (Issue #50)
+	if alertMgr != nil {
+		collector.SetAlertManager(alertMgr)
+	}
+
 	// Configure reporter to send flows to server
 	if rep != nil {
 		collector.SetReporter(rep)
@@ -386,7 +407,7 @@ func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane,
 
 // initFlowCollectorForStandaloneMode initializes flow collector for standalone mode.
 // In this mode, flows are persisted to local SQLite storage with lifecycle management.
-func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPlane, storage flow.Storage, procMon *process.ProcessMonitor) *flow.Collector {
+func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPlane, storage flow.Storage, procMon *process.ProcessMonitor, alertMgr flow.SecurityAlertManager) *flow.Collector {
 	// Get Ring Buffer from dataplane
 	ringBuf := dp.GetFlowRingBuffer()
 	if ringBuf == nil {
@@ -409,6 +430,11 @@ func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPl
 	// Configure process monitor for process info enrichment (Issue #48/#49)
 	if procMon != nil {
 		collector.SetProcessMonitor(procMon)
+	}
+
+	// Configure security alert manager (Issue #50)
+	if alertMgr != nil {
+		collector.SetAlertManager(alertMgr)
 	}
 
 	// Start collector
@@ -588,6 +614,28 @@ func initProcessMonitor(dp *dataplane.DataPlane) (*process.ProcessMonitor, error
 	}()
 
 	return monitor, nil
+}
+
+// initAlertManager initializes security alert manager (Issue #50)
+func initAlertManager() *security.AlertManager {
+	log.Info("Initializing security alert manager...")
+
+	// Create path validator with default configuration
+	validator := security.DefaultPathValidator()
+
+	// Create alert manager with default configuration
+	alertConfig := security.DefaultAlertManagerConfig()
+	alertManager := security.NewAlertManager(validator, alertConfig)
+
+	// Add log alert handler (logs alerts to stdout/stderr)
+	logHandler := security.NewLogAlertHandler()
+	alertManager.AddHandler(logHandler)
+
+	// Log initial configuration
+	log.Info("✓ Security alert manager initialized")
+	log.Debug("Alert rate limiting enabled: 10 alerts per minute")
+
+	return alertManager
 }
 
 func main() {
