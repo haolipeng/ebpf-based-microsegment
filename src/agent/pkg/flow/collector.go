@@ -56,6 +56,12 @@ type Storage interface {
 	Close() error
 }
 
+// ProcessMonitor interface for process information lookup (Issue #48/#49)
+type ProcessMonitor interface {
+	// GetProcessInfo retrieves process information by PID
+	GetProcessInfo(pid uint32) (interface{}, bool)
+}
+
 // Collector collects flow events from eBPF Ring Buffer
 type Collector struct {
 	ringBuf          *ringbuf.Reader
@@ -63,6 +69,7 @@ type Collector struct {
 	workloadMgr      WorkloadManager
 	reporter         Reporter          // Reporter for sending flows to control plane (agent-server mode)
 	lifecycleManager *LifecycleManager // Lifecycle manager for data cleanup
+	processMonitor   ProcessMonitor    // Process monitor for process info enrichment (Issue #48/#49)
 
 	// Flow tracking
 	activeFlows map[string]*Flow // Keyed by flow ID
@@ -146,6 +153,17 @@ func (c *Collector) SetLifecycleManager(manager *LifecycleManager) {
 // GetLifecycleManager returns the lifecycle manager
 func (c *Collector) GetLifecycleManager() *LifecycleManager {
 	return c.lifecycleManager
+}
+
+// SetProcessMonitor sets the process monitor for process info enrichment (Issue #48/#49)
+func (c *Collector) SetProcessMonitor(monitor ProcessMonitor) {
+	c.processMonitor = monitor
+	log.Println("[Flow Collector] Process monitor configured for process info enrichment")
+}
+
+// GetProcessMonitor returns the process monitor
+func (c *Collector) GetProcessMonitor() ProcessMonitor {
+	return c.processMonitor
 }
 
 // Start begins collecting flow events from Ring Buffer
@@ -233,6 +251,11 @@ func (c *Collector) collectLoop() {
 func (c *Collector) processFlowEvent(event *FlowEvent) error {
 	// Convert event to flow
 	flow := event.ToFlow()
+
+	// Enrich with process information if available (Issue #48/#49)
+	if c.config.EnableEnrichment && c.processMonitor != nil && flow.ProcessPID != 0 {
+		c.enrichWithProcessInfo(flow)
+	}
 
 	// Enrich with workload labels if enabled
 	if c.config.EnableEnrichment && c.workloadMgr != nil {
@@ -333,6 +356,37 @@ func (c *Collector) updateExistingFlow(flow *Flow) error {
 	}
 
 	return nil
+}
+
+// enrichWithProcessInfo enriches flow with process information from ProcessMonitor (Issue #48/#49)
+func (c *Collector) enrichWithProcessInfo(flow *Flow) {
+	if flow.ProcessPID == 0 {
+		return // No PID available
+	}
+
+	// Query ProcessMonitor for full process information
+	if procInfo, found := c.processMonitor.GetProcessInfo(flow.ProcessPID); found {
+		// Type assert to expected ProcessInfo type
+		// Note: We use interface{} in the interface to avoid circular dependency
+		// The actual type should be *process.ProcessInfo
+		if pi, ok := procInfo.(*struct {
+			PID          uint32
+			Comm         string
+			Path         string
+			ContainerID  string
+			ExecTime     uint64
+			CachedTime   interface{}
+			PathResolved bool
+		}); ok {
+			// Enrich with full process path if available
+			if pi.PathResolved && pi.Path != "" {
+				flow.ProcessPath = pi.Path
+			}
+			// Note: ProcessName, ProcessPID, ContainerID, ProcessExecTime
+			// are already set from FlowEvent during ToFlow()
+		}
+	}
+	// If not found in cache, we still have basic info from eBPF (ProcessName, PID, ContainerID)
 }
 
 // enrichWithLabels enriches flow with workload labels

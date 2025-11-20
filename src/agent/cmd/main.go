@@ -146,9 +146,9 @@ func runAgent(cmd *cobra.Command, args []string) {
 	log.Info("Initializing flow collection...")
 	var flowCollector *flow.Collector
 	if cfg.IsAgentServerMode() {
-		flowCollector = initFlowCollectorForServerMode(cfg, dp, rep)
+		flowCollector = initFlowCollectorForServerMode(cfg, dp, rep, processMonitor)
 	} else {
-		flowCollector = initFlowCollectorForStandaloneMode(cfg, dp, flowStorage)
+		flowCollector = initFlowCollectorForStandaloneMode(cfg, dp, flowStorage, processMonitor)
 	}
 
 	if flowCollector != nil {
@@ -344,7 +344,7 @@ func initStorage(cfg *config.Config) flow.Storage {
 // initFlowCollectorForServerMode initializes flow collector for agent-server mode.
 // In this mode, flows are sent to the control plane server via gRPC reporter.
 // No local storage or lifecycle management is configured.
-func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane, rep reporter.Reporter) *flow.Collector {
+func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane, rep reporter.Reporter, procMon *process.ProcessMonitor) *flow.Collector {
 	// Get Ring Buffer from dataplane
 	ringBuf := dp.GetFlowRingBuffer()
 	if ringBuf == nil {
@@ -364,6 +364,11 @@ func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane,
 	// Create collector without storage (workloadMgr can be added later for K8s)
 	collector := flow.NewCollector(ringBuf, nil, nil, collectorConfig)
 
+	// Configure process monitor for process info enrichment (Issue #48/#49)
+	if procMon != nil {
+		collector.SetProcessMonitor(procMon)
+	}
+
 	// Configure reporter to send flows to server
 	if rep != nil {
 		collector.SetReporter(rep)
@@ -381,7 +386,7 @@ func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane,
 
 // initFlowCollectorForStandaloneMode initializes flow collector for standalone mode.
 // In this mode, flows are persisted to local SQLite storage with lifecycle management.
-func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPlane, storage flow.Storage) *flow.Collector {
+func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPlane, storage flow.Storage, procMon *process.ProcessMonitor) *flow.Collector {
 	// Get Ring Buffer from dataplane
 	ringBuf := dp.GetFlowRingBuffer()
 	if ringBuf == nil {
@@ -400,6 +405,11 @@ func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPl
 
 	// Create collector with storage (workloadMgr can be added later for K8s)
 	collector := flow.NewCollector(ringBuf, storage, nil, collectorConfig)
+
+	// Configure process monitor for process info enrichment (Issue #48/#49)
+	if procMon != nil {
+		collector.SetProcessMonitor(procMon)
+	}
 
 	// Start collector
 	if err := collector.Start(); err != nil {

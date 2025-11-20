@@ -17,10 +17,11 @@
   - Application dependency mapping
   - Top Talkers analysis
 - **🏷️ Label-based Policies**: Cloud-native policy management (in progress)
-- **👤 Process-Level Policies**: Application-aware microsegmentation (Issue #47 ✅)
-  - Process name-based policy matching in TC/XDP programs
-  - Integration with eBPF tracepoint process monitoring (Issue #46)
-  - Flow events enriched with process context (PID, comm, container ID)
+- **👤 Process-Level Policies**: Application-aware microsegmentation
+  - Process name-based policy matching in TC/XDP programs (Issue #47 ✅)
+  - Integration with eBPF tracepoint process monitoring (Issue #46 ✅)
+  - Flow events enriched with process context (PID, comm, container ID, path) (Issue #49 ✅)
+  - ProcessMonitor daemon for process info enrichment (Issue #48 ✅)
 - **🔴 Real-time Flow Streaming**: WebSocket push for live flow events (Phase 4, coming soon)
 - **🤖 Auto Policy Generation**: ML-powered policy recommendations (planned)
 - **🛡️ Zero Trust Ready**: Built for zero trust network architecture
@@ -334,5 +335,10 @@ sudo ./tests/test_process_monitor.sh
   - Process path resolution via /proc/<pid>/exe
   - GetProcessInfo(pid) API for FlowCollector
   - Background cleanup of expired cache entries
+- **Issue #49**: FlowCollector and PolicyManager extensions ✅ **COMPLETED**
+  - FlowEvent parsing of process fields (PID, process_name, container_id, exec_time)
+  - Flow structure enriched with process context
+  - ProcessMonitor integration for full process path enrichment
+  - Process info available in flow events for analysis and policy decisions
 - **Future**: Process path validation and container-level policy enforcement
 

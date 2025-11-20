@@ -119,8 +119,10 @@ func (m *ProcessMonitor) Stop() error {
 }
 
 // GetProcessInfo retrieves process information by PID
-// This is the primary API used by FlowCollector (Issue #48)
-func (m *ProcessMonitor) GetProcessInfo(pid uint32) (*ProcessInfo, bool) {
+// This is the primary API used by FlowCollector (Issue #48/#49)
+// Returns interface{} to avoid circular dependency with flow package
+// The returned value is actually *ProcessInfo
+func (m *ProcessMonitor) GetProcessInfo(pid uint32) (interface{}, bool) {
 	info := m.cache.Get(pid)
 	if info != nil {
 		return info, true

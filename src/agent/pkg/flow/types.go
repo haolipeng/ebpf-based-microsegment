@@ -150,18 +150,25 @@ type FlowEvent struct {
 	TcpRetrans uint8  // Retransmission count
 	TcpState   uint8  // TCP state
 
-	// Policy context (4 bytes)
+	// Policy context (8 bytes)
 	PolicyID     uint32       // Matched policy/rule ID
 	PolicyAction PolicyAction // Policy action
 	State        FlowState    // Flow state
 	Reserved     uint16       // Reserved for future use
+
+	// Process context (92 bytes) - Issue #47, #48
+	// These fields are populated by eBPF looking up process_info_map
+	ProcessName     [16]byte // Process command name (from process cache)
+	PID             uint32   // Process ID (0 if not available)
+	ContainerID     [64]byte // Container ID (from process cache)
+	ProcessExecTime uint64   // Process execution timestamp (from process cache)
 }
 
 // ParseFlowEvent parses a raw byte slice from Ring Buffer into FlowEvent
 // Assumes little-endian byte order (x86_64)
-// Structure size: 36 (5-tuple) + 8 (metadata) + 24 (stats) + 12 (TCP) + 8 (policy) = 88 bytes
+// Structure size: 36 (5-tuple) + 8 (metadata) + 24 (stats) + 12 (TCP) + 8 (policy) + 92 (process) = 180 bytes
 func ParseFlowEvent(data []byte) (*FlowEvent, error) {
-	expectedSize := 88 // Total size with all new fields
+	expectedSize := 180 // Total size with process context fields (Issue #47/#48)
 	if len(data) < expectedSize {
 		return nil, fmt.Errorf("invalid flow event size: expected at least %d bytes, got %d", expectedSize, len(data))
 	}
@@ -214,6 +221,12 @@ func ParseFlowEvent(data []byte) (*FlowEvent, error) {
 		Reserved:     binary.LittleEndian.Uint16(data[86:88]),
 	}
 
+	// Parse process context fields (92 bytes, offset 88-179) - Issue #47/#48
+	copy(event.ProcessName[:], data[88:104])          // 16 bytes
+	event.PID = binary.LittleEndian.Uint32(data[104:108]) // 4 bytes
+	copy(event.ContainerID[:], data[108:172])         // 64 bytes
+	event.ProcessExecTime = binary.LittleEndian.Uint64(data[172:180]) // 8 bytes
+
 	return event, nil
 }
 
@@ -244,6 +257,13 @@ type Flow struct {
 	// Policy Context
 	PolicyID     uint32 `json:"policy_id,omitempty"`     // Matched policy ID
 	PolicyAction string `json:"policy_action"`           // Policy action (ALLOW/DENY/LOG)
+
+	// Process Context (Issue #47/#48)
+	ProcessName     string `json:"process_name,omitempty"`      // Process command name
+	ProcessPID      uint32 `json:"process_pid,omitempty"`       // Process ID
+	ProcessPath     string `json:"process_path,omitempty"`      // Full executable path (from ProcessMonitor)
+	ContainerID     string `json:"container_id,omitempty"`      // Container ID
+	ProcessExecTime uint64 `json:"process_exec_time,omitempty"` // Process start timestamp
 
 	// State
 	State     string `json:"state"`     // Flow state (ACTIVE/CLOSED/TIMEOUT)
@@ -310,12 +330,29 @@ func (e *FlowEvent) ToFlow() *Flow {
 		DestLabels:   make(map[string]string),
 	}
 
+	// Convert process context fields (Issue #47/#48)
+	flow.ProcessName = nullTerminatedByteArrayToString(e.ProcessName[:])
+	flow.ProcessPID = e.PID
+	flow.ContainerID = nullTerminatedByteArrayToString(e.ContainerID[:])
+	flow.ProcessExecTime = e.ProcessExecTime
+	// Note: ProcessPath will be enriched by FlowCollector via ProcessMonitor lookup (Issue #49)
+
 	// Set end time if flow is closed
 	if e.EventType == FlowEventClosed || e.State == FlowStateClosed {
 		flow.EndTime = &timestamp
 	}
 
 	return flow
+}
+
+// nullTerminatedByteArrayToString converts null-terminated byte array to Go string
+func nullTerminatedByteArrayToString(b []byte) string {
+	for i, c := range b {
+		if c == 0 {
+			return string(b[:i])
+		}
+	}
+	return string(b)
 }
 
 // FlowQuery represents query parameters for filtering flows
