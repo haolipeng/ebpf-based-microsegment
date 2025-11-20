@@ -348,5 +348,12 @@ sudo ./tests/test_process_monitor.sh
   - Alert rate limiting to prevent flooding (10 alerts per minute)
   - Real-time security monitoring integrated with FlowCollector
   - LogAlertHandler for immediate security alert logging
+- **Issue #51**: gRPC API and data model extensions ✅ **COMPLETED**
+  - FlowEvent proto extended with ProcessInfo message (10 fields: PID, PPID, UID, GID, comm, exe_path, etc.)
+  - Policy proto extended with process matching fields (process_name, process_path, match_mode)
+  - SecurityAlert proto definition with AlertService (ReportAlerts, QueryAlerts, GetAlertSummary)
+  - Database schema migrations for process policies, flow process info, and security alerts
+  - Backward compatibility maintained (all new fields are optional)
+  - Generated Go code compiles successfully
 - **Future**: Advanced security features (K8s Pod metadata, process hash verification)
 

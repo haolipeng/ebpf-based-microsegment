@@ -71,6 +71,43 @@ message FlowEvent {
 
   // Labels of the destination workload
   map<string, string> dest_labels = 17;
+
+  // Process information (Issue #51 - Process-Level Policy)
+  ProcessInfo process_info = 18;
+}
+
+// ProcessInfo contains information about the process that generated the flow
+// This enables process-level policy enforcement and security monitoring
+message ProcessInfo {
+  // Process ID
+  uint32 pid = 1;
+
+  // Parent process ID
+  uint32 ppid = 2;
+
+  // User ID
+  uint32 uid = 3;
+
+  // Group ID
+  uint32 gid = 4;
+
+  // Process command name (truncated to 16 bytes by kernel)
+  string comm = 5;
+
+  // Full executable path (resolved from /proc/<pid>/exe)
+  string exe_path = 6;
+
+  // Command line arguments (optional, may be expensive to collect)
+  string cmdline = 7;
+
+  // Process start time (Unix nanoseconds, used for PID reuse detection)
+  uint64 start_time = 8;
+
+  // Marked as suspicious by security validator (Issue #50)
+  bool is_suspicious = 9;
+
+  // Container ID (extracted from cgroup path)
+  string container_id = 10;
 }
 
 // FlowQuery specifies filtering criteria for flow queries
@@ -110,6 +147,18 @@ message FlowQuery {
 
   // Offset for pagination
   uint32 offset = 12;
+
+  // Filter by process ID (Issue #51)
+  uint32 pid = 13;
+
+  // Filter by process name (Issue #51)
+  string process_name = 14;
+
+  // Filter by process path prefix (Issue #51)
+  string process_path = 15;
+
+  // Filter by container ID (Issue #51)
+  string container_id = 16;
 }
 
 // FlowQueryResponse contains the results of a flow query
@@ -176,6 +225,9 @@ message Flow {
 
   // Destination workload labels
   map<string, string> dest_labels = 17;
+
+  // Process information (Issue #51 - Process-Level Policy)
+  ProcessInfo process_info = 18;
 }
 
 // FlowSummaryRequest specifies parameters for flow summary query

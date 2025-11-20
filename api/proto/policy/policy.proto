@@ -128,6 +128,31 @@ message Policy {
 
   // Human-readable description
   string description = 13;
+
+  // Process-level policy matching fields (Issue #51 - Process-Level Policy)
+
+  // Process command name (e.g., "nginx", "curl")
+  // Empty string means match all processes
+  string process_name = 14;
+
+  // Process executable path prefix (e.g., "/usr/bin/", "/tmp/")
+  // Empty string means match all paths
+  string process_path = 15;
+
+  // Process matching mode
+  ProcessMatchMode match_mode = 16;
+}
+
+// ProcessMatchMode defines how process matching is performed
+enum ProcessMatchMode {
+  // Match process by exact command name
+  MATCH_EXACT = 0;
+
+  // Match process by path prefix
+  MATCH_PREFIX = 1;
+
+  // Match process using wildcard patterns (* and ?)
+  MATCH_WILDCARD = 2;
 }
 
 // PolicyStatsReport contains policy enforcement statistics from an agent

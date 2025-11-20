@@ -59,7 +59,9 @@ type FlowEvent struct {
 	// Field numbers 16+ use 2-byte tags (lower frequency fields)
 	SourceLabels map[string]string `protobuf:"bytes,16,rep,name=source_labels,json=sourceLabels,proto3" json:"source_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Labels of the destination workload
-	DestLabels    map[string]string `protobuf:"bytes,17,rep,name=dest_labels,json=destLabels,proto3" json:"dest_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	DestLabels map[string]string `protobuf:"bytes,17,rep,name=dest_labels,json=destLabels,proto3" json:"dest_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Process information (Issue #51 - Process-Level Policy)
+	ProcessInfo   *ProcessInfo `protobuf:"bytes,18,opt,name=process_info,json=processInfo,proto3" json:"process_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -206,6 +208,141 @@ func (x *FlowEvent) GetDestLabels() map[string]string {
 	return nil
 }
 
+func (x *FlowEvent) GetProcessInfo() *ProcessInfo {
+	if x != nil {
+		return x.ProcessInfo
+	}
+	return nil
+}
+
+// ProcessInfo contains information about the process that generated the flow
+// This enables process-level policy enforcement and security monitoring
+type ProcessInfo struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Process ID
+	Pid uint32 `protobuf:"varint,1,opt,name=pid,proto3" json:"pid,omitempty"`
+	// Parent process ID
+	Ppid uint32 `protobuf:"varint,2,opt,name=ppid,proto3" json:"ppid,omitempty"`
+	// User ID
+	Uid uint32 `protobuf:"varint,3,opt,name=uid,proto3" json:"uid,omitempty"`
+	// Group ID
+	Gid uint32 `protobuf:"varint,4,opt,name=gid,proto3" json:"gid,omitempty"`
+	// Process command name (truncated to 16 bytes by kernel)
+	Comm string `protobuf:"bytes,5,opt,name=comm,proto3" json:"comm,omitempty"`
+	// Full executable path (resolved from /proc/<pid>/exe)
+	ExePath string `protobuf:"bytes,6,opt,name=exe_path,json=exePath,proto3" json:"exe_path,omitempty"`
+	// Command line arguments (optional, may be expensive to collect)
+	Cmdline string `protobuf:"bytes,7,opt,name=cmdline,proto3" json:"cmdline,omitempty"`
+	// Process start time (Unix nanoseconds, used for PID reuse detection)
+	StartTime uint64 `protobuf:"varint,8,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	// Marked as suspicious by security validator (Issue #50)
+	IsSuspicious bool `protobuf:"varint,9,opt,name=is_suspicious,json=isSuspicious,proto3" json:"is_suspicious,omitempty"`
+	// Container ID (extracted from cgroup path)
+	ContainerId   string `protobuf:"bytes,10,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProcessInfo) Reset() {
+	*x = ProcessInfo{}
+	mi := &file_flow_flow_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProcessInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProcessInfo) ProtoMessage() {}
+
+func (x *ProcessInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_flow_flow_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProcessInfo.ProtoReflect.Descriptor instead.
+func (*ProcessInfo) Descriptor() ([]byte, []int) {
+	return file_flow_flow_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ProcessInfo) GetPid() uint32 {
+	if x != nil {
+		return x.Pid
+	}
+	return 0
+}
+
+func (x *ProcessInfo) GetPpid() uint32 {
+	if x != nil {
+		return x.Ppid
+	}
+	return 0
+}
+
+func (x *ProcessInfo) GetUid() uint32 {
+	if x != nil {
+		return x.Uid
+	}
+	return 0
+}
+
+func (x *ProcessInfo) GetGid() uint32 {
+	if x != nil {
+		return x.Gid
+	}
+	return 0
+}
+
+func (x *ProcessInfo) GetComm() string {
+	if x != nil {
+		return x.Comm
+	}
+	return ""
+}
+
+func (x *ProcessInfo) GetExePath() string {
+	if x != nil {
+		return x.ExePath
+	}
+	return ""
+}
+
+func (x *ProcessInfo) GetCmdline() string {
+	if x != nil {
+		return x.Cmdline
+	}
+	return ""
+}
+
+func (x *ProcessInfo) GetStartTime() uint64 {
+	if x != nil {
+		return x.StartTime
+	}
+	return 0
+}
+
+func (x *ProcessInfo) GetIsSuspicious() bool {
+	if x != nil {
+		return x.IsSuspicious
+	}
+	return false
+}
+
+func (x *ProcessInfo) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
 // FlowQuery specifies filtering criteria for flow queries
 type FlowQuery struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -232,14 +369,22 @@ type FlowQuery struct {
 	// Maximum number of results to return (0 = unlimited)
 	Limit uint32 `protobuf:"varint,11,opt,name=limit,proto3" json:"limit,omitempty"`
 	// Offset for pagination
-	Offset        uint32 `protobuf:"varint,12,opt,name=offset,proto3" json:"offset,omitempty"`
+	Offset uint32 `protobuf:"varint,12,opt,name=offset,proto3" json:"offset,omitempty"`
+	// Filter by process ID (Issue #51)
+	Pid uint32 `protobuf:"varint,13,opt,name=pid,proto3" json:"pid,omitempty"`
+	// Filter by process name (Issue #51)
+	ProcessName string `protobuf:"bytes,14,opt,name=process_name,json=processName,proto3" json:"process_name,omitempty"`
+	// Filter by process path prefix (Issue #51)
+	ProcessPath string `protobuf:"bytes,15,opt,name=process_path,json=processPath,proto3" json:"process_path,omitempty"`
+	// Filter by container ID (Issue #51)
+	ContainerId   string `protobuf:"bytes,16,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FlowQuery) Reset() {
 	*x = FlowQuery{}
-	mi := &file_flow_flow_proto_msgTypes[1]
+	mi := &file_flow_flow_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -251,7 +396,7 @@ func (x *FlowQuery) String() string {
 func (*FlowQuery) ProtoMessage() {}
 
 func (x *FlowQuery) ProtoReflect() protoreflect.Message {
-	mi := &file_flow_flow_proto_msgTypes[1]
+	mi := &file_flow_flow_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -264,7 +409,7 @@ func (x *FlowQuery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlowQuery.ProtoReflect.Descriptor instead.
 func (*FlowQuery) Descriptor() ([]byte, []int) {
-	return file_flow_flow_proto_rawDescGZIP(), []int{1}
+	return file_flow_flow_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *FlowQuery) GetTimeRange() *common.TimeRange {
@@ -351,6 +496,34 @@ func (x *FlowQuery) GetOffset() uint32 {
 	return 0
 }
 
+func (x *FlowQuery) GetPid() uint32 {
+	if x != nil {
+		return x.Pid
+	}
+	return 0
+}
+
+func (x *FlowQuery) GetProcessName() string {
+	if x != nil {
+		return x.ProcessName
+	}
+	return ""
+}
+
+func (x *FlowQuery) GetProcessPath() string {
+	if x != nil {
+		return x.ProcessPath
+	}
+	return ""
+}
+
+func (x *FlowQuery) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
 // FlowQueryResponse contains the results of a flow query
 type FlowQueryResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -366,7 +539,7 @@ type FlowQueryResponse struct {
 
 func (x *FlowQueryResponse) Reset() {
 	*x = FlowQueryResponse{}
-	mi := &file_flow_flow_proto_msgTypes[2]
+	mi := &file_flow_flow_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -378,7 +551,7 @@ func (x *FlowQueryResponse) String() string {
 func (*FlowQueryResponse) ProtoMessage() {}
 
 func (x *FlowQueryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_flow_flow_proto_msgTypes[2]
+	mi := &file_flow_flow_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -391,7 +564,7 @@ func (x *FlowQueryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlowQueryResponse.ProtoReflect.Descriptor instead.
 func (*FlowQueryResponse) Descriptor() ([]byte, []int) {
-	return file_flow_flow_proto_rawDescGZIP(), []int{2}
+	return file_flow_flow_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *FlowQueryResponse) GetFlows() []*Flow {
@@ -451,14 +624,16 @@ type Flow struct {
 	// Source workload labels
 	SourceLabels map[string]string `protobuf:"bytes,16,rep,name=source_labels,json=sourceLabels,proto3" json:"source_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Destination workload labels
-	DestLabels    map[string]string `protobuf:"bytes,17,rep,name=dest_labels,json=destLabels,proto3" json:"dest_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	DestLabels map[string]string `protobuf:"bytes,17,rep,name=dest_labels,json=destLabels,proto3" json:"dest_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Process information (Issue #51 - Process-Level Policy)
+	ProcessInfo   *ProcessInfo `protobuf:"bytes,18,opt,name=process_info,json=processInfo,proto3" json:"process_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Flow) Reset() {
 	*x = Flow{}
-	mi := &file_flow_flow_proto_msgTypes[3]
+	mi := &file_flow_flow_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -470,7 +645,7 @@ func (x *Flow) String() string {
 func (*Flow) ProtoMessage() {}
 
 func (x *Flow) ProtoReflect() protoreflect.Message {
-	mi := &file_flow_flow_proto_msgTypes[3]
+	mi := &file_flow_flow_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -483,7 +658,7 @@ func (x *Flow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Flow.ProtoReflect.Descriptor instead.
 func (*Flow) Descriptor() ([]byte, []int) {
-	return file_flow_flow_proto_rawDescGZIP(), []int{3}
+	return file_flow_flow_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Flow) GetId() uint64 {
@@ -605,6 +780,13 @@ func (x *Flow) GetDestLabels() map[string]string {
 	return nil
 }
 
+func (x *Flow) GetProcessInfo() *ProcessInfo {
+	if x != nil {
+		return x.ProcessInfo
+	}
+	return nil
+}
+
 // FlowSummaryRequest specifies parameters for flow summary query
 type FlowSummaryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -625,7 +807,7 @@ type FlowSummaryRequest struct {
 
 func (x *FlowSummaryRequest) Reset() {
 	*x = FlowSummaryRequest{}
-	mi := &file_flow_flow_proto_msgTypes[4]
+	mi := &file_flow_flow_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -637,7 +819,7 @@ func (x *FlowSummaryRequest) String() string {
 func (*FlowSummaryRequest) ProtoMessage() {}
 
 func (x *FlowSummaryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_flow_flow_proto_msgTypes[4]
+	mi := &file_flow_flow_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -650,7 +832,7 @@ func (x *FlowSummaryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlowSummaryRequest.ProtoReflect.Descriptor instead.
 func (*FlowSummaryRequest) Descriptor() ([]byte, []int) {
-	return file_flow_flow_proto_rawDescGZIP(), []int{4}
+	return file_flow_flow_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *FlowSummaryRequest) GetTimeRange() *common.TimeRange {
@@ -727,7 +909,7 @@ type FlowSummary struct {
 
 func (x *FlowSummary) Reset() {
 	*x = FlowSummary{}
-	mi := &file_flow_flow_proto_msgTypes[5]
+	mi := &file_flow_flow_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -739,7 +921,7 @@ func (x *FlowSummary) String() string {
 func (*FlowSummary) ProtoMessage() {}
 
 func (x *FlowSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_flow_flow_proto_msgTypes[5]
+	mi := &file_flow_flow_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -752,7 +934,7 @@ func (x *FlowSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlowSummary.ProtoReflect.Descriptor instead.
 func (*FlowSummary) Descriptor() ([]byte, []int) {
-	return file_flow_flow_proto_rawDescGZIP(), []int{5}
+	return file_flow_flow_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *FlowSummary) GetTotalFlows() uint64 {
@@ -828,7 +1010,7 @@ type ProtocolStats struct {
 
 func (x *ProtocolStats) Reset() {
 	*x = ProtocolStats{}
-	mi := &file_flow_flow_proto_msgTypes[6]
+	mi := &file_flow_flow_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -840,7 +1022,7 @@ func (x *ProtocolStats) String() string {
 func (*ProtocolStats) ProtoMessage() {}
 
 func (x *ProtocolStats) ProtoReflect() protoreflect.Message {
-	mi := &file_flow_flow_proto_msgTypes[6]
+	mi := &file_flow_flow_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -853,7 +1035,7 @@ func (x *ProtocolStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtocolStats.ProtoReflect.Descriptor instead.
 func (*ProtocolStats) Descriptor() ([]byte, []int) {
-	return file_flow_flow_proto_rawDescGZIP(), []int{6}
+	return file_flow_flow_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ProtocolStats) GetProtocol() common.Protocol {
@@ -903,7 +1085,7 @@ type IPStats struct {
 
 func (x *IPStats) Reset() {
 	*x = IPStats{}
-	mi := &file_flow_flow_proto_msgTypes[7]
+	mi := &file_flow_flow_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -915,7 +1097,7 @@ func (x *IPStats) String() string {
 func (*IPStats) ProtoMessage() {}
 
 func (x *IPStats) ProtoReflect() protoreflect.Message {
-	mi := &file_flow_flow_proto_msgTypes[7]
+	mi := &file_flow_flow_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -928,7 +1110,7 @@ func (x *IPStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IPStats.ProtoReflect.Descriptor instead.
 func (*IPStats) Descriptor() ([]byte, []int) {
-	return file_flow_flow_proto_rawDescGZIP(), []int{7}
+	return file_flow_flow_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *IPStats) GetIpAddress() string {
@@ -970,7 +1152,7 @@ var File_flow_flow_proto protoreflect.FileDescriptor
 
 const file_flow_flow_proto_rawDesc = "" +
 	"\n" +
-	"\x0fflow/flow.proto\x12\x11microsegment.flow\x1a\x13common/common.proto\"\xee\x06\n" +
+	"\x0fflow/flow.proto\x12\x11microsegment.flow\x1a\x13common/common.proto\"\xb1\a\n" +
 	"\tFlowEvent\x12\x15\n" +
 	"\x06src_ip\x18\x01 \x01(\aR\x05srcIp\x12\x15\n" +
 	"\x06dst_ip\x18\x02 \x01(\aR\x05dstIp\x12\x19\n" +
@@ -991,13 +1173,27 @@ const file_flow_flow_proto_rawDesc = "" +
 	"\bagent_id\x18\x0e \x01(\tR\aagentId\x12S\n" +
 	"\rsource_labels\x18\x10 \x03(\v2..microsegment.flow.FlowEvent.SourceLabelsEntryR\fsourceLabels\x12M\n" +
 	"\vdest_labels\x18\x11 \x03(\v2,.microsegment.flow.FlowEvent.DestLabelsEntryR\n" +
-	"destLabels\x1a?\n" +
+	"destLabels\x12A\n" +
+	"\fprocess_info\x18\x12 \x01(\v2\x1e.microsegment.flow.ProcessInfoR\vprocessInfo\x1a?\n" +
 	"\x11SourceLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a=\n" +
 	"\x0fDestLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9e\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x87\x02\n" +
+	"\vProcessInfo\x12\x10\n" +
+	"\x03pid\x18\x01 \x01(\rR\x03pid\x12\x12\n" +
+	"\x04ppid\x18\x02 \x01(\rR\x04ppid\x12\x10\n" +
+	"\x03uid\x18\x03 \x01(\rR\x03uid\x12\x10\n" +
+	"\x03gid\x18\x04 \x01(\rR\x03gid\x12\x12\n" +
+	"\x04comm\x18\x05 \x01(\tR\x04comm\x12\x19\n" +
+	"\bexe_path\x18\x06 \x01(\tR\aexePath\x12\x18\n" +
+	"\acmdline\x18\a \x01(\tR\acmdline\x12\x1d\n" +
+	"\n" +
+	"start_time\x18\b \x01(\x04R\tstartTime\x12#\n" +
+	"\ris_suspicious\x18\t \x01(\bR\fisSuspicious\x12!\n" +
+	"\fcontainer_id\x18\n" +
+	" \x01(\tR\vcontainerId\"\x99\x06\n" +
 	"\tFlowQuery\x12=\n" +
 	"\n" +
 	"time_range\x18\x01 \x01(\v2\x1e.microsegment.common.TimeRangeR\ttimeRange\x12\x15\n" +
@@ -1013,7 +1209,11 @@ const file_flow_flow_proto_rawDesc = "" +
 	" \x03(\v2,.microsegment.flow.FlowQuery.DestLabelsEntryR\n" +
 	"destLabels\x12\x14\n" +
 	"\x05limit\x18\v \x01(\rR\x05limit\x12\x16\n" +
-	"\x06offset\x18\f \x01(\rR\x06offset\x1a?\n" +
+	"\x06offset\x18\f \x01(\rR\x06offset\x12\x10\n" +
+	"\x03pid\x18\r \x01(\rR\x03pid\x12!\n" +
+	"\fprocess_name\x18\x0e \x01(\tR\vprocessName\x12!\n" +
+	"\fprocess_path\x18\x0f \x01(\tR\vprocessPath\x12!\n" +
+	"\fcontainer_id\x18\x10 \x01(\tR\vcontainerId\x1a?\n" +
 	"\x11SourceLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a=\n" +
@@ -1024,7 +1224,7 @@ const file_flow_flow_proto_rawDesc = "" +
 	"\x05flows\x18\x01 \x03(\v2\x17.microsegment.flow.FlowR\x05flows\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x04R\n" +
 	"totalCount\x12\x19\n" +
-	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"\xc3\x06\n" +
+	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"\x86\a\n" +
 	"\x04Flow\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x15\n" +
 	"\x06src_ip\x18\x02 \x01(\tR\x05srcIp\x12\x15\n" +
@@ -1046,7 +1246,8 @@ const file_flow_flow_proto_rawDesc = "" +
 	"\bagent_id\x18\x0f \x01(\tR\aagentId\x12N\n" +
 	"\rsource_labels\x18\x10 \x03(\v2).microsegment.flow.Flow.SourceLabelsEntryR\fsourceLabels\x12H\n" +
 	"\vdest_labels\x18\x11 \x03(\v2'.microsegment.flow.Flow.DestLabelsEntryR\n" +
-	"destLabels\x1a?\n" +
+	"destLabels\x12A\n" +
+	"\fprocess_info\x18\x12 \x01(\v2\x1e.microsegment.flow.ProcessInfoR\vprocessInfo\x1a?\n" +
 	"\x11SourceLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a=\n" +
@@ -1118,73 +1319,76 @@ func file_flow_flow_proto_rawDescGZIP() []byte {
 	return file_flow_flow_proto_rawDescData
 }
 
-var file_flow_flow_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_flow_flow_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_flow_flow_proto_goTypes = []any{
 	(*FlowEvent)(nil),             // 0: microsegment.flow.FlowEvent
-	(*FlowQuery)(nil),             // 1: microsegment.flow.FlowQuery
-	(*FlowQueryResponse)(nil),     // 2: microsegment.flow.FlowQueryResponse
-	(*Flow)(nil),                  // 3: microsegment.flow.Flow
-	(*FlowSummaryRequest)(nil),    // 4: microsegment.flow.FlowSummaryRequest
-	(*FlowSummary)(nil),           // 5: microsegment.flow.FlowSummary
-	(*ProtocolStats)(nil),         // 6: microsegment.flow.ProtocolStats
-	(*IPStats)(nil),               // 7: microsegment.flow.IPStats
-	nil,                           // 8: microsegment.flow.FlowEvent.SourceLabelsEntry
-	nil,                           // 9: microsegment.flow.FlowEvent.DestLabelsEntry
-	nil,                           // 10: microsegment.flow.FlowQuery.SourceLabelsEntry
-	nil,                           // 11: microsegment.flow.FlowQuery.DestLabelsEntry
-	nil,                           // 12: microsegment.flow.Flow.SourceLabelsEntry
-	nil,                           // 13: microsegment.flow.Flow.DestLabelsEntry
-	nil,                           // 14: microsegment.flow.FlowSummaryRequest.SourceLabelsEntry
-	nil,                           // 15: microsegment.flow.FlowSummaryRequest.DestLabelsEntry
-	nil,                           // 16: microsegment.flow.IPStats.LabelsEntry
-	(common.Protocol)(0),          // 17: microsegment.common.Protocol
-	(common.FlowEventType)(0),     // 18: microsegment.common.FlowEventType
-	(common.FlowDirection)(0),     // 19: microsegment.common.FlowDirection
-	(common.PolicyAction)(0),      // 20: microsegment.common.PolicyAction
-	(common.FlowState)(0),         // 21: microsegment.common.FlowState
-	(*common.TimeRange)(nil),      // 22: microsegment.common.TimeRange
-	(*common.ReportResponse)(nil), // 23: microsegment.common.ReportResponse
+	(*ProcessInfo)(nil),           // 1: microsegment.flow.ProcessInfo
+	(*FlowQuery)(nil),             // 2: microsegment.flow.FlowQuery
+	(*FlowQueryResponse)(nil),     // 3: microsegment.flow.FlowQueryResponse
+	(*Flow)(nil),                  // 4: microsegment.flow.Flow
+	(*FlowSummaryRequest)(nil),    // 5: microsegment.flow.FlowSummaryRequest
+	(*FlowSummary)(nil),           // 6: microsegment.flow.FlowSummary
+	(*ProtocolStats)(nil),         // 7: microsegment.flow.ProtocolStats
+	(*IPStats)(nil),               // 8: microsegment.flow.IPStats
+	nil,                           // 9: microsegment.flow.FlowEvent.SourceLabelsEntry
+	nil,                           // 10: microsegment.flow.FlowEvent.DestLabelsEntry
+	nil,                           // 11: microsegment.flow.FlowQuery.SourceLabelsEntry
+	nil,                           // 12: microsegment.flow.FlowQuery.DestLabelsEntry
+	nil,                           // 13: microsegment.flow.Flow.SourceLabelsEntry
+	nil,                           // 14: microsegment.flow.Flow.DestLabelsEntry
+	nil,                           // 15: microsegment.flow.FlowSummaryRequest.SourceLabelsEntry
+	nil,                           // 16: microsegment.flow.FlowSummaryRequest.DestLabelsEntry
+	nil,                           // 17: microsegment.flow.IPStats.LabelsEntry
+	(common.Protocol)(0),          // 18: microsegment.common.Protocol
+	(common.FlowEventType)(0),     // 19: microsegment.common.FlowEventType
+	(common.FlowDirection)(0),     // 20: microsegment.common.FlowDirection
+	(common.PolicyAction)(0),      // 21: microsegment.common.PolicyAction
+	(common.FlowState)(0),         // 22: microsegment.common.FlowState
+	(*common.TimeRange)(nil),      // 23: microsegment.common.TimeRange
+	(*common.ReportResponse)(nil), // 24: microsegment.common.ReportResponse
 }
 var file_flow_flow_proto_depIdxs = []int32{
-	17, // 0: microsegment.flow.FlowEvent.protocol:type_name -> microsegment.common.Protocol
-	18, // 1: microsegment.flow.FlowEvent.event_type:type_name -> microsegment.common.FlowEventType
-	19, // 2: microsegment.flow.FlowEvent.direction:type_name -> microsegment.common.FlowDirection
-	20, // 3: microsegment.flow.FlowEvent.policy_action:type_name -> microsegment.common.PolicyAction
-	21, // 4: microsegment.flow.FlowEvent.state:type_name -> microsegment.common.FlowState
-	8,  // 5: microsegment.flow.FlowEvent.source_labels:type_name -> microsegment.flow.FlowEvent.SourceLabelsEntry
-	9,  // 6: microsegment.flow.FlowEvent.dest_labels:type_name -> microsegment.flow.FlowEvent.DestLabelsEntry
-	22, // 7: microsegment.flow.FlowQuery.time_range:type_name -> microsegment.common.TimeRange
-	17, // 8: microsegment.flow.FlowQuery.protocol:type_name -> microsegment.common.Protocol
-	20, // 9: microsegment.flow.FlowQuery.policy_action:type_name -> microsegment.common.PolicyAction
-	10, // 10: microsegment.flow.FlowQuery.source_labels:type_name -> microsegment.flow.FlowQuery.SourceLabelsEntry
-	11, // 11: microsegment.flow.FlowQuery.dest_labels:type_name -> microsegment.flow.FlowQuery.DestLabelsEntry
-	3,  // 12: microsegment.flow.FlowQueryResponse.flows:type_name -> microsegment.flow.Flow
-	17, // 13: microsegment.flow.Flow.protocol:type_name -> microsegment.common.Protocol
-	19, // 14: microsegment.flow.Flow.direction:type_name -> microsegment.common.FlowDirection
-	20, // 15: microsegment.flow.Flow.policy_action:type_name -> microsegment.common.PolicyAction
-	21, // 16: microsegment.flow.Flow.state:type_name -> microsegment.common.FlowState
-	12, // 17: microsegment.flow.Flow.source_labels:type_name -> microsegment.flow.Flow.SourceLabelsEntry
-	13, // 18: microsegment.flow.Flow.dest_labels:type_name -> microsegment.flow.Flow.DestLabelsEntry
-	22, // 19: microsegment.flow.FlowSummaryRequest.time_range:type_name -> microsegment.common.TimeRange
-	17, // 20: microsegment.flow.FlowSummaryRequest.protocol:type_name -> microsegment.common.Protocol
-	14, // 21: microsegment.flow.FlowSummaryRequest.source_labels:type_name -> microsegment.flow.FlowSummaryRequest.SourceLabelsEntry
-	15, // 22: microsegment.flow.FlowSummaryRequest.dest_labels:type_name -> microsegment.flow.FlowSummaryRequest.DestLabelsEntry
-	6,  // 23: microsegment.flow.FlowSummary.protocol_stats:type_name -> microsegment.flow.ProtocolStats
-	7,  // 24: microsegment.flow.FlowSummary.top_sources:type_name -> microsegment.flow.IPStats
-	7,  // 25: microsegment.flow.FlowSummary.top_destinations:type_name -> microsegment.flow.IPStats
-	17, // 26: microsegment.flow.ProtocolStats.protocol:type_name -> microsegment.common.Protocol
-	16, // 27: microsegment.flow.IPStats.labels:type_name -> microsegment.flow.IPStats.LabelsEntry
-	0,  // 28: microsegment.flow.FlowService.ReportFlowEvents:input_type -> microsegment.flow.FlowEvent
-	1,  // 29: microsegment.flow.FlowService.QueryFlows:input_type -> microsegment.flow.FlowQuery
-	4,  // 30: microsegment.flow.FlowService.GetFlowSummary:input_type -> microsegment.flow.FlowSummaryRequest
-	23, // 31: microsegment.flow.FlowService.ReportFlowEvents:output_type -> microsegment.common.ReportResponse
-	2,  // 32: microsegment.flow.FlowService.QueryFlows:output_type -> microsegment.flow.FlowQueryResponse
-	5,  // 33: microsegment.flow.FlowService.GetFlowSummary:output_type -> microsegment.flow.FlowSummary
-	31, // [31:34] is the sub-list for method output_type
-	28, // [28:31] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	18, // 0: microsegment.flow.FlowEvent.protocol:type_name -> microsegment.common.Protocol
+	19, // 1: microsegment.flow.FlowEvent.event_type:type_name -> microsegment.common.FlowEventType
+	20, // 2: microsegment.flow.FlowEvent.direction:type_name -> microsegment.common.FlowDirection
+	21, // 3: microsegment.flow.FlowEvent.policy_action:type_name -> microsegment.common.PolicyAction
+	22, // 4: microsegment.flow.FlowEvent.state:type_name -> microsegment.common.FlowState
+	9,  // 5: microsegment.flow.FlowEvent.source_labels:type_name -> microsegment.flow.FlowEvent.SourceLabelsEntry
+	10, // 6: microsegment.flow.FlowEvent.dest_labels:type_name -> microsegment.flow.FlowEvent.DestLabelsEntry
+	1,  // 7: microsegment.flow.FlowEvent.process_info:type_name -> microsegment.flow.ProcessInfo
+	23, // 8: microsegment.flow.FlowQuery.time_range:type_name -> microsegment.common.TimeRange
+	18, // 9: microsegment.flow.FlowQuery.protocol:type_name -> microsegment.common.Protocol
+	21, // 10: microsegment.flow.FlowQuery.policy_action:type_name -> microsegment.common.PolicyAction
+	11, // 11: microsegment.flow.FlowQuery.source_labels:type_name -> microsegment.flow.FlowQuery.SourceLabelsEntry
+	12, // 12: microsegment.flow.FlowQuery.dest_labels:type_name -> microsegment.flow.FlowQuery.DestLabelsEntry
+	4,  // 13: microsegment.flow.FlowQueryResponse.flows:type_name -> microsegment.flow.Flow
+	18, // 14: microsegment.flow.Flow.protocol:type_name -> microsegment.common.Protocol
+	20, // 15: microsegment.flow.Flow.direction:type_name -> microsegment.common.FlowDirection
+	21, // 16: microsegment.flow.Flow.policy_action:type_name -> microsegment.common.PolicyAction
+	22, // 17: microsegment.flow.Flow.state:type_name -> microsegment.common.FlowState
+	13, // 18: microsegment.flow.Flow.source_labels:type_name -> microsegment.flow.Flow.SourceLabelsEntry
+	14, // 19: microsegment.flow.Flow.dest_labels:type_name -> microsegment.flow.Flow.DestLabelsEntry
+	1,  // 20: microsegment.flow.Flow.process_info:type_name -> microsegment.flow.ProcessInfo
+	23, // 21: microsegment.flow.FlowSummaryRequest.time_range:type_name -> microsegment.common.TimeRange
+	18, // 22: microsegment.flow.FlowSummaryRequest.protocol:type_name -> microsegment.common.Protocol
+	15, // 23: microsegment.flow.FlowSummaryRequest.source_labels:type_name -> microsegment.flow.FlowSummaryRequest.SourceLabelsEntry
+	16, // 24: microsegment.flow.FlowSummaryRequest.dest_labels:type_name -> microsegment.flow.FlowSummaryRequest.DestLabelsEntry
+	7,  // 25: microsegment.flow.FlowSummary.protocol_stats:type_name -> microsegment.flow.ProtocolStats
+	8,  // 26: microsegment.flow.FlowSummary.top_sources:type_name -> microsegment.flow.IPStats
+	8,  // 27: microsegment.flow.FlowSummary.top_destinations:type_name -> microsegment.flow.IPStats
+	18, // 28: microsegment.flow.ProtocolStats.protocol:type_name -> microsegment.common.Protocol
+	17, // 29: microsegment.flow.IPStats.labels:type_name -> microsegment.flow.IPStats.LabelsEntry
+	0,  // 30: microsegment.flow.FlowService.ReportFlowEvents:input_type -> microsegment.flow.FlowEvent
+	2,  // 31: microsegment.flow.FlowService.QueryFlows:input_type -> microsegment.flow.FlowQuery
+	5,  // 32: microsegment.flow.FlowService.GetFlowSummary:input_type -> microsegment.flow.FlowSummaryRequest
+	24, // 33: microsegment.flow.FlowService.ReportFlowEvents:output_type -> microsegment.common.ReportResponse
+	3,  // 34: microsegment.flow.FlowService.QueryFlows:output_type -> microsegment.flow.FlowQueryResponse
+	6,  // 35: microsegment.flow.FlowService.GetFlowSummary:output_type -> microsegment.flow.FlowSummary
+	33, // [33:36] is the sub-list for method output_type
+	30, // [30:33] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_flow_flow_proto_init() }
@@ -1198,7 +1402,7 @@ func file_flow_flow_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_flow_flow_proto_rawDesc), len(file_flow_flow_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

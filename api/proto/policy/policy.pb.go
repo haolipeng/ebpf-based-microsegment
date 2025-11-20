@@ -79,6 +79,59 @@ func (PolicyUpdateType) EnumDescriptor() ([]byte, []int) {
 	return file_policy_policy_proto_rawDescGZIP(), []int{0}
 }
 
+// ProcessMatchMode defines how process matching is performed
+type ProcessMatchMode int32
+
+const (
+	// Match process by exact command name
+	ProcessMatchMode_MATCH_EXACT ProcessMatchMode = 0
+	// Match process by path prefix
+	ProcessMatchMode_MATCH_PREFIX ProcessMatchMode = 1
+	// Match process using wildcard patterns (* and ?)
+	ProcessMatchMode_MATCH_WILDCARD ProcessMatchMode = 2
+)
+
+// Enum value maps for ProcessMatchMode.
+var (
+	ProcessMatchMode_name = map[int32]string{
+		0: "MATCH_EXACT",
+		1: "MATCH_PREFIX",
+		2: "MATCH_WILDCARD",
+	}
+	ProcessMatchMode_value = map[string]int32{
+		"MATCH_EXACT":    0,
+		"MATCH_PREFIX":   1,
+		"MATCH_WILDCARD": 2,
+	}
+)
+
+func (x ProcessMatchMode) Enum() *ProcessMatchMode {
+	p := new(ProcessMatchMode)
+	*p = x
+	return p
+}
+
+func (x ProcessMatchMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProcessMatchMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_policy_policy_proto_enumTypes[1].Descriptor()
+}
+
+func (ProcessMatchMode) Type() protoreflect.EnumType {
+	return &file_policy_policy_proto_enumTypes[1]
+}
+
+func (x ProcessMatchMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProcessMatchMode.Descriptor instead.
+func (ProcessMatchMode) EnumDescriptor() ([]byte, []int) {
+	return file_policy_policy_proto_rawDescGZIP(), []int{1}
+}
+
 // SyncRequest is sent by agents to request full policy synchronization
 type SyncRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -374,7 +427,15 @@ type Policy struct {
 	// Destination labels
 	DestLabels map[string]string `protobuf:"bytes,12,rep,name=dest_labels,json=destLabels,proto3" json:"dest_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Human-readable description
-	Description   string `protobuf:"bytes,13,opt,name=description,proto3" json:"description,omitempty"`
+	Description string `protobuf:"bytes,13,opt,name=description,proto3" json:"description,omitempty"`
+	// Process command name (e.g., "nginx", "curl")
+	// Empty string means match all processes
+	ProcessName string `protobuf:"bytes,14,opt,name=process_name,json=processName,proto3" json:"process_name,omitempty"`
+	// Process executable path prefix (e.g., "/usr/bin/", "/tmp/")
+	// Empty string means match all paths
+	ProcessPath string `protobuf:"bytes,15,opt,name=process_path,json=processPath,proto3" json:"process_path,omitempty"`
+	// Process matching mode
+	MatchMode     ProcessMatchMode `protobuf:"varint,16,opt,name=match_mode,json=matchMode,proto3,enum=microsegment.policy.ProcessMatchMode" json:"match_mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -498,6 +559,27 @@ func (x *Policy) GetDescription() string {
 		return x.Description
 	}
 	return ""
+}
+
+func (x *Policy) GetProcessName() string {
+	if x != nil {
+		return x.ProcessName
+	}
+	return ""
+}
+
+func (x *Policy) GetProcessPath() string {
+	if x != nil {
+		return x.ProcessPath
+	}
+	return ""
+}
+
+func (x *Policy) GetMatchMode() ProcessMatchMode {
+	if x != nil {
+		return x.MatchMode
+	}
+	return ProcessMatchMode_MATCH_EXACT
 }
 
 // PolicyStatsReport contains policy enforcement statistics from an agent
@@ -687,7 +769,7 @@ const file_policy_policy_proto_rawDesc = "" +
 	"updateType\x123\n" +
 	"\x06policy\x18\x02 \x01(\v2\x1b.microsegment.policy.PolicyR\x06policy\x12%\n" +
 	"\x0epolicy_version\x18\x03 \x01(\x04R\rpolicyVersion\x12\x1c\n" +
-	"\ttimestamp\x18\x04 \x01(\x03R\ttimestamp\"\x99\x05\n" +
+	"\ttimestamp\x18\x04 \x01(\x03R\ttimestamp\"\xa5\x06\n" +
 	"\x06Policy\x12\x17\n" +
 	"\arule_id\x18\x01 \x01(\rR\x06ruleId\x12\x15\n" +
 	"\x06src_ip\x18\x02 \x01(\tR\x05srcIp\x12\x15\n" +
@@ -705,7 +787,11 @@ const file_policy_policy_proto_rawDesc = "" +
 	"\rsource_labels\x18\v \x03(\v2-.microsegment.policy.Policy.SourceLabelsEntryR\fsourceLabels\x12L\n" +
 	"\vdest_labels\x18\f \x03(\v2+.microsegment.policy.Policy.DestLabelsEntryR\n" +
 	"destLabels\x12 \n" +
-	"\vdescription\x18\r \x01(\tR\vdescription\x1a?\n" +
+	"\vdescription\x18\r \x01(\tR\vdescription\x12!\n" +
+	"\fprocess_name\x18\x0e \x01(\tR\vprocessName\x12!\n" +
+	"\fprocess_path\x18\x0f \x01(\tR\vprocessPath\x12D\n" +
+	"\n" +
+	"match_mode\x18\x10 \x01(\x0e2%.microsegment.policy.ProcessMatchModeR\tmatchMode\x1a?\n" +
 	"\x11SourceLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a=\n" +
@@ -732,7 +818,11 @@ const file_policy_policy_proto_rawDesc = "" +
 	"\n" +
 	"UPDATE_ADD\x10\x01\x12\x11\n" +
 	"\rUPDATE_MODIFY\x10\x02\x12\x11\n" +
-	"\rUPDATE_DELETE\x10\x032\xa7\x02\n" +
+	"\rUPDATE_DELETE\x10\x03*I\n" +
+	"\x10ProcessMatchMode\x12\x0f\n" +
+	"\vMATCH_EXACT\x10\x00\x12\x10\n" +
+	"\fMATCH_PREFIX\x10\x01\x12\x12\n" +
+	"\x0eMATCH_WILDCARD\x10\x022\xa7\x02\n" +
 	"\rPolicyService\x12S\n" +
 	"\fSyncPolicies\x12 .microsegment.policy.SyncRequest\x1a!.microsegment.policy.SyncResponse\x12_\n" +
 	"\x11SubscribePolicies\x12%.microsegment.policy.SubscribeRequest\x1a!.microsegment.policy.PolicyUpdate0\x01\x12`\n" +
@@ -750,45 +840,47 @@ func file_policy_policy_proto_rawDescGZIP() []byte {
 	return file_policy_policy_proto_rawDescData
 }
 
-var file_policy_policy_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_policy_policy_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_policy_policy_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_policy_policy_proto_goTypes = []any{
 	(PolicyUpdateType)(0),         // 0: microsegment.policy.PolicyUpdateType
-	(*SyncRequest)(nil),           // 1: microsegment.policy.SyncRequest
-	(*SyncResponse)(nil),          // 2: microsegment.policy.SyncResponse
-	(*SubscribeRequest)(nil),      // 3: microsegment.policy.SubscribeRequest
-	(*PolicyUpdate)(nil),          // 4: microsegment.policy.PolicyUpdate
-	(*Policy)(nil),                // 5: microsegment.policy.Policy
-	(*PolicyStatsReport)(nil),     // 6: microsegment.policy.PolicyStatsReport
-	(*PolicyStats)(nil),           // 7: microsegment.policy.PolicyStats
-	nil,                           // 8: microsegment.policy.Policy.SourceLabelsEntry
-	nil,                           // 9: microsegment.policy.Policy.DestLabelsEntry
-	(common.Protocol)(0),          // 10: microsegment.common.Protocol
-	(common.PolicyAction)(0),      // 11: microsegment.common.PolicyAction
-	(*common.TimeRange)(nil),      // 12: microsegment.common.TimeRange
-	(*common.ReportResponse)(nil), // 13: microsegment.common.ReportResponse
+	(ProcessMatchMode)(0),         // 1: microsegment.policy.ProcessMatchMode
+	(*SyncRequest)(nil),           // 2: microsegment.policy.SyncRequest
+	(*SyncResponse)(nil),          // 3: microsegment.policy.SyncResponse
+	(*SubscribeRequest)(nil),      // 4: microsegment.policy.SubscribeRequest
+	(*PolicyUpdate)(nil),          // 5: microsegment.policy.PolicyUpdate
+	(*Policy)(nil),                // 6: microsegment.policy.Policy
+	(*PolicyStatsReport)(nil),     // 7: microsegment.policy.PolicyStatsReport
+	(*PolicyStats)(nil),           // 8: microsegment.policy.PolicyStats
+	nil,                           // 9: microsegment.policy.Policy.SourceLabelsEntry
+	nil,                           // 10: microsegment.policy.Policy.DestLabelsEntry
+	(common.Protocol)(0),          // 11: microsegment.common.Protocol
+	(common.PolicyAction)(0),      // 12: microsegment.common.PolicyAction
+	(*common.TimeRange)(nil),      // 13: microsegment.common.TimeRange
+	(*common.ReportResponse)(nil), // 14: microsegment.common.ReportResponse
 }
 var file_policy_policy_proto_depIdxs = []int32{
-	5,  // 0: microsegment.policy.SyncResponse.policies:type_name -> microsegment.policy.Policy
+	6,  // 0: microsegment.policy.SyncResponse.policies:type_name -> microsegment.policy.Policy
 	0,  // 1: microsegment.policy.PolicyUpdate.update_type:type_name -> microsegment.policy.PolicyUpdateType
-	5,  // 2: microsegment.policy.PolicyUpdate.policy:type_name -> microsegment.policy.Policy
-	10, // 3: microsegment.policy.Policy.protocol:type_name -> microsegment.common.Protocol
-	11, // 4: microsegment.policy.Policy.action:type_name -> microsegment.common.PolicyAction
-	8,  // 5: microsegment.policy.Policy.source_labels:type_name -> microsegment.policy.Policy.SourceLabelsEntry
-	9,  // 6: microsegment.policy.Policy.dest_labels:type_name -> microsegment.policy.Policy.DestLabelsEntry
-	12, // 7: microsegment.policy.PolicyStatsReport.time_range:type_name -> microsegment.common.TimeRange
-	7,  // 8: microsegment.policy.PolicyStatsReport.policy_stats:type_name -> microsegment.policy.PolicyStats
-	1,  // 9: microsegment.policy.PolicyService.SyncPolicies:input_type -> microsegment.policy.SyncRequest
-	3,  // 10: microsegment.policy.PolicyService.SubscribePolicies:input_type -> microsegment.policy.SubscribeRequest
-	6,  // 11: microsegment.policy.PolicyService.ReportPolicyStats:input_type -> microsegment.policy.PolicyStatsReport
-	2,  // 12: microsegment.policy.PolicyService.SyncPolicies:output_type -> microsegment.policy.SyncResponse
-	4,  // 13: microsegment.policy.PolicyService.SubscribePolicies:output_type -> microsegment.policy.PolicyUpdate
-	13, // 14: microsegment.policy.PolicyService.ReportPolicyStats:output_type -> microsegment.common.ReportResponse
-	12, // [12:15] is the sub-list for method output_type
-	9,  // [9:12] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	6,  // 2: microsegment.policy.PolicyUpdate.policy:type_name -> microsegment.policy.Policy
+	11, // 3: microsegment.policy.Policy.protocol:type_name -> microsegment.common.Protocol
+	12, // 4: microsegment.policy.Policy.action:type_name -> microsegment.common.PolicyAction
+	9,  // 5: microsegment.policy.Policy.source_labels:type_name -> microsegment.policy.Policy.SourceLabelsEntry
+	10, // 6: microsegment.policy.Policy.dest_labels:type_name -> microsegment.policy.Policy.DestLabelsEntry
+	1,  // 7: microsegment.policy.Policy.match_mode:type_name -> microsegment.policy.ProcessMatchMode
+	13, // 8: microsegment.policy.PolicyStatsReport.time_range:type_name -> microsegment.common.TimeRange
+	8,  // 9: microsegment.policy.PolicyStatsReport.policy_stats:type_name -> microsegment.policy.PolicyStats
+	2,  // 10: microsegment.policy.PolicyService.SyncPolicies:input_type -> microsegment.policy.SyncRequest
+	4,  // 11: microsegment.policy.PolicyService.SubscribePolicies:input_type -> microsegment.policy.SubscribeRequest
+	7,  // 12: microsegment.policy.PolicyService.ReportPolicyStats:input_type -> microsegment.policy.PolicyStatsReport
+	3,  // 13: microsegment.policy.PolicyService.SyncPolicies:output_type -> microsegment.policy.SyncResponse
+	5,  // 14: microsegment.policy.PolicyService.SubscribePolicies:output_type -> microsegment.policy.PolicyUpdate
+	14, // 15: microsegment.policy.PolicyService.ReportPolicyStats:output_type -> microsegment.common.ReportResponse
+	13, // [13:16] is the sub-list for method output_type
+	10, // [10:13] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_policy_policy_proto_init() }
@@ -801,7 +893,7 @@ func file_policy_policy_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_policy_policy_proto_rawDesc), len(file_policy_policy_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,

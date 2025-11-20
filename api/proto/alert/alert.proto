@@ -1,0 +1,192 @@
+syntax = "proto3";
+
+package microsegment.alert;
+
+import "common/common.proto";
+import "flow/flow.proto";
+
+option go_package = "github.com/haolipeng/ebpf-based-microsegment/api/proto/alert";
+
+// AlertService handles security alert reporting and querying
+service AlertService {
+  // ReportAlerts accepts a stream of security alerts from agents
+  rpc ReportAlerts(stream SecurityAlert) returns (common.ReportResponse);
+
+  // QueryAlerts returns alerts matching the given criteria
+  rpc QueryAlerts(AlertQuery) returns (AlertQueryResponse);
+
+  // GetAlertSummary returns aggregated alert statistics
+  rpc GetAlertSummary(AlertSummaryRequest) returns (AlertSummary);
+}
+
+// SecurityAlert represents a security alert event
+// Generated when suspicious process activity is detected (Issue #50)
+message SecurityAlert {
+  // Unique alert ID (UUID)
+  string alert_id = 1;
+
+  // Alert severity level
+  AlertLevel level = 2;
+
+  // Alert type/category
+  AlertType type = 3;
+
+  // Process information that triggered the alert
+  flow.ProcessInfo process_info = 4;
+
+  // Associated network flow (optional, may be null for process-only alerts)
+  flow.FlowEvent flow_event = 5;
+
+  // Human-readable reason/description
+  string reason = 6;
+
+  // Alert generation timestamp (Unix nanoseconds)
+  int64 timestamp = 7;
+
+  // Agent ID that generated the alert
+  string agent_id = 8;
+
+  // Additional context metadata
+  map<string, string> metadata = 9;
+}
+
+// AlertLevel defines alert severity levels
+enum AlertLevel {
+  // Informational alert (low priority)
+  ALERT_INFO = 0;
+
+  // Warning - potential security concern
+  ALERT_WARNING = 1;
+
+  // Critical - immediate security threat
+  ALERT_CRITICAL = 2;
+}
+
+// AlertType categorizes different types of security alerts
+enum AlertType {
+  // Process running from suspicious directory (e.g., /tmp)
+  ALERT_SUSPICIOUS_PATH = 0;
+
+  // Privileged process from untrusted location
+  ALERT_PRIVILEGE_ESCALATION = 1;
+
+  // Process name doesn't match executable path
+  ALERT_NAME_MISMATCH = 2;
+
+  // Anomalous network connection from process
+  ALERT_ANOMALOUS_CONNECTION = 3;
+
+  // Process running from deleted executable
+  ALERT_DELETED_EXECUTABLE = 4;
+
+  // Process running from hidden file
+  ALERT_HIDDEN_EXECUTABLE = 5;
+}
+
+// AlertQuery specifies filtering criteria for alert queries
+message AlertQuery {
+  // Time range filter
+  common.TimeRange time_range = 1;
+
+  // Filter by alert level (minimum level)
+  AlertLevel min_level = 2;
+
+  // Filter by alert type
+  AlertType type = 3;
+
+  // Filter by process ID
+  uint32 pid = 4;
+
+  // Filter by process name
+  string process_name = 5;
+
+  // Filter by process path prefix
+  string process_path = 6;
+
+  // Filter by agent ID
+  string agent_id = 7;
+
+  // Filter by container ID
+  string container_id = 8;
+
+  // Maximum number of results (0 = unlimited)
+  uint32 limit = 9;
+
+  // Offset for pagination
+  uint32 offset = 10;
+}
+
+// AlertQueryResponse contains the results of an alert query
+message AlertQueryResponse {
+  // Matching alerts
+  repeated SecurityAlert alerts = 1;
+
+  // Total count (before limit/offset)
+  uint64 total_count = 2;
+
+  // Whether there are more results available
+  bool has_more = 3;
+}
+
+// AlertSummaryRequest specifies parameters for alert summary
+message AlertSummaryRequest {
+  // Time range for aggregation
+  common.TimeRange time_range = 1;
+
+  // Group by alert type
+  bool group_by_type = 2;
+
+  // Group by alert level
+  bool group_by_level = 3;
+
+  // Optional filters
+  string agent_id = 4;
+  AlertLevel min_level = 5;
+}
+
+// AlertSummary contains aggregated alert statistics
+message AlertSummary {
+  // Total number of alerts
+  uint64 total_alerts = 1;
+
+  // Count by level
+  uint64 critical_count = 2;
+  uint64 warning_count = 3;
+  uint64 info_count = 4;
+
+  // Alert statistics by type
+  repeated AlertTypeStats type_stats = 5;
+
+  // Top suspicious processes
+  repeated ProcessAlertStats top_processes = 6;
+}
+
+// AlertTypeStats contains statistics for a specific alert type
+message AlertTypeStats {
+  // Alert type
+  AlertType type = 1;
+
+  // Number of alerts
+  uint64 count = 2;
+
+  // Most recent alert timestamp
+  int64 last_seen = 3;
+}
+
+// ProcessAlertStats contains alert statistics for a specific process
+message ProcessAlertStats {
+  // Process executable path
+  string exe_path = 1;
+
+  // Process command name
+  string comm = 2;
+
+  // Number of alerts for this process
+  uint64 alert_count = 3;
+
+  // Highest severity level seen
+  AlertLevel max_level = 4;
+
+  // Last alert timestamp
+  int64 last_seen = 5;
+}
