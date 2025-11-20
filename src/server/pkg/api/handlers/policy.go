@@ -54,6 +54,9 @@ type CreatePolicyRequest struct {
 	SourceLabels map[string]string  `json:"source_labels"`
 	DestLabels   map[string]string  `json:"dest_labels"`
 	Description  string             `json:"description"`
+	ProcessName  string             `json:"process_name" binding:"omitempty,max=255"`
+	ProcessPath  string             `json:"process_path" binding:"omitempty,max=1024"`
+	MatchMode    int32              `json:"match_mode" binding:"omitempty,min=0,max=2"` // 0=EXACT, 1=PREFIX, 2=WILDCARD
 }
 
 // CreatePolicy 创建新策略
@@ -76,6 +79,9 @@ func (h *PolicyHandler) CreatePolicy(c *gin.Context) {
 		SourceLabels: req.SourceLabels,
 		DestLabels:   req.DestLabels,
 		Description:  req.Description,
+		ProcessName:  req.ProcessName,
+		ProcessPath:  req.ProcessPath,
+		MatchMode:    policypb.ProcessMatchMode(req.MatchMode),
 	}
 
 	// 保存到数据库
@@ -116,6 +122,9 @@ func (h *PolicyHandler) UpdatePolicy(c *gin.Context) {
 		SourceLabels: req.SourceLabels,
 		DestLabels:   req.DestLabels,
 		Description:  req.Description,
+		ProcessName:  req.ProcessName,
+		ProcessPath:  req.ProcessPath,
+		MatchMode:    policypb.ProcessMatchMode(req.MatchMode),
 	}
 
 	// 更新数据库

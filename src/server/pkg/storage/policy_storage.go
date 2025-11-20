@@ -32,6 +32,7 @@ func (s *PolicyStorage) GetAllPolicies(ctx context.Context) ([]*policypb.Policy,
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT rule_id, src_ip, dst_ip, src_port, dst_port, protocol, action, priority,
 		       source_labels, dest_labels, description,
+		       process_name, process_path, match_mode,
 		       FLOOR(EXTRACT(EPOCH FROM created_at)*1000000000)::bigint as created_at,
 		       FLOOR(EXTRACT(EPOCH FROM updated_at)*1000000000)::bigint as updated_at
 		FROM policies
@@ -46,6 +47,8 @@ func (s *PolicyStorage) GetAllPolicies(ctx context.Context) ([]*policypb.Policy,
 	for rows.Next() {
 		var policy policypb.Policy
 		var sourceLabelsJSON, destLabelsJSON []byte
+		var processName, processPath sql.NullString
+		var matchMode sql.NullInt32
 
 		err := rows.Scan(
 			&policy.RuleId,
@@ -59,6 +62,9 @@ func (s *PolicyStorage) GetAllPolicies(ctx context.Context) ([]*policypb.Policy,
 			&sourceLabelsJSON,
 			&destLabelsJSON,
 			&policy.Description,
+			&processName,
+			&processPath,
+			&matchMode,
 			&policy.CreatedAt,
 			&policy.UpdatedAt,
 		)
@@ -72,6 +78,17 @@ func (s *PolicyStorage) GetAllPolicies(ctx context.Context) ([]*policypb.Policy,
 		json.Unmarshal(sourceLabelsJSON, &policy.SourceLabels)
 		json.Unmarshal(destLabelsJSON, &policy.DestLabels)
 
+		// Set process fields if present
+		if processName.Valid {
+			policy.ProcessName = processName.String
+		}
+		if processPath.Valid {
+			policy.ProcessPath = processPath.String
+		}
+		if matchMode.Valid {
+			policy.MatchMode = policypb.ProcessMatchMode(matchMode.Int32)
+		}
+
 		policies = append(policies, &policy)
 	}
 
@@ -83,12 +100,27 @@ func (s *PolicyStorage) CreatePolicy(ctx context.Context, policy *policypb.Polic
 	sourceLabelsJSON, _ := json.Marshal(policy.SourceLabels)
 	destLabelsJSON, _ := json.Marshal(policy.DestLabels)
 
+	// Convert process fields to nullable types
+	var processName, processPath sql.NullString
+	var matchMode sql.NullInt32
+	if policy.ProcessName != "" {
+		processName = sql.NullString{String: policy.ProcessName, Valid: true}
+	}
+	if policy.ProcessPath != "" {
+		processPath = sql.NullString{String: policy.ProcessPath, Valid: true}
+	}
+	if policy.MatchMode != 0 {
+		matchMode = sql.NullInt32{Int32: int32(policy.MatchMode), Valid: true}
+	}
+
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO policies (rule_id, src_ip, dst_ip, src_port, dst_port, protocol, action, priority, source_labels, dest_labels, description)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO policies (rule_id, src_ip, dst_ip, src_port, dst_port, protocol, action, priority,
+		                     source_labels, dest_labels, description, process_name, process_path, match_mode)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`, policy.RuleId, policy.SrcIp, policy.DstIp, policy.SrcPort, policy.DstPort,
 		policy.Protocol, policy.Action, policy.Priority,
-		sourceLabelsJSON, destLabelsJSON, policy.Description)
+		sourceLabelsJSON, destLabelsJSON, policy.Description,
+		processName, processPath, matchMode)
 
 	if err != nil {
 		return fmt.Errorf("failed to create policy: %w", err)
@@ -107,16 +139,31 @@ func (s *PolicyStorage) UpdatePolicy(ctx context.Context, policy *policypb.Polic
 	sourceLabelsJSON, _ := json.Marshal(policy.SourceLabels)
 	destLabelsJSON, _ := json.Marshal(policy.DestLabels)
 
+	// Convert process fields to nullable types
+	var processName, processPath sql.NullString
+	var matchMode sql.NullInt32
+	if policy.ProcessName != "" {
+		processName = sql.NullString{String: policy.ProcessName, Valid: true}
+	}
+	if policy.ProcessPath != "" {
+		processPath = sql.NullString{String: policy.ProcessPath, Valid: true}
+	}
+	if policy.MatchMode != 0 {
+		matchMode = sql.NullInt32{Int32: int32(policy.MatchMode), Valid: true}
+	}
+
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE policies
 		SET src_ip = $2, dst_ip = $3, src_port = $4, dst_port = $5,
 		    protocol = $6, action = $7, priority = $8,
 		    source_labels = $9, dest_labels = $10, description = $11,
+		    process_name = $12, process_path = $13, match_mode = $14,
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE rule_id = $1
 	`, policy.RuleId, policy.SrcIp, policy.DstIp, policy.SrcPort, policy.DstPort,
 		policy.Protocol, policy.Action, policy.Priority,
-		sourceLabelsJSON, destLabelsJSON, policy.Description)
+		sourceLabelsJSON, destLabelsJSON, policy.Description,
+		processName, processPath, matchMode)
 
 	if err != nil {
 		return fmt.Errorf("failed to update policy: %w", err)

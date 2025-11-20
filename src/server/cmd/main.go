@@ -66,6 +66,7 @@ func main() {
 	flowStorage := storage.NewFlowStorage(db)
 	policyStorage := storage.NewPolicyStorage(db)
 	agentStorage := storage.NewAgentStorage(db)
+	alertStorage := storage.NewAlertStorage(db)
 
 	// Create and start WebSocket hub for real-time flow streaming
 	wsHub := ws.NewHub()
@@ -81,7 +82,7 @@ func main() {
 	defer grpcServer.GracefulStop()
 
 	// Start HTTP API server
-	httpServer := startHTTPServer(cfg, flowStorage, policyStorage, agentStorage, wsHub, flowAggregator)
+	httpServer := startHTTPServer(cfg, flowStorage, policyStorage, agentStorage, alertStorage, wsHub, flowAggregator)
 
 	// Wait for shutdown signal
 	shutdown := make(chan os.Signal, 1)
@@ -140,7 +141,7 @@ func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 	return grpcServer
 }
 
-func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, wsHub *ws.Hub, flowAggregator *aggregator.FlowAggregator) *http.Server {
+func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, alertStorage *storage.AlertStorage, wsHub *ws.Hub, flowAggregator *aggregator.FlowAggregator) *http.Server {
 	router := gin.Default()
 
 	// Global middleware
@@ -189,6 +190,10 @@ func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 		// Policy management - use dedicated handler
 		policyHandler := handlers.NewPolicyHandler(policyStorage)
 		policyHandler.RegisterRoutes(api)
+
+		// Security alert management - use dedicated handler
+		alertHandler := handlers.NewAlertHandler(alertStorage)
+		alertHandler.RegisterRoutes(api)
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
