@@ -2,12 +2,12 @@
 package testutil
 
 import (
-	"encoding/binary"
 	"fmt"
 	"net"
 	"strings"
 
 	"github.com/cilium/ebpf"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/netutil"
 )
 
 // FlowKey represents a 5-tuple flow key for eBPF maps.
@@ -79,8 +79,8 @@ func NewFlowKey(srcIP, dstIP string, srcPort, dstPort uint16, protocol string) (
 	}
 
 	key := &FlowKey{
-		SrcIP:    ipToUint32(srcIP4),
-		DstIP:    ipToUint32(dstIP4),
+		SrcIP:    netutil.IPToUint32LE(srcIP4),
+		DstIP:    netutil.IPToUint32LE(dstIP4),
 		SrcPort:  htons(srcPort),
 		DstPort:  htons(dstPort),
 		Protocol: proto,
@@ -230,15 +230,6 @@ func VerifySessionExists(sessionMap *ebpf.Map, srcIP, dstIP string, srcPort, dst
 }
 
 // Helper functions
-
-func ipToUint32(ip net.IP) uint32 {
-	// Must match the byte order used by PolicyManager (LittleEndian)
-	ip = ip.To4()
-	if ip == nil {
-		return 0
-	}
-	return binary.LittleEndian.Uint32(ip)
-}
 
 func htons(port uint16) uint16 {
 	return (port>>8)&0xff | (port<<8)&0xff00

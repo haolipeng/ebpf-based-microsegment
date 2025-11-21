@@ -3,13 +3,13 @@ package reporter
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
-	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
 	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
 	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/netutil"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -242,8 +242,8 @@ func (r *GRPCReporter) sendBatch(ctx context.Context, events []*flowpb.FlowEvent
 // flowToProto converts internal Flow to protobuf FlowEvent
 func (r *GRPCReporter) flowToProto(f *flow.Flow) *flowpb.FlowEvent {
 	// Convert IP strings to uint32
-	srcIP := ipToUint32(f.SourceIP)
-	dstIP := ipToUint32(f.DestIP)
+	srcIP := netutil.StringToUint32LE(f.SourceIP)
+	dstIP := netutil.StringToUint32LE(f.DestIP)
 
 	// Map protocol string to protobuf enum
 	protocol := protocolStringToEnum(f.Protocol)
@@ -278,21 +278,6 @@ func (r *GRPCReporter) flowToProto(f *flow.Flow) *flowpb.FlowEvent {
 		SourceLabels: f.SourceLabels,
 		DestLabels:   f.DestLabels,
 	}
-}
-
-// ipToUint32 converts IP string to uint32
-func ipToUint32(ipStr string) uint32 {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return 0
-	}
-
-	ip = ip.To4()
-	if ip == nil {
-		return 0
-	}
-
-	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
 }
 
 // protocolStringToEnum converts protocol string to protobuf enum

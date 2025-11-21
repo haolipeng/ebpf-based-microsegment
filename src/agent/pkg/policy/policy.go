@@ -2,13 +2,13 @@
 package policy
 
 import (
-	"encoding/binary"
 	"fmt"
 	"net"
 	"strings"
 
 	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
 	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/netutil"
 
 	"github.com/cilium/ebpf"
 	log "github.com/sirupsen/logrus"
@@ -188,8 +188,8 @@ func (pm *PolicyManager) addExactPolicy(p *Policy) error {
 		Direction uint8  // ✅ New: direction field
 		Pad       uint16 // Updated padding for 16-byte alignment
 	}{
-		SrcIp:     ipToUint32(srcIP),
-		DstIp:     ipToUint32(dstIP),
+		SrcIp:     netutil.IPToUint32LE(srcIP),
+		DstIp:     netutil.IPToUint32LE(dstIP),
 		SrcPort:   htons(p.SrcPort),
 		DstPort:   htons(p.DstPort),
 		Protocol:  proto,
@@ -261,8 +261,8 @@ func (pm *PolicyManager) DeletePolicy(p *Policy) error {
 		Direction uint8  // ✅ New: direction field
 		Pad       uint16 // Updated padding for 16-byte alignment
 	}{
-		SrcIp:     ipToUint32(srcIP),
-		DstIp:     ipToUint32(dstIP),
+		SrcIp:     netutil.IPToUint32LE(srcIP),
+		DstIp:     netutil.IPToUint32LE(dstIP),
 		SrcPort:   htons(p.SrcPort),
 		DstPort:   htons(p.DstPort),
 		Protocol:  proto,
@@ -449,14 +449,6 @@ func parseAction(action string) (uint8, error) {
 	}
 }
 
-func ipToUint32(ip net.IP) uint32 {
-	ip = ip.To4()
-	if ip == nil {
-		return 0
-	}
-	return binary.LittleEndian.Uint32(ip)
-}
-
 func htons(v uint16) uint16 {
 	return (v<<8)&0xff00 | v>>8
 }
@@ -520,9 +512,9 @@ func (pm *PolicyManager) addWildcardPolicy(p *Policy) error {
 		Pad        uint16     // Updated padding for alignment
 		RuleID     uint32
 	}{
-		SrcIP:      ipToUint32(srcIP),
+		SrcIP:      netutil.IPToUint32LE(srcIP),
 		SrcIPMask:  maskToUint32(srcMask),
-		DstIP:      ipToUint32(dstIP),
+		DstIP:      netutil.IPToUint32LE(dstIP),
 		DstIPMask:  maskToUint32(dstMask),
 		SrcPort:    htons(p.SrcPort),         // 0 = wildcard
 		DstPort:    htons(p.DstPort),         // 0 = wildcard

@@ -8,6 +8,7 @@ require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/haolipeng/ebpf-based-microsegment v0.0.0-20251121075328-9053fa16304c
 	github.com/haolipeng/ebpf-based-microsegment/api/proto v0.0.0-00010101000000-000000000000
 	github.com/lib/pq v1.10.9
 	github.com/sirupsen/logrus v1.9.3

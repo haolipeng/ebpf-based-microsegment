@@ -7,6 +7,7 @@ import (
 
 	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
 	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/netutil"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
 	ws "github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/websocket"
 	"github.com/sirupsen/logrus"
@@ -121,8 +122,8 @@ func (s *FlowServiceServer) GetFlowSummary(ctx context.Context, req *flowpb.Flow
 // eventToFlow converts a FlowEvent (from agent) to Flow (for storage/WebSocket)
 func (s *FlowServiceServer) eventToFlow(event *flowpb.FlowEvent) *flowpb.Flow {
 	// Convert IP addresses from uint32 to string
-	srcIP := intToIP(event.SrcIp)
-	dstIP := intToIP(event.DstIp)
+	srcIP := netutil.Uint32ToString(event.SrcIp)
+	dstIP := netutil.Uint32ToString(event.DstIp)
 
 	return &flowpb.Flow{
 		// Note: id will be 0 (database will assign proper ID on insert)
@@ -142,10 +143,4 @@ func (s *FlowServiceServer) eventToFlow(event *flowpb.FlowEvent) *flowpb.Flow {
 		SourceLabels: event.SourceLabels,
 		DestLabels:   event.DestLabels,
 	}
-}
-
-// intToIP converts uint32 IP to string (IPv4)
-func intToIP(ip uint32) string {
-	return fmt.Sprintf("%d.%d.%d.%d",
-		byte(ip>>24), byte(ip>>16), byte(ip>>8), byte(ip))
 }

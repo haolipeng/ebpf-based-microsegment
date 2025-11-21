@@ -8,6 +8,7 @@ require (
 	github.com/docker/docker v28.5.1+incompatible
 	github.com/florianl/go-conntrack v0.4.0
 	github.com/gin-gonic/gin v1.9.1
+	github.com/haolipeng/ebpf-based-microsegment v0.0.0-00010101000000-000000000000
 	github.com/haolipeng/ebpf-based-microsegment/api/proto v0.0.0-00010101000000-000000000000
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/sirupsen/logrus v1.9.3

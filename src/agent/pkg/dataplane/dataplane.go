@@ -281,11 +281,6 @@ func (dp *DataPlane) MonitorFlowEvents() {
 	}
 }
 
-// intToIP 将 uint32 IP 转换为 net.IP
-func intToIP(ip uint32) net.IP {
-	return net.IPv4(byte(ip), byte(ip>>8), byte(ip>>16), byte(ip>>24))
-}
-
 // GetFlowRingBuffer 返回流事件的 ring buffer reader
 // 这允许外部组件 (如 flow.Collector) 读取流事件
 func (dp *DataPlane) GetFlowRingBuffer() *ringbuf.Reader {

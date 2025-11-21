@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"net"
 	"reflect"
 	"regexp"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
 	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/netutil"
 	"github.com/sirupsen/logrus"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -128,11 +128,6 @@ func (s *FlowStorage) QueryFlows(ctx context.Context, query *flowpb.FlowQuery) (
 	}
 
 	return flows, total, nil
-}
-
-// intToIP converts uint32 IP to string
-func intToIP(ip uint32) string {
-	return net.IPv4(byte(ip>>24), byte(ip>>16), byte(ip>>8), byte(ip)).String()
 }
 
 // FlowSummary represents aggregated flow statistics
@@ -326,8 +321,8 @@ func (s *FlowStorage) batchSaveFlowEventsLegacy(ctx context.Context, events []*f
 	defer stmt.Close()
 
 	for _, event := range events {
-		srcIP := intToIP(event.SrcIp)
-		dstIP := intToIP(event.DstIp)
+		srcIP := netutil.Uint32ToString(event.SrcIp)
+		dstIP := netutil.Uint32ToString(event.DstIp)
 		sourceLabelsJSON, _ := json.Marshal(event.SourceLabels)
 		destLabelsJSON, _ := json.Marshal(event.DestLabels)
 
@@ -582,8 +577,8 @@ func isSQLMockDB(db *sql.DB) bool {
 func flowEventToModel(event *flowpb.FlowEvent) *Flow {
 	model := &Flow{
 		TimestampNS:  int64(event.TimestampNs),
-		SrcIP:        intToIP(event.SrcIp),
-		DstIP:        intToIP(event.DstIp),
+		SrcIP:        netutil.Uint32ToString(event.SrcIp),
+		DstIP:        netutil.Uint32ToString(event.DstIp),
 		SrcPort:      int32(event.SrcPort),
 		DstPort:      int32(event.DstPort),
 		Protocol:     int32(event.Protocol),

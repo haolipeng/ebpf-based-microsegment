@@ -19,6 +19,7 @@ import (
 	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
 	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
 	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/pkg/netutil"
 )
 
 const (
@@ -80,8 +81,8 @@ func TestE2E_FlowLifecycle(t *testing.T) {
 
 	testFlows := []*flowpb.FlowEvent{
 		{
-			SrcIp:        ipToUint32("192.168.100.10"),
-			DstIp:        ipToUint32("192.168.200.20"),
+			SrcIp:        netutil.StringToUint32("192.168.100.10"),
+			DstIp:        netutil.StringToUint32("192.168.200.20"),
 			SrcPort:      8080,
 			DstPort:      443,
 			Protocol:     commonpb.Protocol(6), // TCP
@@ -98,8 +99,8 @@ func TestE2E_FlowLifecycle(t *testing.T) {
 			DestLabels:   map[string]string{"app": "api", "env": "test"},
 		},
 		{
-			SrcIp:        ipToUint32("192.168.100.11"),
-			DstIp:        ipToUint32("192.168.200.21"),
+			SrcIp:        netutil.StringToUint32("192.168.100.11"),
+			DstIp:        netutil.StringToUint32("192.168.200.21"),
 			SrcPort:      8081,
 			DstPort:      443,
 			Protocol:     commonpb.Protocol(6),
@@ -177,8 +178,8 @@ func TestE2E_FlowLifecycle(t *testing.T) {
 	flowStream2, err := flowClient.ReportFlowEvents(ctx)
 	require.NoError(t, err)
 	newFlow := &flowpb.FlowEvent{
-		SrcIp:        ipToUint32("192.168.100.12"),
-		DstIp:        ipToUint32("192.168.200.22"),
+		SrcIp:        netutil.StringToUint32("192.168.100.12"),
+		DstIp:        netutil.StringToUint32("192.168.200.22"),
 		SrcPort:      8082,
 		DstPort:      443,
 		Protocol:     commonpb.Protocol(6),
@@ -318,11 +319,4 @@ func TestE2E_PolicyDistribution(t *testing.T) {
 done:
 
 	t.Log("✅ E2E Policy Distribution Test Completed Successfully")
-}
-
-// Helper function to convert IP string to uint32
-func ipToUint32(ip string) uint32 {
-	var a, b, c, d uint32
-	fmt.Sscanf(ip, "%d.%d.%d.%d", &a, &b, &c, &d)
-	return (a << 24) | (b << 16) | (c << 8) | d
 }
