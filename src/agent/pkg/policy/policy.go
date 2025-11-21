@@ -99,6 +99,11 @@ func (pm *PolicyManager) LoadPersisted() error {
 }
 
 // AddPolicy adds a new policy rule
+// Returns:
+//   - nil: Policy added successfully to both eBPF and storage
+//   - *PolicyError with IsPartial()=true: Policy active in eBPF but not persisted
+//   - *PolicyError with IsCritical()=true: Policy failed to add to eBPF
+//   - error: Validation error
 func (pm *PolicyManager) AddPolicy(p *Policy) error {
 	// ✅ New: Validate and normalize direction
 	if err := p.Validate(); err != nil {
@@ -106,16 +111,21 @@ func (pm *PolicyManager) AddPolicy(p *Policy) error {
 	}
 	p.NormalizeDirection()
 
-	// Add to eBPF map
-	if err := pm.addPolicyToMap(p); err != nil {
-		return err
+	// Add to eBPF map (critical operation)
+	ebpfErr := pm.addPolicyToMap(p)
+	if ebpfErr != nil {
+		// Critical failure - policy is not active
+		return NewPolicyError(p.RuleID, "add", ebpfErr, nil)
 	}
 
-	// Save to persistent storage if configured
+	// Save to persistent storage if configured (non-critical)
+	var storageErr error
 	if pm.storage != nil {
-		if err := pm.storage.SavePolicy(p); err != nil {
-			log.Warnf("Failed to persist policy rule_id=%d: %v", p.RuleID, err)
-			// Continue even if persistence fails - eBPF map is the source of truth
+		storageErr = pm.storage.SavePolicy(p)
+		if storageErr != nil {
+			log.Warnf("Policy %d added to eBPF but storage failed: %v", p.RuleID, storageErr)
+			// Return partial success error
+			return NewPolicyError(p.RuleID, "add", nil, storageErr)
 		}
 	}
 
@@ -270,19 +280,24 @@ func (pm *PolicyManager) DeletePolicy(p *Policy) error {
 		Pad:       0,
 	}
 
-	// Delete from eBPF map
-	if err := pm.policyMap.Delete(&key); err != nil {
-		return fmt.Errorf("failed to delete policy from map: %w", err)
+	// Delete from eBPF map (critical operation)
+	ebpfErr := pm.policyMap.Delete(&key)
+	if ebpfErr != nil {
+		// Critical failure - policy still active in eBPF
+		return NewPolicyError(p.RuleID, "delete", ebpfErr, nil)
 	}
 
 	log.Infof("Policy deleted: rule_id=%d %s:%d -> %s:%d proto=%s dir=%s",
 		p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Protocol, p.Direction)
 
-	// Delete from persistent storage if configured
+	// Delete from persistent storage if configured (non-critical)
+	var storageErr error
 	if pm.storage != nil {
-		if err := pm.storage.DeletePolicy(p.RuleID); err != nil {
-			log.Warnf("Failed to delete policy from storage rule_id=%d: %v", p.RuleID, err)
-			// Continue even if persistence fails
+		storageErr = pm.storage.DeletePolicy(p.RuleID)
+		if storageErr != nil {
+			log.Warnf("Policy %d deleted from eBPF but storage delete failed: %v", p.RuleID, storageErr)
+			// Return partial success error
+			return NewPolicyError(p.RuleID, "delete", nil, storageErr)
 		}
 	}
 
@@ -604,19 +619,22 @@ func (pm *PolicyManager) deleteWildcardPolicy(p *Policy) error {
 	// Search for the policy by RuleID in all slots
 	for i := uint32(0); i < 1000; i++ {
 		var existing struct {
-			SrcIP      uint32
-			SrcIPMask  uint32
-			DstIP      uint32
-			DstIPMask  uint32
-			SrcPort    uint16
-			DstPort    uint16
-			Protocol   uint8
-			Action     uint8
-			LogEnabled uint8
-			Direction  uint8
-			Priority   uint16
-			Pad        uint16
-			RuleID     uint32
+			SrcIP       [4]uint32   // 16 bytes
+			SrcIPMask   [4]uint32   // 16 bytes
+			DstIP       [4]uint32   // 16 bytes
+			DstIPMask   [4]uint32   // 16 bytes
+			SrcPort     uint16      // 2 bytes
+			DstPort     uint16      // 2 bytes
+			Protocol    uint8       // 1 byte
+			Action      uint8       // 1 byte
+			LogEnabled  uint8       // 1 byte
+			Direction   uint8       // 1 byte
+			IPVersion   uint8       // 1 byte
+			Pad         [3]uint8    // 3 bytes
+			Priority    uint16      // 2 bytes
+			VlanID      uint16      // 2 bytes
+			RuleID      uint32      // 4 bytes
+			ProcessName [16]byte    // 16 bytes
 		}
 
 		// Read the existing entry
@@ -628,37 +646,46 @@ func (pm *PolicyManager) deleteWildcardPolicy(p *Policy) error {
 
 		// Check if this slot has our target RuleID
 		if existing.RuleID == p.RuleID {
-			// Found the policy, zero it out
+			// Found the policy, zero it out (100 bytes)
 			zeroPolicy := struct {
-				SrcIP      uint32
-				SrcIPMask  uint32
-				DstIP      uint32
-				DstIPMask  uint32
-				SrcPort    uint16
-				DstPort    uint16
-				Protocol   uint8
-				Action     uint8
-				LogEnabled uint8
-				Direction  uint8
-				Priority   uint16
-				Pad        uint16
-				RuleID     uint32
+				SrcIP       [4]uint32   // 16 bytes
+				SrcIPMask   [4]uint32   // 16 bytes
+				DstIP       [4]uint32   // 16 bytes
+				DstIPMask   [4]uint32   // 16 bytes
+				SrcPort     uint16      // 2 bytes
+				DstPort     uint16      // 2 bytes
+				Protocol    uint8       // 1 byte
+				Action      uint8       // 1 byte
+				LogEnabled  uint8       // 1 byte
+				Direction   uint8       // 1 byte
+				IPVersion   uint8       // 1 byte
+				Pad         [3]uint8    // 3 bytes
+				Priority    uint16      // 2 bytes
+				VlanID      uint16      // 2 bytes
+				RuleID      uint32      // 4 bytes
+				ProcessName [16]byte    // 16 bytes
 			}{
 				// All fields zero
 			}
 
-			if err := pm.wildcardPolicyMap.Put(&i, &zeroPolicy); err != nil {
-				return fmt.Errorf("failed to delete wildcard policy from slot %d: %w", i, err)
+			// Delete from eBPF map (critical operation)
+			ebpfErr := pm.wildcardPolicyMap.Put(&i, &zeroPolicy)
+			if ebpfErr != nil {
+				// Critical failure - policy still active
+				return NewPolicyError(p.RuleID, "delete", ebpfErr, nil)
 			}
 
 			log.Infof("Wildcard policy deleted from slot %d: rule_id=%d %s:%d -> %s:%d proto=%s dir=%s",
 				i, p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Protocol, p.Direction)
 
-			// Delete from persistent storage if configured
+			// Delete from persistent storage if configured (non-critical)
+			var storageErr error
 			if pm.storage != nil {
-				if err := pm.storage.DeletePolicy(p.RuleID); err != nil {
-					log.Warnf("Failed to delete policy from storage rule_id=%d: %v", p.RuleID, err)
-					// Continue even if persistence fails
+				storageErr = pm.storage.DeletePolicy(p.RuleID)
+				if storageErr != nil {
+					log.Warnf("Policy %d deleted from eBPF but storage delete failed: %v", p.RuleID, storageErr)
+					// Return partial success error
+					return NewPolicyError(p.RuleID, "delete", nil, storageErr)
 				}
 			}
 

@@ -120,7 +120,19 @@ func runAgent(cmd *cobra.Command, args []string) {
 		Action:   "allow",
 	})
 	if err != nil {
-		log.Warnf("Failed to add default policy: %v", err)
+		// Check if it's a policy error with partial success
+		if policyErr, ok := err.(*policy.PolicyError); ok {
+			if policyErr.IsPartial() {
+				// Partial success - policy active in eBPF but not persisted
+				log.Warnf("Default policy added to eBPF but not persisted: %v", err)
+			} else {
+				// Critical failure - policy not active
+				log.Errorf("Failed to add default policy to eBPF: %v", err)
+			}
+		} else {
+			// Validation or other errors
+			log.Warnf("Failed to add default policy: %v", err)
+		}
 	}
 
 	log.Info("✓ Policy manager initialized")

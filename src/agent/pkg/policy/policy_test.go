@@ -314,7 +314,7 @@ func TestIPToUint32(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ip := net.ParseIP(tc.input)
-			result := ipToUint32(ip)
+			result := ipToUint32LE(ip)
 			assert.Equal(t, tc.expected, result)
 		})
 	}
@@ -373,7 +373,7 @@ func TestIPConversionRoundTrip(t *testing.T) {
 		t.Run(ipStr, func(t *testing.T) {
 			// IP -> uint32 -> IP
 			ip := net.ParseIP(ipStr)
-			uint32Val := ipToUint32(ip)
+			uint32Val := ipToUint32LE(ip)
 			resultIP := uint32ToIP(uint32Val)
 			assert.Equal(t, ipStr, resultIP)
 		})
@@ -689,8 +689,8 @@ func TestPolicyKeyConstruction(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Construct key components
-			srcIPUint := ipToUint32(srcIP)
-			dstIPUint := ipToUint32(dstIP)
+			srcIPUint := ipToUint32LE(srcIP)
+			dstIPUint := ipToUint32LE(dstIP)
 			srcPortNet := htons(tc.policy.SrcPort)
 			dstPortNet := htons(tc.policy.DstPort)
 

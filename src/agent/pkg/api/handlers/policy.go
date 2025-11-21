@@ -53,14 +53,34 @@ func (h *PolicyHandler) CreatePolicy(c *gin.Context) {
 
 	// Add policy (will validate and normalize direction)
 	if err := h.policyManager.AddPolicy(p); err != nil {
-		log.Errorf("Failed to add policy: %v", err)
-		c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
-			http.StatusInternalServerError,
-			"policy_error",
-			"Failed to add policy",
-			err.Error(),
-		))
-		return
+		// Check if it's a policy error with partial success
+		if policyErr, ok := err.(*policy.PolicyError); ok {
+			if policyErr.IsPartial() {
+				// Partial success - policy active in eBPF but not persisted
+				log.Warnf("Policy %d added to eBPF but not persisted: %v", p.RuleID, err)
+				// Still return success to user since policy is active
+			} else {
+				// Critical failure - policy not active
+				log.Errorf("Failed to add policy %d to eBPF: %v", p.RuleID, err)
+				c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
+					http.StatusInternalServerError,
+					"policy_error",
+					"Failed to add policy",
+					err.Error(),
+				))
+				return
+			}
+		} else {
+			// Validation or other errors
+			log.Errorf("Failed to add policy: %v", err)
+			c.JSON(http.StatusBadRequest, models.NewErrorResponse(
+				http.StatusBadRequest,
+				"policy_error",
+				"Failed to add policy",
+				err.Error(),
+			))
+			return
+		}
 	}
 
 	// Return created policy
@@ -228,20 +248,57 @@ func (h *PolicyHandler) UpdatePolicy(c *gin.Context) {
 
 	// Delete old policy first (includes direction in key)
 	if err := h.policyManager.DeletePolicy(p); err != nil {
-		// If delete fails, policy might not exist
-		log.Warnf("Failed to delete old policy during update: %v", err)
+		// Check if it's a critical delete failure
+		if policyErr, ok := err.(*policy.PolicyError); ok {
+			if policyErr.IsCritical() {
+				// Policy still exists in eBPF, can't proceed with update
+				log.Errorf("Failed to delete policy %d from eBPF during update: %v", p.RuleID, err)
+				c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
+					http.StatusInternalServerError,
+					"policy_error",
+					"Failed to delete old policy during update",
+					err.Error(),
+				))
+				return
+			}
+			// Partial failure (storage) is acceptable, continue with update
+			log.Warnf("Policy %d deleted from eBPF but storage cleanup failed: %v", p.RuleID, err)
+		} else {
+			// Policy might not exist, log and continue
+			log.Warnf("Failed to delete old policy during update: %v", err)
+		}
 	}
 
 	// Add updated policy
 	if err := h.policyManager.AddPolicy(p); err != nil {
-		log.Errorf("Failed to update policy: %v", err)
-		c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
-			http.StatusInternalServerError,
-			"policy_error",
-			"Failed to update policy",
-			err.Error(),
-		))
-		return
+		// Check if it's a policy error with partial success
+		if policyErr, ok := err.(*policy.PolicyError); ok {
+			if policyErr.IsPartial() {
+				// Partial success - policy active in eBPF but not persisted
+				log.Warnf("Policy %d updated in eBPF but not persisted: %v", p.RuleID, err)
+				// Still return success to user since policy is active
+			} else {
+				// Critical failure - policy not active
+				log.Errorf("Failed to update policy %d in eBPF: %v", p.RuleID, err)
+				c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
+					http.StatusInternalServerError,
+					"policy_error",
+					"Failed to update policy",
+					err.Error(),
+				))
+				return
+			}
+		} else {
+			// Validation or other errors
+			log.Errorf("Failed to update policy: %v", err)
+			c.JSON(http.StatusBadRequest, models.NewErrorResponse(
+				http.StatusBadRequest,
+				"policy_error",
+				"Failed to update policy",
+				err.Error(),
+			))
+			return
+		}
 	}
 
 	// Return updated policy
@@ -309,14 +366,34 @@ func (h *PolicyHandler) DeletePolicy(c *gin.Context) {
 
 	// Delete policy
 	if err := h.policyManager.DeletePolicy(policyToDelete); err != nil {
-		log.Errorf("Failed to delete policy: %v", err)
-		c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
-			http.StatusInternalServerError,
-			"policy_error",
-			"Failed to delete policy",
-			err.Error(),
-		))
-		return
+		// Check if it's a policy error with partial success
+		if policyErr, ok := err.(*policy.PolicyError); ok {
+			if policyErr.IsPartial() {
+				// Partial success - policy deleted from eBPF but not from storage
+				log.Warnf("Policy %d deleted from eBPF but storage cleanup failed: %v", policyToDelete.RuleID, err)
+				// Still return success to user since policy is no longer active
+			} else {
+				// Critical failure - policy still active in eBPF
+				log.Errorf("Failed to delete policy %d from eBPF: %v", policyToDelete.RuleID, err)
+				c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
+					http.StatusInternalServerError,
+					"policy_error",
+					"Failed to delete policy",
+					err.Error(),
+				))
+				return
+			}
+		} else {
+			// Other errors
+			log.Errorf("Failed to delete policy: %v", err)
+			c.JSON(http.StatusInternalServerError, models.NewErrorResponse(
+				http.StatusInternalServerError,
+				"policy_error",
+				"Failed to delete policy",
+				err.Error(),
+			))
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
