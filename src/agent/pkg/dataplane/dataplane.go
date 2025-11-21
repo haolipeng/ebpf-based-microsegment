@@ -35,7 +35,24 @@ const (
 	StatsEgressPackets  uint32 = 9  // STATS_EGRESS_PACKETS  (Direction-specific)
 	StatsIngressDenied  uint32 = 10 // STATS_INGRESS_DENIED  (Direction-specific)
 	StatsEgressDenied   uint32 = 11 // STATS_EGRESS_DENIED   (Direction-specific)
-	StatsMax            uint32 = 12 // STATS_MAX - 总的统计项数量
+	// Protocol-specific statistics (12-16)
+	StatsIPv4Packets uint32 = 12 // STATS_IPV4_PACKETS
+	StatsIPv6Packets uint32 = 13 // STATS_IPV6_PACKETS
+	StatsTCPPackets  uint32 = 14 // STATS_TCP_PACKETS
+	StatsUDPPackets  uint32 = 15 // STATS_UDP_PACKETS
+	StatsICMPPackets uint32 = 16 // STATS_ICMP_PACKETS
+	// VLAN statistics (17-18)
+	StatsVLANPackets uint32 = 17 // STATS_VLAN_PACKETS
+	StatsQinQPackets uint32 = 18 // STATS_QINQ_PACKETS
+	// TCP-specific statistics (19-22)
+	StatsTCPSyn     uint32 = 19 // STATS_TCP_SYN
+	StatsTCPFin     uint32 = 20 // STATS_TCP_FIN
+	StatsTCPRst     uint32 = 21 // STATS_TCP_RST
+	StatsTCPRetrans uint32 = 22 // STATS_TCP_RETRANS
+	// Error statistics (23-24)
+	StatsParseErrors uint32 = 23 // STATS_PARSE_ERRORS
+	StatsRingbufFull uint32 = 24 // STATS_RINGBUF_FULL
+	StatsMax         uint32 = 25 // STATS_MAX - 总的统计项数量
 )
 
 // DataPlane 管理 eBPF 数据平面
@@ -61,6 +78,8 @@ type Statistics struct {
 	EgressPackets  uint64
 	IngressDenied  uint64
 	EgressDenied   uint64
+	// Ring buffer statistics
+	RingBufferFull uint64 // Number of events dropped due to ring buffer full
 }
 
 // New 创建一个新的数据平面实例
@@ -188,6 +207,7 @@ func (dp *DataPlane) GetStatistics() Statistics {
 		{StatsEgressPackets, &stats.EgressPackets},
 		{StatsIngressDenied, &stats.IngressDenied},
 		{StatsEgressDenied, &stats.EgressDenied},
+		{StatsRingbufFull, &stats.RingBufferFull},
 	}
 
 	// Read and aggregate per-CPU statistics

@@ -316,8 +316,9 @@ static __always_inline int push_flow_event_xdp(
 	// 在 Ring Buffer 中预留空间 (非阻塞)
 	struct flow_event *event = bpf_ringbuf_reserve(&flow_events, sizeof(*event), 0);
 	if (!event) {
-		// Ring buffer full - event dropped (silent failure for performance)
-		// Ring Buffer 满 - 静默丢弃事件以保证性能
+		// Ring buffer full - event dropped
+		// Ring Buffer 满 - 事件丢弃
+		update_stats(STATS_RINGBUF_FULL);
 #if DEBUG_MODE
 		bpf_printk("XDP: Ring buffer full, flow event dropped\n");
 #endif

@@ -311,7 +311,8 @@ static __always_inline int push_flow_event(
     // Reserve space in ring buffer (non-blocking)
     struct flow_event *event = bpf_ringbuf_reserve(&flow_events, sizeof(*event), 0);
     if (!event) {
-        // Ring buffer full - event dropped (silent failure for performance)
+        // Ring buffer full - event dropped
+        update_stats(STATS_RINGBUF_FULL);
         return -1;
     }
 

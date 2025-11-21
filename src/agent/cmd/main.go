@@ -235,6 +235,15 @@ func runAgent(cmd *cobra.Command, args []string) {
 			log.Infof("  Policy Hits:      %d", stats.PolicyHits)
 			log.Infof("  Policy Misses:    %d", stats.PolicyMisses)
 
+			// Ring buffer statistics
+			if stats.RingBufferFull > 0 {
+				dropRate := float64(0)
+				if stats.NewSessions > 0 {
+					dropRate = float64(stats.RingBufferFull) / float64(stats.NewSessions) * 100
+				}
+				log.Warnf("  Ring Buffer Drops: %d (%.2f%% drop rate)", stats.RingBufferFull, dropRate)
+			}
+
 			// Update agent metrics if in agent-server mode
 			if agentClient != nil {
 				flowCount := stats.NewSessions
