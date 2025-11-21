@@ -4,7 +4,6 @@ package dataplane
 import (
 	"errors"
 	"fmt"
-	"net"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/ringbuf"

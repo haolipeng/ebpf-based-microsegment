@@ -2,14 +2,15 @@ package reporter
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
 	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
 	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/flow"
-	"github.com/haolipeng/ebpf-based-microsegment/pkg/netutil"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -242,8 +243,8 @@ func (r *GRPCReporter) sendBatch(ctx context.Context, events []*flowpb.FlowEvent
 // flowToProto converts internal Flow to protobuf FlowEvent
 func (r *GRPCReporter) flowToProto(f *flow.Flow) *flowpb.FlowEvent {
 	// Convert IP strings to uint32
-	srcIP := netutil.StringToUint32LE(f.SourceIP)
-	dstIP := netutil.StringToUint32LE(f.DestIP)
+	srcIP := stringToUint32LE(f.SourceIP)
+	dstIP := stringToUint32LE(f.DestIP)
 
 	// Map protocol string to protobuf enum
 	protocol := protocolStringToEnum(f.Protocol)
@@ -355,4 +356,17 @@ func policyActionStringToEnum(action string) commonpb.PolicyAction {
 // GetMetrics returns reporter metrics
 func (r *GRPCReporter) GetMetrics() (sent, failed, retried uint64) {
 	return r.totalSent, r.totalFailed, r.totalRetried
+}
+
+// stringToUint32LE converts IP string to uint32 in little-endian (for eBPF maps)
+func stringToUint32LE(ipStr string) uint32 {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return 0
+	}
+	ip = ip.To4()
+	if ip == nil {
+		return 0
+	}
+	return binary.LittleEndian.Uint32(ip)
 }

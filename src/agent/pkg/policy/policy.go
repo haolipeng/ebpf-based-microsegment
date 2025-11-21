@@ -2,13 +2,13 @@
 package policy
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"strings"
 
 	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
 	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
-	"github.com/haolipeng/ebpf-based-microsegment/pkg/netutil"
 
 	"github.com/cilium/ebpf"
 	log "github.com/sirupsen/logrus"
@@ -188,8 +188,8 @@ func (pm *PolicyManager) addExactPolicy(p *Policy) error {
 		Direction uint8  // ✅ New: direction field
 		Pad       uint16 // Updated padding for 16-byte alignment
 	}{
-		SrcIp:     netutil.IPToUint32LE(srcIP),
-		DstIp:     netutil.IPToUint32LE(dstIP),
+		SrcIp:     ipToUint32LE(srcIP),
+		DstIp:     ipToUint32LE(dstIP),
 		SrcPort:   htons(p.SrcPort),
 		DstPort:   htons(p.DstPort),
 		Protocol:  proto,
@@ -261,8 +261,8 @@ func (pm *PolicyManager) DeletePolicy(p *Policy) error {
 		Direction uint8  // ✅ New: direction field
 		Pad       uint16 // Updated padding for 16-byte alignment
 	}{
-		SrcIp:     netutil.IPToUint32LE(srcIP),
-		DstIp:     netutil.IPToUint32LE(dstIP),
+		SrcIp:     ipToUint32LE(srcIP),
+		DstIp:     ipToUint32LE(dstIP),
 		SrcPort:   htons(p.SrcPort),
 		DstPort:   htons(p.DstPort),
 		Protocol:  proto,
@@ -497,54 +497,76 @@ func (pm *PolicyManager) addWildcardPolicy(p *Policy) error {
 	}
 
 	// Build wildcard policy entry
+	// Must match struct wildcard_policy in src/bpf/headers/common_types.h (100 bytes)
 	wildcard := struct {
-		SrcIP      uint32
-		SrcIPMask  uint32
-		DstIP      uint32
-		DstIPMask  uint32
-		SrcPort    uint16
-		DstPort    uint16
-		Protocol   uint8
-		Action     uint8      // 注意: 必须与 eBPF 结构体顺序一致
-		LogEnabled uint8
-		Direction  uint8      // ✅ New: direction field (顺序很重要!)
-		Priority   uint16
-		Pad        uint16     // Updated padding for alignment
-		RuleID     uint32
+		SrcIP       [4]uint32   // 16 bytes - IPv6 support
+		SrcIPMask   [4]uint32   // 16 bytes
+		DstIP       [4]uint32   // 16 bytes
+		DstIPMask   [4]uint32   // 16 bytes
+		SrcPort     uint16      // 2 bytes
+		DstPort     uint16      // 2 bytes
+		Protocol    uint8       // 1 byte
+		Action      uint8       // 1 byte
+		LogEnabled  uint8       // 1 byte
+		Direction   uint8       // 1 byte
+		IPVersion   uint8       // 1 byte - 4 = IPv4, 6 = IPv6
+		Pad         [3]uint8    // 3 bytes - padding for alignment
+		Priority    uint16      // 2 bytes
+		VlanID      uint16      // 2 bytes
+		RuleID      uint32      // 4 bytes
+		ProcessName [16]byte    // 16 bytes - process name matching
 	}{
-		SrcIP:      netutil.IPToUint32LE(srcIP),
-		SrcIPMask:  maskToUint32(srcMask),
-		DstIP:      netutil.IPToUint32LE(dstIP),
-		DstIPMask:  maskToUint32(dstMask),
+		// Convert IPv4 to IPv6-mapped format for src_ip
+		SrcIP: [4]uint32{
+			0, 0, 0, ipToUint32LE(srcIP),
+		},
+		// Convert IPv4 mask to IPv6-mapped format
+		SrcIPMask: [4]uint32{
+			0, 0, 0, maskToUint32(srcMask),
+		},
+		// Convert IPv4 to IPv6-mapped format for dst_ip
+		DstIP: [4]uint32{
+			0, 0, 0, ipToUint32LE(dstIP),
+		},
+		// Convert IPv4 mask to IPv6-mapped format
+		DstIPMask: [4]uint32{
+			0, 0, 0, maskToUint32(dstMask),
+		},
 		SrcPort:    htons(p.SrcPort),         // 0 = wildcard
 		DstPort:    htons(p.DstPort),         // 0 = wildcard
 		Protocol:   proto,                    // 0 = wildcard
 		Action:     action,
 		LogEnabled: boolToUint8(p.Action == "log"),
-		Direction:  p.GetDirectionValue(),    // ✅ New: add direction
+		Direction:  p.GetDirectionValue(),
+		IPVersion:  4,                        // IPv4
+		Pad:        [3]uint8{0, 0, 0},
 		Priority:   p.Priority,
-		Pad:        0,
+		VlanID:     0,                        // Match any VLAN
 		RuleID:     p.RuleID,
+		ProcessName: [16]byte{},              // Empty = match any process
 	}
 
 	// Find empty slot in wildcard array map
 	// Try up to MAX_ENTRIES_WILDCARD_POLICY (1000)
 	for i := uint32(0); i < 1000; i++ {
-		// Try to read existing entry - must match the exact struct layout in eBPF
+		// Try to read existing entry - must match the exact struct layout in eBPF (100 bytes)
 		var existing struct {
-			SrcIP      uint32
-			SrcIPMask  uint32
-			DstIP      uint32
-			DstIPMask  uint32
-			SrcPort    uint16
-			DstPort    uint16
-			Protocol   uint8
-			Action     uint8      // 必须与 eBPF 顺序一致
-			LogEnabled uint8
-			Direction  uint8      // ✅ New: direction field
-			Priority   uint16
-			Pad        uint16     // Updated padding
-			RuleID     uint32
+			SrcIP       [4]uint32   // 16 bytes
+			SrcIPMask   [4]uint32   // 16 bytes
+			DstIP       [4]uint32   // 16 bytes
+			DstIPMask   [4]uint32   // 16 bytes
+			SrcPort     uint16      // 2 bytes
+			DstPort     uint16      // 2 bytes
+			Protocol    uint8       // 1 byte
+			Action      uint8       // 1 byte
+			LogEnabled  uint8       // 1 byte
+			Direction   uint8       // 1 byte
+			IPVersion   uint8       // 1 byte
+			Pad         [3]uint8    // 3 bytes
+			Priority    uint16      // 2 bytes
+			VlanID      uint16      // 2 bytes
+			RuleID      uint32      // 4 bytes
+			ProcessName [16]byte    // 16 bytes
 		}
 
 		// Read the existing entry
@@ -1061,4 +1083,13 @@ func (pm *PolicyManager) SyncPoliciesFromServer(policies []*policypb.Policy, ver
 	}
 
 	return nil
+}
+
+// ipToUint32LE converts IPv4 address to uint32 in little-endian (for eBPF maps)
+func ipToUint32LE(ip net.IP) uint32 {
+	ip = ip.To4()
+	if ip == nil {
+		return 0
+	}
+	return binary.LittleEndian.Uint32(ip)
 }

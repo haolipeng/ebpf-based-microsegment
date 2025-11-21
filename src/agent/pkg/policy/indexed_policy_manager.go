@@ -186,9 +186,9 @@ func (ipm *IndexedPolicyManager) AddWildcardPolicyIndexed(p *Policy) error {
 		Pad        uint16
 		RuleID     uint32
 	}{
-		SrcIP:      ipToUint32(srcIP),
+		SrcIP:      ipToUint32LE(srcIP),
 		SrcIPMask:  maskToUint32(srcMask),
-		DstIP:      ipToUint32(dstIP),
+		DstIP:      ipToUint32LE(dstIP),
 		DstIPMask:  maskToUint32(dstMask),
 		SrcPort:    htons(p.SrcPort),
 		DstPort:    htons(p.DstPort),
