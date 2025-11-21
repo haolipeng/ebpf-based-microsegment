@@ -10,12 +10,14 @@ import (
 )
 
 // ProtocolSegment represents a contiguous range of wildcard policies for a specific protocol
+// V3 Layout: [network policies | process policies]
 type ProtocolSegment struct {
-	Protocol     uint8  // Protocol number (6=TCP, 17=UDP, 0=ANY)
-	StartIdx     uint32 // Starting index in wildcard_policy_map
-	PolicyCount  uint32 // Number of policies in this segment
-	MaxCapacity  uint32 // Maximum capacity for this segment
-	mu           sync.RWMutex
+	Protocol      uint8  // Protocol number (6=TCP, 17=UDP, 0=ANY)
+	StartIdx      uint32 // Starting index in wildcard_policy_map
+	PolicyCount   uint32 // Total number of policies in this segment
+	ProcessCount  uint32 // Number of process-specific policies (at the end)
+	MaxCapacity   uint32 // Maximum capacity for this segment
+	mu            sync.RWMutex
 }
 
 // IndexedPolicyManager manages wildcard policies with protocol-based indexing
@@ -112,17 +114,35 @@ func (ipm *IndexedPolicyManager) calculateNextStartIndex() uint32 {
 	return maxIdx
 }
 
+// isProcessPolicy checks if a policy is a process-specific policy
+func isProcessPolicy(p *Policy) bool {
+	return p.ProcessName != ""
+}
+
+// getNetworkPolicyCount returns the number of network-only policies in a segment
+func (segment *ProtocolSegment) getNetworkPolicyCount() uint32 {
+	return segment.PolicyCount - segment.ProcessCount
+}
+
 // updateSegmentInMap updates a protocol segment descriptor in the eBPF map
 func (ipm *IndexedPolicyManager) updateSegmentInMap(segment *ProtocolSegment) error {
-	// Build segment descriptor matching eBPF struct protocol_segment
+	// Build segment descriptor matching eBPF struct protocol_segment (V3)
+	// struct protocol_segment {
+	//     __u32 start_idx;
+	//     __u32 policy_count;
+	//     __u32 process_count;  // V3: Number of process-specific policies
+	//     __u32 reserved;
+	// }
 	descriptor := struct {
-		StartIdx    uint32
-		PolicyCount uint32
-		Reserved    [2]uint32
+		StartIdx     uint32
+		PolicyCount  uint32
+		ProcessCount uint32
+		Reserved     uint32
 	}{
-		StartIdx:    segment.StartIdx,
-		PolicyCount: segment.PolicyCount,
-		Reserved:    [2]uint32{0, 0},
+		StartIdx:     segment.StartIdx,
+		PolicyCount:  segment.PolicyCount,
+		ProcessCount: segment.ProcessCount,
+		Reserved:     0,
 	}
 
 	// Map key is protocol number
@@ -131,7 +151,8 @@ func (ipm *IndexedPolicyManager) updateSegmentInMap(segment *ProtocolSegment) er
 	return ipm.protocolOffsetMap.Put(&key, &descriptor)
 }
 
-// AddWildcardPolicyIndexed adds a wildcard policy using protocol indexing
+// AddWildcardPolicyIndexed adds a wildcard policy using protocol indexing with V3 layout
+// V3 Layout: [network policies | process policies]
 func (ipm *IndexedPolicyManager) AddWildcardPolicyIndexed(p *Policy) error {
 	// Parse protocol
 	proto, err := parseProtocol(p.Protocol)
@@ -170,41 +191,104 @@ func (ipm *IndexedPolicyManager) AddWildcardPolicyIndexed(p *Policy) error {
 		return fmt.Errorf("invalid action: %w", err)
 	}
 
-	// Build wildcard policy entry
+	// Build wildcard policy entry (IPv4-mapped IPv6 format)
+	// Must match struct wildcard_policy in common_types.h
 	wildcard := struct {
-		SrcIP      uint32
-		SrcIPMask  uint32
-		DstIP      uint32
-		DstIPMask  uint32
-		SrcPort    uint16
-		DstPort    uint16
-		Protocol   uint8
-		Action     uint8
-		LogEnabled uint8
-		Direction  uint8
-		Priority   uint16
-		Pad        uint16
-		RuleID     uint32
+		SrcIP       [4]uint32 // 16 bytes - IPv6 support
+		SrcIPMask   [4]uint32 // 16 bytes
+		DstIP       [4]uint32 // 16 bytes
+		DstIPMask   [4]uint32 // 16 bytes
+		SrcPort     uint16    // 2 bytes
+		DstPort     uint16    // 2 bytes
+		Protocol    uint8     // 1 byte
+		Action      uint8     // 1 byte
+		LogEnabled  uint8     // 1 byte
+		Direction   uint8     // 1 byte
+		IPVersion   uint8     // 1 byte - 4 = IPv4, 6 = IPv6
+		Pad         [3]uint8  // 3 bytes - padding for alignment
+		Priority    uint16    // 2 bytes
+		VlanID      uint16    // 2 bytes
+		RuleID      uint32    // 4 bytes
+		ProcessName [16]byte  // 16 bytes - process name matching
 	}{
-		SrcIP:      ipToUint32LE(srcIP),
-		SrcIPMask:  maskToUint32(srcMask),
-		DstIP:      ipToUint32LE(dstIP),
-		DstIPMask:  maskToUint32(dstMask),
-		SrcPort:    htons(p.SrcPort),
-		DstPort:    htons(p.DstPort),
-		Protocol:   proto,
-		Action:     action,
-		LogEnabled: boolToUint8(p.Action == "log"),
-		Direction:  p.GetDirectionValue(),
-		Priority:   p.Priority,
-		Pad:        0,
-		RuleID:     p.RuleID,
+		// Convert IPv4 to IPv6-mapped format
+		SrcIP:       [4]uint32{0, 0, 0, ipToUint32LE(srcIP)},
+		SrcIPMask:   [4]uint32{0, 0, 0, maskToUint32(srcMask)},
+		DstIP:       [4]uint32{0, 0, 0, ipToUint32LE(dstIP)},
+		DstIPMask:   [4]uint32{0, 0, 0, maskToUint32(dstMask)},
+		SrcPort:     htons(p.SrcPort),
+		DstPort:     htons(p.DstPort),
+		Protocol:    proto,
+		Action:      action,
+		LogEnabled:  boolToUint8(p.Action == "log"),
+		Direction:   p.GetDirectionValue(),
+		IPVersion:   4, // IPv4 for now
+		Pad:         [3]uint8{0, 0, 0},
+		Priority:    p.Priority,
+		VlanID:      0,
+		RuleID:      p.RuleID,
+		ProcessName: [16]byte{}, // Will be filled below
 	}
 
-	// Calculate slot index: segment_start + current_count
-	slotIdx := segment.StartIdx + segment.PolicyCount
+	// Copy process name if present
+	if len(p.ProcessName) > 0 {
+		copy(wildcard.ProcessName[:], []byte(p.ProcessName))
+	}
 
-	// Insert into wildcard_policy_map
+	// V3 Segmented Storage Logic
+	var slotIdx uint32
+	isProcPolicy := isProcessPolicy(p)
+
+	if isProcPolicy {
+		// Process policy: Add at the end of process segment
+		slotIdx = segment.StartIdx + segment.PolicyCount
+		segment.ProcessCount++
+	} else {
+		// Network policy: Add at the end of network segment (before process policies)
+		networkCount := segment.getNetworkPolicyCount()
+		slotIdx = segment.StartIdx + networkCount
+
+		// If there are existing process policies, we need to shift them forward
+		if segment.ProcessCount > 0 {
+			// Shift all process policies one slot forward
+			processStartIdx := segment.StartIdx + networkCount
+			for i := int(segment.ProcessCount) - 1; i >= 0; i-- {
+				oldIdx := processStartIdx + uint32(i)
+				newIdx := oldIdx + 1
+
+				// Read existing process policy
+				var existingPolicy struct {
+					SrcIP       [4]uint32
+					SrcIPMask   [4]uint32
+					DstIP       [4]uint32
+					DstIPMask   [4]uint32
+					SrcPort     uint16
+					DstPort     uint16
+					Protocol    uint8
+					Action      uint8
+					LogEnabled  uint8
+					Direction   uint8
+					IPVersion   uint8
+					Pad         [3]uint8
+					Priority    uint16
+					VlanID      uint16
+					RuleID      uint32
+					ProcessName [16]byte
+				}
+
+				if err := ipm.wildcardPolicyMap.Lookup(&oldIdx, &existingPolicy); err != nil {
+					return fmt.Errorf("failed to read policy at index %d during shift: %w", oldIdx, err)
+				}
+
+				// Write to new position
+				if err := ipm.wildcardPolicyMap.Put(&newIdx, &existingPolicy); err != nil {
+					return fmt.Errorf("failed to shift policy from %d to %d: %w", oldIdx, newIdx, err)
+				}
+			}
+		}
+	}
+
+	// Insert policy at calculated slot
 	if err := ipm.wildcardPolicyMap.Put(&slotIdx, &wildcard); err != nil {
 		return fmt.Errorf("failed to add policy to wildcard map at index %d: %w", slotIdx, err)
 	}
@@ -214,30 +298,16 @@ func (ipm *IndexedPolicyManager) AddWildcardPolicyIndexed(p *Policy) error {
 
 	// Update eBPF segment descriptor
 	if err := ipm.updateSegmentInMap(segment); err != nil {
-		// Rollback: remove policy from wildcard map
-		zeroPolicy := struct {
-			SrcIP      uint32
-			SrcIPMask  uint32
-			DstIP      uint32
-			DstIPMask  uint32
-			SrcPort    uint16
-			DstPort    uint16
-			Protocol   uint8
-			Action     uint8
-			LogEnabled uint8
-			Direction  uint8
-			Priority   uint16
-			Pad        uint16
-			RuleID     uint32
-		}{}
-		ipm.wildcardPolicyMap.Put(&slotIdx, &zeroPolicy)
-		segment.PolicyCount--
-
 		return fmt.Errorf("failed to update segment metadata: %w", err)
 	}
 
-	log.Infof("Wildcard policy added: protocol=%d slot=%d rule_id=%d %s:%d -> %s:%d action=%s priority=%d",
-		proto, slotIdx, p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Action, p.Priority)
+	policyType := "network"
+	if isProcPolicy {
+		policyType = "process"
+	}
+
+	log.Infof("Wildcard policy added (%s): protocol=%d slot=%d rule_id=%d %s:%d -> %s:%d action=%s priority=%d proc=%s",
+		policyType, proto, slotIdx, p.RuleID, p.SrcIP, p.SrcPort, p.DstIP, p.DstPort, p.Action, p.Priority, p.ProcessName)
 
 	return nil
 }
@@ -405,19 +475,22 @@ func (ipm *IndexedPolicyManager) CompactAllSegments() error {
 		for i := uint32(0); i < count; i++ {
 			idx := startIdx + i
 			var policy struct {
-				SrcIP      uint32
-				SrcIPMask  uint32
-				DstIP      uint32
-				DstIPMask  uint32
-				SrcPort    uint16
-				DstPort    uint16
-				Protocol   uint8
-				Action     uint8
-				LogEnabled uint8
-				Direction  uint8
-				Priority   uint16
-				Pad        uint16
-				RuleID     uint32
+				SrcIP       [4]uint32
+				SrcIPMask   [4]uint32
+				DstIP       [4]uint32
+				DstIPMask   [4]uint32
+				SrcPort     uint16
+				DstPort     uint16
+				Protocol    uint8
+				Action      uint8
+				LogEnabled  uint8
+				Direction   uint8
+				IPVersion   uint8
+				Pad         [3]uint8
+				Priority    uint16
+				VlanID      uint16
+				RuleID      uint32
+				ProcessName [16]byte
 			}
 
 			if err := ipm.wildcardPolicyMap.Lookup(&idx, &policy); err == nil {
@@ -445,20 +518,71 @@ func (ipm *IndexedPolicyManager) CompactAllSegments() error {
 		protocolGroups[entry.Protocol] = append(protocolGroups[entry.Protocol], entry.Policy)
 	}
 
-	// Recreate segments
+	// Recreate segments with V3 layout: [network policies | process policies]
 	for proto, policies := range protocolGroups {
-		segment := &ProtocolSegment{
-			Protocol:    proto,
-			StartIdx:    nextIdx,
-			PolicyCount: uint32(len(policies)),
-			MaxCapacity: ipm.maxPoliciesPerProtocol,
+		// Separate network and process policies
+		var networkPolicies []interface{}
+		var processPolicies []interface{}
+
+		for _, policy := range policies {
+			// Type assert to check ProcessName field
+			if p, ok := policy.(struct {
+				SrcIP       [4]uint32
+				SrcIPMask   [4]uint32
+				DstIP       [4]uint32
+				DstIPMask   [4]uint32
+				SrcPort     uint16
+				DstPort     uint16
+				Protocol    uint8
+				Action      uint8
+				LogEnabled  uint8
+				Direction   uint8
+				IPVersion   uint8
+				Pad         [3]uint8
+				Priority    uint16
+				VlanID      uint16
+				RuleID      uint32
+				ProcessName [16]byte
+			}); ok {
+				// Check if process policy (ProcessName is not empty)
+				hasProcessName := false
+				for _, b := range p.ProcessName {
+					if b != 0 {
+						hasProcessName = true
+						break
+					}
+				}
+
+				if hasProcessName {
+					processPolicies = append(processPolicies, policy)
+				} else {
+					networkPolicies = append(networkPolicies, policy)
+				}
+			}
 		}
 
-		// Write policies to wildcard map
-		for i, policy := range policies {
+		segment := &ProtocolSegment{
+			Protocol:     proto,
+			StartIdx:     nextIdx,
+			PolicyCount:  uint32(len(networkPolicies) + len(processPolicies)),
+			ProcessCount: uint32(len(processPolicies)),
+			MaxCapacity:  ipm.maxPoliciesPerProtocol,
+		}
+
+		// Write network policies first
+		for i, policy := range networkPolicies {
 			slotIdx := nextIdx + uint32(i)
 			if err := ipm.wildcardPolicyMap.Put(&slotIdx, &policy); err != nil {
-				log.Warnf("Failed to write policy at index %d: %v", slotIdx, err)
+				log.Warnf("Failed to write network policy at index %d: %v", slotIdx, err)
+			}
+		}
+
+		// Write process policies after network policies
+		processStartIdx := nextIdx + uint32(len(networkPolicies))
+		for i, policy := range processPolicies {
+			slotIdx := processStartIdx + uint32(i)
+			if err := ipm.wildcardPolicyMap.Put(&slotIdx, &policy); err != nil {
+				log.Warnf("Failed to write process policy at index %d: %v", slotIdx, err)
 			}
 		}
 
@@ -470,8 +594,8 @@ func (ipm *IndexedPolicyManager) CompactAllSegments() error {
 
 		nextIdx += segment.MaxCapacity // Reserve space for future policies
 
-		log.Infof("Compacted protocol %d segment: start=%d, count=%d",
-			proto, segment.StartIdx, segment.PolicyCount)
+		log.Infof("Compacted protocol %d segment: start=%d, network=%d, process=%d, total=%d",
+			proto, segment.StartIdx, len(networkPolicies), len(processPolicies), segment.PolicyCount)
 	}
 
 	log.Infof("Compaction complete: %d segments, %d policies",

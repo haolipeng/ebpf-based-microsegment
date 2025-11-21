@@ -23,15 +23,16 @@ const (
 
 // Policy represents a network policy rule
 type Policy struct {
-	RuleID   uint32
-	SrcIP    string // CIDR notation
-	DstIP    string // CIDR notation
-	SrcPort  uint16
-	DstPort  uint16
-	Protocol string    // "tcp", "udp", "icmp", "any"
-	Action   string    // "allow", "deny", "log"
-	Direction string   // ✅ New: "any", "ingress", "egress" (default: "any")
-	Priority uint16
+	RuleID      uint32
+	SrcIP       string // CIDR notation
+	DstIP       string // CIDR notation
+	SrcPort     uint16
+	DstPort     uint16
+	Protocol    string // "tcp", "udp", "icmp", "any"
+	Action      string // "allow", "deny", "log"
+	Direction   string // "any", "ingress", "egress" (default: "any")
+	Priority    uint16
+	ProcessName string // Process name for process-level policies (empty = network-only)
 }
 
 // PolicyManager manages network policies
