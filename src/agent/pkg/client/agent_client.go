@@ -36,6 +36,10 @@ type AgentClient struct {
 	// Metrics for heartbeat
 	flowCount   uint64
 	policyCount uint32
+
+	// Policy version tracking
+	policyVersion uint64
+	policyMutex   sync.RWMutex
 }
 
 // NewAgentClient creates a new AgentClient
@@ -377,4 +381,93 @@ func getMemoryUsage() uint64 {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	return m.Alloc
+}
+
+// GetPolicyVersion returns the current policy version
+func (c *AgentClient) GetPolicyVersion() uint64 {
+	c.policyMutex.RLock()
+	defer c.policyMutex.RUnlock()
+	return c.policyVersion
+}
+
+// SetPolicyVersion updates the current policy version
+func (c *AgentClient) SetPolicyVersion(version uint64) {
+	c.policyMutex.Lock()
+	defer c.policyMutex.Unlock()
+	c.policyVersion = version
+}
+
+// PolicyUpdateHandler is a callback function for policy updates
+type PolicyUpdateHandler func(*policypb.PolicyUpdate) error
+
+// SubscribePolicyUpdates subscribes to policy updates from the server
+// The handler function is called for each policy update received
+// This function blocks until the stream is closed or an error occurs
+func (c *AgentClient) SubscribePolicyUpdates(ctx context.Context, handler PolicyUpdateHandler) error {
+	c.policyMutex.RLock()
+	currentVersion := c.policyVersion
+	c.policyMutex.RUnlock()
+
+	req := &policypb.SubscribeRequest{
+		AgentId:        c.agentID,
+		CurrentVersion: currentVersion,
+	}
+
+	stream, err := c.policyService.SubscribePolicies(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to policy updates: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"agent_id":        c.agentID,
+		"current_version": currentVersion,
+	}).Info("Subscribed to policy updates")
+
+	// Receive policy updates from stream
+	for {
+		update, err := stream.Recv()
+		if err != nil {
+			return fmt.Errorf("failed to receive policy update: %w", err)
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"update_type":    update.UpdateType,
+			"rule_id":        update.Policy.GetRuleId(),
+			"policy_version": update.PolicyVersion,
+		}).Debug("Received policy update")
+
+		// Call handler to process the update
+		if err := handler(update); err != nil {
+			logrus.Errorf("Failed to handle policy update (version %d): %v", update.PolicyVersion, err)
+			// Continue receiving updates even if one fails
+			continue
+		}
+
+		// Update local policy version
+		c.SetPolicyVersion(update.PolicyVersion)
+
+		logrus.WithFields(logrus.Fields{
+			"update_type":    update.UpdateType,
+			"rule_id":        update.Policy.GetRuleId(),
+			"policy_version": update.PolicyVersion,
+		}).Info("Policy update applied successfully")
+	}
+}
+
+// SubscribePolicyUpdatesAsync starts subscribing to policy updates in a background goroutine
+// The handler function is called for each policy update received
+// Returns a channel that will receive any errors from the subscription
+func (c *AgentClient) SubscribePolicyUpdatesAsync(handler PolicyUpdateHandler) <-chan error {
+	errCh := make(chan error, 1)
+
+	go func() {
+		ctx := context.Background()
+		if err := c.SubscribePolicyUpdates(ctx, handler); err != nil {
+			logrus.Errorf("Policy update subscription error: %v", err)
+			errCh <- err
+		}
+		close(errCh)
+	}()
+
+	return errCh
 }

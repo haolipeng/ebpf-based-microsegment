@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf/ringbuf"
+	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/api"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/client"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/config"
@@ -328,7 +329,7 @@ func initGrpcControlPlane(cfg *config.Config, pm *policy.PolicyManager) (reporte
 	go agentClient.StartHeartbeat()
 
 	// Sync policies on startup
-	currentVersion := uint64(0) // TODO: Get from policy manager
+	currentVersion := agentClient.GetPolicyVersion()
 	if policies, version, err := agentClient.SyncPolicies(currentVersion); err == nil {
 		log.Infof("✓ Synced %d policies (version %d)", len(policies), version)
 
@@ -337,10 +338,30 @@ func initGrpcControlPlane(cfg *config.Config, pm *policy.PolicyManager) (reporte
 			log.Errorf("Failed to apply synced policies: %v", err)
 		} else {
 			log.Infof("✓ Applied %d policies to data plane", len(policies))
+			// Update policy version in agent client after successful sync
+			agentClient.SetPolicyVersion(version)
 		}
 	} else {
 		log.Warnf("Failed to sync policies: %v", err)
 	}
+
+	// Subscribe to incremental policy updates (non-blocking)
+	updateHandler := func(update *policypb.PolicyUpdate) error {
+		log.Infof("Received policy update: type=%s, rule_id=%d, version=%d",
+			update.UpdateType, update.Policy.GetRuleId(), update.PolicyVersion)
+		return pm.ApplyPolicyUpdate(update)
+	}
+
+	// Start subscription in background goroutine
+	go func() {
+		errCh := agentClient.SubscribePolicyUpdatesAsync(updateHandler)
+		for err := range errCh {
+			log.Errorf("Policy update subscription error: %v (will retry)", err)
+			// TODO: Add reconnection logic with exponential backoff
+		}
+	}()
+
+	log.Info("✓ Subscribed to incremental policy updates")
 
 	return rep, agentClient
 }

@@ -1120,3 +1120,143 @@ func ipToUint32LE(ip net.IP) uint32 {
 	}
 	return binary.LittleEndian.Uint32(ip)
 }
+
+// ApplyPolicyUpdate applies an incremental policy update
+// This method handles ADD, MODIFY, and DELETE operations
+func (pm *PolicyManager) ApplyPolicyUpdate(update *policypb.PolicyUpdate) error {
+	if update == nil {
+		return fmt.Errorf("policy update is nil")
+	}
+
+	switch update.UpdateType {
+	case policypb.PolicyUpdateType_UPDATE_ADD:
+		return pm.handlePolicyAdd(update.Policy)
+
+	case policypb.PolicyUpdateType_UPDATE_MODIFY:
+		return pm.handlePolicyModify(update.Policy)
+
+	case policypb.PolicyUpdateType_UPDATE_DELETE:
+		if update.Policy == nil {
+			return fmt.Errorf("policy is nil for DELETE operation")
+		}
+		return pm.handlePolicyDelete(update.Policy.RuleId)
+
+	default:
+		return fmt.Errorf("unknown update type: %v", update.UpdateType)
+	}
+}
+
+// handlePolicyAdd handles adding a new policy
+func (pm *PolicyManager) handlePolicyAdd(pbPolicy *policypb.Policy) error {
+	if pbPolicy == nil {
+		return fmt.Errorf("policy is nil")
+	}
+
+	// Convert proto policy to internal policy format
+	policy := convertProtoToPolicy(pbPolicy)
+
+	// Add policy using existing AddPolicy method
+	if err := pm.AddPolicy(policy); err != nil {
+		return fmt.Errorf("failed to add policy %d: %w", policy.RuleID, err)
+	}
+
+	log.WithFields(map[string]interface{}{
+		"rule_id":   policy.RuleID,
+		"src_ip":    policy.SrcIP,
+		"dst_ip":    policy.DstIP,
+		"dst_port":  policy.DstPort,
+		"protocol":  policy.Protocol,
+		"action":    policy.Action,
+		"direction": policy.Direction,
+	}).Info("Policy added via incremental update")
+
+	return nil
+}
+
+// handlePolicyModify handles modifying an existing policy
+func (pm *PolicyManager) handlePolicyModify(pbPolicy *policypb.Policy) error {
+	if pbPolicy == nil {
+		return fmt.Errorf("policy is nil")
+	}
+
+	// Convert proto policy to internal policy format
+	policy := convertProtoToPolicy(pbPolicy)
+
+	// For modify, we need to delete the old policy and add the new one
+	// First try to delete (if it exists)
+	if err := pm.DeletePolicyRule(policy.RuleID); err != nil {
+		log.Warnf("Failed to delete old policy %d before modify (may not exist): %v", policy.RuleID, err)
+		// Continue anyway - the policy may not exist
+	}
+
+	// Add the updated policy
+	if err := pm.AddPolicy(policy); err != nil {
+		return fmt.Errorf("failed to add modified policy %d: %w", policy.RuleID, err)
+	}
+
+	log.WithFields(map[string]interface{}{
+		"rule_id":   policy.RuleID,
+		"src_ip":    policy.SrcIP,
+		"dst_ip":    policy.DstIP,
+		"dst_port":  policy.DstPort,
+		"protocol":  policy.Protocol,
+		"action":    policy.Action,
+		"direction": policy.Direction,
+	}).Info("Policy modified via incremental update")
+
+	return nil
+}
+
+// handlePolicyDelete handles deleting a policy
+func (pm *PolicyManager) handlePolicyDelete(ruleID uint32) error {
+	if err := pm.DeletePolicyRule(ruleID); err != nil {
+		return fmt.Errorf("failed to delete policy %d: %w", ruleID, err)
+	}
+
+	log.WithFields(map[string]interface{}{
+		"rule_id": ruleID,
+	}).Info("Policy deleted via incremental update")
+
+	return nil
+}
+
+// convertProtoToPolicy converts a protobuf policy to internal policy format
+func convertProtoToPolicy(pbPolicy *policypb.Policy) *Policy {
+	policy := &Policy{
+		RuleID:   pbPolicy.RuleId,
+		SrcIP:    pbPolicy.SrcIp,
+		DstIP:    pbPolicy.DstIp,
+		SrcPort:  uint16(pbPolicy.SrcPort),
+		DstPort:  uint16(pbPolicy.DstPort),
+		Priority: uint16(pbPolicy.Priority),
+	}
+
+	// Convert protocol enum to string
+	switch pbPolicy.Protocol {
+	case commonpb.Protocol_PROTOCOL_TCP:
+		policy.Protocol = "tcp"
+	case commonpb.Protocol_PROTOCOL_UDP:
+		policy.Protocol = "udp"
+	case commonpb.Protocol_PROTOCOL_ICMP:
+		policy.Protocol = "icmp"
+	default:
+		policy.Protocol = "any"
+	}
+
+	// Convert action enum to string
+	switch pbPolicy.Action {
+	case commonpb.PolicyAction_ACTION_ALLOW:
+		policy.Action = "allow"
+	case commonpb.PolicyAction_ACTION_DENY:
+		policy.Action = "deny"
+	case commonpb.PolicyAction_ACTION_LOG:
+		policy.Action = "log"
+	default:
+		policy.Action = "allow"
+	}
+
+	// Set direction (default to "any" for backward compatibility)
+	policy.Direction = DirectionAny
+
+	return policy
+}
