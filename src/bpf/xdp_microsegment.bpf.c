@@ -51,6 +51,13 @@
 #define ENABLE_NAT_SUPPORT 1
 #endif
 
+// Enable protocol-indexed wildcard lookup
+// Set to 1 to use indexed lookup (better performance for 200+ policies)
+// Set to 0 to use legacy linear scan (simpler, works for < 50 policies)
+#ifndef USE_INDEXED_LOOKUP
+#define USE_INDEXED_LOOKUP 1
+#endif
+
 #include "headers/common_types.h"
 #include "headers/tcp_state_machine.h"
 #include "headers/process_monitor.h"  // Issue #47: Process monitoring support
@@ -162,6 +169,11 @@ static __always_inline void update_stats(__u32 key) {
 
 // Include process-aware policy matching (Issue #47)
 #include "headers/process_policy_match.h"
+
+// Include indexed policy matching (optional, controlled by USE_INDEXED_LOOKUP)
+#if USE_INDEXED_LOOKUP
+#include "headers/indexed_policy_match_v3.h"
+#endif
 
 // Include shared flow processing logic
 #include "headers/flow_processing.h"
@@ -682,10 +694,16 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 	// 3. 查询策略 (使用共享的策略匹配逻辑)
 	// XDP 只能在 ingress 方向运行,所以方向固定为 INGRESS
 	// Use original addresses for policy matching (pre-NAT addresses)
-	// Issue #47: Use process-aware policy matching
+	// Issue #47: Use process-aware indexed policy matching (V3)
+#if USE_INDEXED_LOOKUP
+	__u8 action = lookup_policy_action_indexed_v3(
+		&original_key, &proc_info, POLICY_DIR_INGRESS, &matched_rule_id);
+#else
+	// Fallback to linear scan with process matching
 	__u8 action = lookup_policy_action_with_process(
 		&original_key, &proc_info, POLICY_DIR_INGRESS, &matched_rule_id,
 		&policy_map, &wildcard_policy_map);
+#endif
 
 #if DEBUG_MODE
 	// Log NAT detection if NAT is present

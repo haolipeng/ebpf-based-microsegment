@@ -155,7 +155,8 @@ struct wildcard_policy {
 struct protocol_segment {
     __u32 start_idx;           // Starting index in wildcard_policy_map
     __u32 policy_count;        // Number of policies in this segment
-    __u32 reserved[2];         // Reserved for future use
+    __u32 process_count;       // Number of process-specific policies in this segment
+    __u32 reserved;            // Reserved for future use
 } __attribute__((packed));
 
 // Statistics counters (enhanced monitoring)

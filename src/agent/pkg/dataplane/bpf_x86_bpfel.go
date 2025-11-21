@@ -118,10 +118,11 @@ type bpfProcessCacheEntry struct {
 }
 
 type bpfProtocolSegment struct {
-	_           structs.HostLayout
-	StartIdx    uint32
-	PolicyCount uint32
-	Reserved    [2]uint32
+	_            structs.HostLayout
+	StartIdx     uint32
+	PolicyCount  uint32
+	ProcessCount uint32
+	Reserved     uint32
 }
 
 type bpfSessionValue struct {

@@ -145,7 +145,7 @@ static __always_inline void update_stats(__u32 key) {
 
 // Include indexed policy matching (optional, controlled by USE_INDEXED_LOOKUP)
 #if USE_INDEXED_LOOKUP
-#include "headers/indexed_policy_match_v2.h"
+#include "headers/indexed_policy_match_v3.h"
 #endif
 
 // Include flow processing logic (packet parsing)
@@ -729,18 +729,16 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
 
     // Use original addresses for policy matching (pre-NAT addresses)
     // This ensures policies match the actual source/destination, not NAT'd addresses
-    // Issue #47: Use process-aware policy matching
+    // Issue #47: Use process-aware indexed policy matching (V3)
+#if USE_INDEXED_LOOKUP
+    __u8 action = lookup_policy_action_indexed_v3(
+        &original_key, &proc_info, direction, &matched_rule_id);
+#else
+    // Fallback to linear scan with process matching
     __u8 action = lookup_policy_action_with_process(
         &original_key, &proc_info, direction, &matched_rule_id,
         &policy_map, &wildcard_policy_map);
-
-    // Note: INDEX lookup is disabled for now to support process policies
-    // Future optimization: extend indexed lookup to support process fields
-// #if USE_INDEXED_LOOKUP
-//     __u8 action = lookup_policy_action_indexed(&original_key, direction, &matched_rule_id);
-// #else
-//     __u8 action = lookup_policy_action(&original_key, direction, &matched_rule_id);
-// #endif
+#endif
 
 #if DEBUG_MODE
     // Log NAT detection if NAT is present
