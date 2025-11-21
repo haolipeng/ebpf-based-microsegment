@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
 )
@@ -206,4 +207,135 @@ func (s *PolicyStorage) DeletePolicy(ctx context.Context, ruleID uint32) error {
 func (s *PolicyStorage) incrementPolicyVersion(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE policy_version SET version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = 1")
 	return err
+}
+
+// GetPolicyUpdates retrieves incremental policy updates since the given version
+func (s *PolicyStorage) GetPolicyUpdates(ctx context.Context, sinceVersion uint64) ([]*policypb.PolicyUpdate, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT version, update_type, rule_id, policy_data, timestamp
+		FROM policy_updates
+		WHERE version > $1
+		ORDER BY version ASC, timestamp ASC
+	`, sinceVersion)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query policy updates: %w", err)
+	}
+	defer rows.Close()
+
+	var updates []*policypb.PolicyUpdate
+	for rows.Next() {
+		var (
+			version    uint64
+			updateType string
+			ruleID     uint32
+			policyJSON []byte
+			timestamp  int64
+		)
+
+		if err := rows.Scan(&version, &updateType, &ruleID, &policyJSON, &timestamp); err != nil {
+			return nil, fmt.Errorf("failed to scan policy update: %w", err)
+		}
+
+		update := &policypb.PolicyUpdate{
+			PolicyVersion: version,
+			Timestamp:     timestamp,
+		}
+
+		// Map update type string to enum
+		switch updateType {
+		case "UPDATE_ADD":
+			update.UpdateType = policypb.PolicyUpdateType_UPDATE_ADD
+		case "UPDATE_MODIFY":
+			update.UpdateType = policypb.PolicyUpdateType_UPDATE_MODIFY
+		case "UPDATE_DELETE":
+			update.UpdateType = policypb.PolicyUpdateType_UPDATE_DELETE
+		default:
+			return nil, fmt.Errorf("unknown update type: %s", updateType)
+		}
+
+		// Unmarshal policy data if present (not for DELETE)
+		if policyJSON != nil {
+			var policy policypb.Policy
+			if err := json.Unmarshal(policyJSON, &policy); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal policy data: %w", err)
+			}
+			update.Policy = &policy
+		} else if update.UpdateType != policypb.PolicyUpdateType_UPDATE_DELETE {
+			return nil, fmt.Errorf("policy data is null for non-DELETE update")
+		}
+
+		updates = append(updates, update)
+	}
+
+	return updates, nil
+}
+
+// RecordPolicyUpdate records a policy change in the updates log
+func (s *PolicyStorage) RecordPolicyUpdate(ctx context.Context, updateType policypb.PolicyUpdateType, policy *policypb.Policy, newVersion uint64) error {
+	var updateTypeStr string
+	switch updateType {
+	case policypb.PolicyUpdateType_UPDATE_ADD:
+		updateTypeStr = "UPDATE_ADD"
+	case policypb.PolicyUpdateType_UPDATE_MODIFY:
+		updateTypeStr = "UPDATE_MODIFY"
+	case policypb.PolicyUpdateType_UPDATE_DELETE:
+		updateTypeStr = "UPDATE_DELETE"
+	default:
+		return fmt.Errorf("unknown update type: %v", updateType)
+	}
+
+	var policyJSON []byte
+	var ruleID uint32
+
+	if policy != nil {
+		var err error
+		policyJSON, err = json.Marshal(policy)
+		if err != nil {
+			return fmt.Errorf("failed to marshal policy: %w", err)
+		}
+		ruleID = policy.RuleId
+	} else if updateType == policypb.PolicyUpdateType_UPDATE_DELETE {
+		// For DELETE, policy can be nil but we need to get ruleID from somewhere
+		// This should be passed separately
+		return fmt.Errorf("ruleID required for DELETE operation")
+	}
+
+	timestamp := time.Now().UnixNano()
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO policy_updates (version, update_type, rule_id, policy_data, timestamp)
+		VALUES ($1, $2, $3, $4, $5)
+	`, newVersion, updateTypeStr, ruleID, policyJSON, timestamp)
+
+	if err != nil {
+		return fmt.Errorf("failed to record policy update: %w", err)
+	}
+
+	return nil
+}
+
+// RecordPolicyDelete records a policy deletion in the updates log
+func (s *PolicyStorage) RecordPolicyDelete(ctx context.Context, ruleID uint32, newVersion uint64) error {
+	timestamp := time.Now().UnixNano()
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO policy_updates (version, update_type, rule_id, policy_data, timestamp)
+		VALUES ($1, $2, $3, NULL, $4)
+	`, newVersion, "UPDATE_DELETE", ruleID, timestamp)
+
+	if err != nil {
+		return fmt.Errorf("failed to record policy delete: %w", err)
+	}
+
+	return nil
+}
+
+// GetCurrentVersion returns the current policy version
+func (s *PolicyStorage) GetCurrentVersion(ctx context.Context) (uint64, error) {
+	var version uint64
+	err := s.db.QueryRowContext(ctx, "SELECT version FROM policy_version WHERE id = 1").Scan(&version)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get policy version: %w", err)
+	}
+	return version, nil
 }

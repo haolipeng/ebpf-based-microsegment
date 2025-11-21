@@ -21,6 +21,7 @@ import (
 	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/config"
 	grpcserv "github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/grpc"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/pubsub"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/api/handlers"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/api/middleware"
@@ -126,9 +127,13 @@ func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 
 	grpcServer := grpc.NewServer()
 
+	// Initialize policy pub/sub for incremental updates
+	policyPubSub := pubsub.NewPolicyPubSub()
+	logrus.Info("Policy pub/sub mechanism initialized for incremental updates")
+
 	// Register gRPC services with WebSocket hub for real-time streaming
 	flowpb.RegisterFlowServiceServer(grpcServer, grpcserv.NewFlowServiceServer(flowStorage, wsHub))
-	policypb.RegisterPolicyServiceServer(grpcServer, grpcserv.NewPolicyServiceServer(policyStorage))
+	policypb.RegisterPolicyServiceServer(grpcServer, grpcserv.NewPolicyServiceServer(policyStorage, policyPubSub))
 	agentpb.RegisterAgentServiceServer(grpcServer, grpcserv.NewAgentServiceServer(agentStorage))
 
 	go func() {
