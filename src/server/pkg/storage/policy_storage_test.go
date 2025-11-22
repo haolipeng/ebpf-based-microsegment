@@ -33,15 +33,21 @@ func TestGetAllPolicies_Success(t *testing.T) {
 	mock.ExpectQuery("SELECT version FROM policy_version WHERE id = 1").
 		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(uint64(5)))
 
-	// 期望策略查询
+	// 期望策略查询 (16 columns including process_name, process_path, match_mode)
 	policyRows := sqlmock.NewRows([]string{
 		"rule_id", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "action", "priority",
-		"source_labels", "dest_labels", "description", "created_at", "updated_at",
+		"source_labels", "dest_labels", "description",
+		"process_name", "process_path", "match_mode",
+		"created_at", "updated_at",
 	}).
 		AddRow(1, "10.0.0.0/24", "192.168.1.0/24", 0, 80, 6, 1, 100,
-			[]byte(`{"app":"web"}`), []byte(`{"app":"db"}`), "Allow web to db", int64(1234567890), int64(1234567900)).
+			[]byte(`{"app":"web"}`), []byte(`{"app":"db"}`), "Allow web to db",
+			nil, nil, nil,
+			int64(1234567890), int64(1234567900)).
 		AddRow(2, "0.0.0.0/0", "10.0.0.0/24", 0, 22, 6, 2, 90,
-			[]byte(`{}`), []byte(`{}`), "Deny SSH", int64(1234567891), int64(1234567901))
+			[]byte(`{}`), []byte(`{}`), "Deny SSH",
+			nil, nil, nil,
+			int64(1234567891), int64(1234567901))
 
 	mock.ExpectQuery("SELECT rule_id, src_ip.*FROM policies.*ORDER BY priority DESC, rule_id").
 		WillReturnRows(policyRows)
@@ -72,7 +78,9 @@ func TestGetAllPolicies_EmptyResult(t *testing.T) {
 	mock.ExpectQuery("SELECT rule_id, src_ip.*FROM policies.*").
 		WillReturnRows(sqlmock.NewRows([]string{
 			"rule_id", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "action", "priority",
-			"source_labels", "dest_labels", "description", "created_at", "updated_at",
+			"source_labels", "dest_labels", "description",
+			"process_name", "process_path", "match_mode",
+			"created_at", "updated_at",
 		}))
 
 	policies, version, err := storage.GetAllPolicies(context.Background())
@@ -148,11 +156,12 @@ func TestCreatePolicy_Success(t *testing.T) {
 		Description:  "Allow web to db",
 	}
 
-	// 期望插入策略
+	// 期望插入策略 (14 arguments including process_name, process_path, match_mode)
 	mock.ExpectExec("INSERT INTO policies").
 		WithArgs(policy.RuleId, policy.SrcIp, policy.DstIp, policy.SrcPort, policy.DstPort,
 			policy.Protocol, policy.Action, policy.Priority,
-			sqlmock.AnyArg(), sqlmock.AnyArg(), policy.Description).
+			sqlmock.AnyArg(), sqlmock.AnyArg(), policy.Description,
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	// 期望更新版本
@@ -212,6 +221,7 @@ func TestCreatePolicy_VersionUpdateError(t *testing.T) {
 	mock.ExpectExec("INSERT INTO policies").
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
@@ -246,11 +256,12 @@ func TestUpdatePolicy_Success(t *testing.T) {
 		Description:  "Allow web to api",
 	}
 
-	// 期望更新策略
+	// 期望更新策略 (14 arguments including process fields)
 	mock.ExpectExec("UPDATE policies.*WHERE rule_id = .*").
 		WithArgs(policy.RuleId, policy.SrcIp, policy.DstIp, policy.SrcPort, policy.DstPort,
 			policy.Protocol, policy.Action, policy.Priority,
-			sqlmock.AnyArg(), sqlmock.AnyArg(), policy.Description).
+			sqlmock.AnyArg(), sqlmock.AnyArg(), policy.Description,
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	// 期望更新版本
@@ -280,9 +291,10 @@ func TestUpdatePolicy_NotFound(t *testing.T) {
 		Priority: 100,
 	}
 
-	// 期望更新但返回 0 行受影响
+	// 期望更新但返回 0 行受影响 (14 arguments)
 	mock.ExpectExec("UPDATE policies.*WHERE rule_id = .*").
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
@@ -340,6 +352,7 @@ func TestUpdatePolicy_VersionUpdateError(t *testing.T) {
 
 	mock.ExpectExec("UPDATE policies.*WHERE rule_id = .*").
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))

@@ -4,6 +4,7 @@
  * Unit tests for the graph database implementation
  */
 
+import { vi } from 'vitest';
 import { Graph } from '../Graph';
 import {
   findConnectedNodes,
@@ -207,7 +208,7 @@ describe('Graph', () => {
 
   describe('Callbacks', () => {
     test('should trigger new link callback', () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
       graph.registerNewLinkCallback(callback);
 
       graph.addLink('A', 'traffic', 'B', 'attr1');
@@ -215,7 +216,7 @@ describe('Graph', () => {
     });
 
     test('should trigger update link attribute callback', () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
       graph.registerUpdateLinkAttrCallback(callback);
 
       graph.addLink('A', 'traffic', 'B', 'attr1');
@@ -225,7 +226,7 @@ describe('Graph', () => {
     });
 
     test('should trigger delete link callback', () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
       graph.registerDelLinkCallback(callback);
 
       graph.addLink('A', 'traffic', 'B', 'attr1');
@@ -235,7 +236,7 @@ describe('Graph', () => {
     });
 
     test('should trigger delete node callback', () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
       graph.registerDelNodeCallback(callback);
 
       graph.addLink('A', 'traffic', 'B', 'attr1');

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"net"
 	"testing"
 	"time"
 
@@ -17,6 +18,17 @@ import (
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
 )
+
+// intToIP converts a uint32 IP address to string format (for testing)
+func intToIP(ipUint32 uint32) string {
+	ip := net.IPv4(
+		byte(ipUint32>>24),
+		byte(ipUint32>>16),
+		byte(ipUint32>>8),
+		byte(ipUint32),
+	)
+	return ip.String()
+}
 
 func TestNewFlowStorage(t *testing.T) {
 	db, _, err := sqlmock.New()

@@ -126,46 +126,58 @@ func TestParseFlowEvent(t *testing.T) {
 		{
 			name: "Valid flow event",
 			data: func() []byte {
-				data := make([]byte, 48)
-				// Source IP: 192.168.1.100 (0xC0A80164 in little-endian)
-				binary.LittleEndian.PutUint32(data[0:4], 0xC0A80164)
-				// Dest IP: 10.0.0.1 (0x0A000001 in little-endian)
-				binary.LittleEndian.PutUint32(data[4:8], 0x0A000001)
-				// Source port: 12345 (network byte order)
-				binary.BigEndian.PutUint16(data[8:10], 12345)
-				// Dest port: 80 (network byte order)
-				binary.BigEndian.PutUint16(data[10:12], 80)
-				// Protocol: TCP (6)
-				data[12] = 6
-				// Event type: NEW (0)
-				data[13] = 0
-				// Direction: EGRESS (1)
-				data[14] = 1
-				// Padding
-				data[15] = 0
-				// Packet count: 100
-				binary.LittleEndian.PutUint64(data[16:24], 100)
-				// Byte count: 10000
-				binary.LittleEndian.PutUint64(data[24:32], 10000)
-				// Timestamp: current time in nanoseconds
-				binary.LittleEndian.PutUint64(data[32:40], uint64(time.Now().UnixNano()))
-				// Policy ID: 42
-				binary.LittleEndian.PutUint32(data[40:44], 42)
-				// Policy action: ALLOW (0)
-				data[44] = 0
-				// State: ACTIVE (0)
-				data[45] = 0
-				// Reserved
-				binary.LittleEndian.PutUint16(data[46:48], 0)
+				// New structure size: 180 bytes
+				data := make([]byte, 180)
+				// Source IP: 192.168.1.100 as IPv4-mapped IPv6 (16 bytes, offset 0-15)
+				// Format: [0, 0, 0xffff, ipv4_addr] in little-endian
+				binary.LittleEndian.PutUint32(data[0:4], 0)          // SrcIP[0]
+				binary.LittleEndian.PutUint32(data[4:8], 0)          // SrcIP[1]
+				binary.LittleEndian.PutUint32(data[8:12], 0x0000ffff) // SrcIP[2] - IPv4-mapped marker
+				binary.LittleEndian.PutUint32(data[12:16], 0xC0A80164) // SrcIP[3] - 192.168.1.100
+				// Dest IP: 10.0.0.1 as IPv4-mapped IPv6 (16 bytes, offset 16-31)
+				binary.LittleEndian.PutUint32(data[16:20], 0)          // DstIP[0]
+				binary.LittleEndian.PutUint32(data[20:24], 0)          // DstIP[1]
+				binary.LittleEndian.PutUint32(data[24:28], 0x0000ffff) // DstIP[2] - IPv4-mapped marker
+				binary.LittleEndian.PutUint32(data[28:32], 0x0A000001) // DstIP[3] - 10.0.0.1
+				// Ports (4 bytes, offset 32-35)
+				binary.BigEndian.PutUint16(data[32:34], 12345) // Source port
+				binary.BigEndian.PutUint16(data[34:36], 80)    // Dest port
+				// Packet metadata (8 bytes, offset 36-43)
+				data[36] = 6 // Protocol: TCP
+				data[37] = 0 // Event type: NEW
+				data[38] = 1 // Direction: EGRESS
+				data[39] = 4 // IP version: 4
+				binary.LittleEndian.PutUint16(data[40:42], 0) // VLAN ID
+				data[42] = 0 // TCP flags
+				data[43] = 0 // Flags
+				// Traffic statistics (24 bytes, offset 44-67)
+				binary.LittleEndian.PutUint64(data[44:52], 100)                        // Packet count
+				binary.LittleEndian.PutUint64(data[52:60], 10000)                      // Byte count
+				binary.LittleEndian.PutUint64(data[60:68], uint64(time.Now().UnixNano())) // Timestamp
+				// Enhanced TCP tracking (12 bytes, offset 68-79)
+				binary.LittleEndian.PutUint32(data[68:72], 0)  // TCP seq
+				binary.LittleEndian.PutUint32(data[72:76], 0)  // TCP ack
+				binary.LittleEndian.PutUint16(data[76:78], 0)  // TCP window
+				data[78] = 0 // TCP retrans
+				data[79] = 0 // TCP state
+				// Policy context (8 bytes, offset 80-87)
+				binary.LittleEndian.PutUint32(data[80:84], 42) // Policy ID
+				data[84] = 0 // Policy action: ALLOW
+				data[85] = 0 // State: ACTIVE
+				binary.LittleEndian.PutUint16(data[86:88], 0) // Reserved
+				// Process context (92 bytes, offset 88-179) - zero-filled
 				return data
 			}(),
 			wantErr: false,
 			check: func(t *testing.T, event *FlowEvent) {
-				if event.SrcIP != 0xC0A80164 {
-					t.Errorf("SrcIP = 0x%X, want 0xC0A80164", event.SrcIP)
+				// Check IPv4-mapped IPv6 format
+				expectedSrcIP := [4]uint32{0, 0, 0x0000ffff, 0xC0A80164}
+				expectedDstIP := [4]uint32{0, 0, 0x0000ffff, 0x0A000001}
+				if event.SrcIP != expectedSrcIP {
+					t.Errorf("SrcIP = %v, want %v", event.SrcIP, expectedSrcIP)
 				}
-				if event.DstIP != 0x0A000001 {
-					t.Errorf("DstIP = 0x%X, want 0x0A000001", event.DstIP)
+				if event.DstIP != expectedDstIP {
+					t.Errorf("DstIP = %v, want %v", event.DstIP, expectedDstIP)
 				}
 				if event.SrcPort != 12345 {
 					t.Errorf("SrcPort = %d, want 12345", event.SrcPort)
@@ -218,30 +230,30 @@ func TestParseFlowEvent(t *testing.T) {
 func TestFlowKey(t *testing.T) {
 	tests := []struct {
 		name     string
-		srcIP    uint32
-		dstIP    uint32
+		srcIP    [4]uint32
+		dstIP    [4]uint32
 		srcPort  uint16
 		dstPort  uint16
 		protocol uint8
 		expected string
 	}{
 		{
-			name:     "Standard flow key",
-			srcIP:    0xC0A80164, // 192.168.1.100
-			dstIP:    0x0A000001, // 10.0.0.1
+			name:     "Standard flow key (IPv4-mapped)",
+			srcIP:    [4]uint32{0, 0, 0x0000ffff, 0xC0A80164}, // 192.168.1.100
+			dstIP:    [4]uint32{0, 0, 0x0000ffff, 0x0A000001}, // 10.0.0.1
 			srcPort:  12345,
 			dstPort:  80,
 			protocol: 6, // TCP
-			expected: "3232235876-167772161-12345-80-6",
+			expected: "00000000000000000000ffffc0a80164-00000000000000000000ffff0a000001-12345-80-6",
 		},
 		{
-			name:     "Different flow key",
-			srcIP:    0x7F000001, // 127.0.0.1
-			dstIP:    0x08080808, // 8.8.8.8
+			name:     "Different flow key (IPv4-mapped)",
+			srcIP:    [4]uint32{0, 0, 0x0000ffff, 0x7F000001}, // 127.0.0.1
+			dstIP:    [4]uint32{0, 0, 0x0000ffff, 0x08080808}, // 8.8.8.8
 			srcPort:  54321,
 			dstPort:  443,
 			protocol: 6, // TCP
-			expected: "2130706433-134744072-54321-443-6",
+			expected: "00000000000000000000ffff7f000001-00000000000000000000ffff08080808-54321-443-6",
 		},
 	}
 
@@ -258,13 +270,14 @@ func TestFlowKey(t *testing.T) {
 func TestFlowEvent_ToFlow(t *testing.T) {
 	now := time.Now()
 	event := &FlowEvent{
-		SrcIP:        0xC0A80164, // 192.168.1.100
-		DstIP:        0x0A000001, // 10.0.0.1
+		SrcIP:        [4]uint32{0, 0, 0x0000ffff, 0xC0A80164}, // 192.168.1.100 as IPv4-mapped
+		DstIP:        [4]uint32{0, 0, 0x0000ffff, 0x0A000001}, // 10.0.0.1 as IPv4-mapped
 		SrcPort:      12345,
 		DstPort:      80,
 		Protocol:     ProtocolTCP,
 		EventType:    FlowEventNew,
 		Direction:    FlowDirectionEgress,
+		IPVersion:    4,
 		PacketCount:  100,
 		ByteCount:    10000,
 		TimestampNS:  uint64(now.UnixNano()),
@@ -275,7 +288,8 @@ func TestFlowEvent_ToFlow(t *testing.T) {
 
 	flow := event.ToFlow()
 
-	// Check basic fields
+	// Check basic fields - IPv4 addresses are extracted from IPv4-mapped IPv6
+	// The ipv6ToNetIP function extracts the IPv4 from the last 32 bits in little-endian
 	if flow.SourceIP != "100.1.168.192" { // Little-endian IP representation
 		t.Errorf("SourceIP = %v, want 100.1.168.192", flow.SourceIP)
 	}
@@ -330,13 +344,14 @@ func TestFlowEvent_ToFlow(t *testing.T) {
 func TestFlowEvent_ToFlow_Closed(t *testing.T) {
 	now := time.Now()
 	event := &FlowEvent{
-		SrcIP:        0xC0A80164,
-		DstIP:        0x0A000001,
+		SrcIP:        [4]uint32{0, 0, 0x0000ffff, 0xC0A80164}, // 192.168.1.100 as IPv4-mapped
+		DstIP:        [4]uint32{0, 0, 0x0000ffff, 0x0A000001}, // 10.0.0.1 as IPv4-mapped
 		SrcPort:      12345,
 		DstPort:      80,
 		Protocol:     ProtocolTCP,
 		EventType:    FlowEventClosed, // Closed event
 		Direction:    FlowDirectionEgress,
+		IPVersion:    4,
 		PacketCount:  100,
 		ByteCount:    10000,
 		TimestampNS:  uint64(now.UnixNano()),
@@ -354,20 +369,34 @@ func TestFlowEvent_ToFlow_Closed(t *testing.T) {
 }
 
 func BenchmarkParseFlowEvent(b *testing.B) {
-	data := make([]byte, 48)
-	binary.LittleEndian.PutUint32(data[0:4], 0xC0A80164)
-	binary.LittleEndian.PutUint32(data[4:8], 0x0A000001)
-	binary.BigEndian.PutUint16(data[8:10], 12345)
-	binary.BigEndian.PutUint16(data[10:12], 80)
-	data[12] = 6  // TCP
-	data[13] = 0  // NEW
-	data[14] = 1  // EGRESS
-	binary.LittleEndian.PutUint64(data[16:24], 100)
-	binary.LittleEndian.PutUint64(data[24:32], 10000)
-	binary.LittleEndian.PutUint64(data[32:40], uint64(time.Now().UnixNano()))
-	binary.LittleEndian.PutUint32(data[40:44], 42)
-	data[44] = 0  // ALLOW
-	data[45] = 0  // ACTIVE
+	// New structure size: 180 bytes
+	data := make([]byte, 180)
+	// Source IP as IPv4-mapped IPv6 (16 bytes)
+	binary.LittleEndian.PutUint32(data[0:4], 0)
+	binary.LittleEndian.PutUint32(data[4:8], 0)
+	binary.LittleEndian.PutUint32(data[8:12], 0x0000ffff)
+	binary.LittleEndian.PutUint32(data[12:16], 0xC0A80164)
+	// Dest IP as IPv4-mapped IPv6 (16 bytes)
+	binary.LittleEndian.PutUint32(data[16:20], 0)
+	binary.LittleEndian.PutUint32(data[20:24], 0)
+	binary.LittleEndian.PutUint32(data[24:28], 0x0000ffff)
+	binary.LittleEndian.PutUint32(data[28:32], 0x0A000001)
+	// Ports
+	binary.BigEndian.PutUint16(data[32:34], 12345)
+	binary.BigEndian.PutUint16(data[34:36], 80)
+	// Metadata
+	data[36] = 6 // TCP
+	data[37] = 0 // NEW
+	data[38] = 1 // EGRESS
+	data[39] = 4 // IP version
+	// Statistics
+	binary.LittleEndian.PutUint64(data[44:52], 100)
+	binary.LittleEndian.PutUint64(data[52:60], 10000)
+	binary.LittleEndian.PutUint64(data[60:68], uint64(time.Now().UnixNano()))
+	// Policy
+	binary.LittleEndian.PutUint32(data[80:84], 42)
+	data[84] = 0 // ALLOW
+	data[85] = 0 // ACTIVE
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -377,13 +406,14 @@ func BenchmarkParseFlowEvent(b *testing.B) {
 
 func BenchmarkFlowEvent_ToFlow(b *testing.B) {
 	event := &FlowEvent{
-		SrcIP:        0xC0A80164,
-		DstIP:        0x0A000001,
+		SrcIP:        [4]uint32{0, 0, 0x0000ffff, 0xC0A80164},
+		DstIP:        [4]uint32{0, 0, 0x0000ffff, 0x0A000001},
 		SrcPort:      12345,
 		DstPort:      80,
 		Protocol:     ProtocolTCP,
 		EventType:    FlowEventNew,
 		Direction:    FlowDirectionEgress,
+		IPVersion:    4,
 		PacketCount:  100,
 		ByteCount:    10000,
 		TimestampNS:  uint64(time.Now().UnixNano()),
@@ -399,8 +429,10 @@ func BenchmarkFlowEvent_ToFlow(b *testing.B) {
 }
 
 func BenchmarkFlowKey(b *testing.B) {
+	srcIP := [4]uint32{0, 0, 0x0000ffff, 0xC0A80164}
+	dstIP := [4]uint32{0, 0, 0x0000ffff, 0x0A000001}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = FlowKey(0xC0A80164, 0x0A000001, 12345, 80, 6)
+		_ = FlowKey(srcIP, dstIP, 12345, 80, 6)
 	}
 }

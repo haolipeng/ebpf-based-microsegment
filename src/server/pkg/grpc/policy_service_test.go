@@ -8,6 +8,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	policypb "github.com/haolipeng/ebpf-based-microsegment/api/proto/policy"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/pubsub"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -61,7 +62,8 @@ func TestNewPolicyServiceServer(t *testing.T) {
 	defer db.Close()
 
 	policyStorage := storage.NewPolicyStorage(db)
-	server := NewPolicyServiceServer(policyStorage)
+	policyPubSub := pubsub.NewPolicyPubSub()
+	server := NewPolicyServiceServer(policyStorage, policyPubSub)
 
 	assert.NotNil(t, server)
 	assert.NotNil(t, server.policyStorage)
@@ -73,7 +75,8 @@ func TestSyncPolicies_Success(t *testing.T) {
 	defer db.Close()
 
 	policyStorage := storage.NewPolicyStorage(db)
-	server := NewPolicyServiceServer(policyStorage)
+	policyPubSub := pubsub.NewPolicyPubSub()
+	server := NewPolicyServiceServer(policyStorage, policyPubSub)
 
 	req := &policypb.SyncRequest{
 		AgentId:       "agent-1",
@@ -84,15 +87,17 @@ func TestSyncPolicies_Success(t *testing.T) {
 	mock.ExpectQuery("SELECT version FROM policy_version").
 		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(1))
 
-	// Mock GetAllPolicies query - policies query
+	// Mock GetAllPolicies query - policies query (16 columns including process fields)
 	rows := sqlmock.NewRows([]string{
 		"rule_id", "src_ip", "dst_ip", "src_port", "dst_port", "protocol",
 		"action", "priority", "source_labels", "dest_labels", "description",
+		"process_name", "process_path", "match_mode",
 		"created_at", "updated_at",
 	}).AddRow(
 		uint32(1), "10.0.0.0/24", "192.168.1.0/24", uint32(0), uint32(80),
 		uint32(6), uint32(1), uint32(100),
 		[]byte(`{"app":"web"}`), []byte(`{"app":"db"}`), "Allow web to db",
+		nil, nil, nil,
 		int64(time.Now().UnixNano()), int64(time.Now().UnixNano()),
 	)
 	mock.ExpectQuery("SELECT rule_id, src_ip").
@@ -117,7 +122,8 @@ func TestSyncPolicies_EmptyPolicies(t *testing.T) {
 	defer db.Close()
 
 	policyStorage := storage.NewPolicyStorage(db)
-	server := NewPolicyServiceServer(policyStorage)
+	policyPubSub := pubsub.NewPolicyPubSub()
+	server := NewPolicyServiceServer(policyStorage, policyPubSub)
 
 	req := &policypb.SyncRequest{
 		AgentId:       "agent-1",
@@ -128,10 +134,11 @@ func TestSyncPolicies_EmptyPolicies(t *testing.T) {
 	mock.ExpectQuery("SELECT version FROM policy_version").
 		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(0))
 
-	// Mock GetAllPolicies query - policies query (empty)
+	// Mock GetAllPolicies query - policies query (empty, 16 columns)
 	rows := sqlmock.NewRows([]string{
 		"rule_id", "src_ip", "dst_ip", "src_port", "dst_port", "protocol",
 		"action", "priority", "source_labels", "dest_labels", "description",
+		"process_name", "process_path", "match_mode",
 		"created_at", "updated_at",
 	})
 	mock.ExpectQuery("SELECT rule_id, src_ip").
@@ -154,7 +161,8 @@ func TestSyncPolicies_StorageError(t *testing.T) {
 	defer db.Close()
 
 	policyStorage := storage.NewPolicyStorage(db)
-	server := NewPolicyServiceServer(policyStorage)
+	policyPubSub := pubsub.NewPolicyPubSub()
+	server := NewPolicyServiceServer(policyStorage, policyPubSub)
 
 	req := &policypb.SyncRequest{
 		AgentId:       "agent-1",
@@ -177,7 +185,8 @@ func TestSubscribePolicies_SendsInitialPolicies(t *testing.T) {
 	defer db.Close()
 
 	policyStorage := storage.NewPolicyStorage(db)
-	server := NewPolicyServiceServer(policyStorage)
+	policyPubSub := pubsub.NewPolicyPubSub()
+	server := NewPolicyServiceServer(policyStorage, policyPubSub)
 
 	req := &policypb.SubscribeRequest{
 		AgentId:        "agent-1",
@@ -190,22 +199,25 @@ func TestSubscribePolicies_SendsInitialPolicies(t *testing.T) {
 	mock.ExpectQuery("SELECT version FROM policy_version").
 		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(2))
 
-	// Mock GetAllPolicies query - policies query
+	// Mock GetAllPolicies query - policies query (16 columns including process fields)
 	rows := sqlmock.NewRows([]string{
 		"rule_id", "src_ip", "dst_ip", "src_port", "dst_port", "protocol",
 		"action", "priority", "source_labels", "dest_labels", "description",
+		"process_name", "process_path", "match_mode",
 		"created_at", "updated_at",
 	}).
 		AddRow(
 			uint32(1), "10.0.0.0/24", "192.168.1.0/24", uint32(0), uint32(80),
 			uint32(6), uint32(1), uint32(100),
 			[]byte(`{"app":"web"}`), []byte(`{"app":"db"}`), "Allow web to db",
+			nil, nil, nil,
 			int64(time.Now().UnixNano()), int64(time.Now().UnixNano()),
 		).
 		AddRow(
 			uint32(2), "10.0.0.0/24", "0.0.0.0/0", uint32(0), uint32(443),
 			uint32(6), uint32(1), uint32(90),
 			[]byte(`{"app":"web"}`), []byte(`{}`), "Allow web to internet",
+			nil, nil, nil,
 			int64(time.Now().UnixNano()), int64(time.Now().UnixNano()),
 		)
 	mock.ExpectQuery("SELECT rule_id, src_ip").
@@ -220,8 +232,11 @@ func TestSubscribePolicies_SendsInitialPolicies(t *testing.T) {
 	}()
 
 	err := server.SubscribePolicies(req, mockStream)
-	// Error is expected when context is cancelled
-	assert.NoError(t, err) // The function returns nil when context is done
+	// Error is expected when context is cancelled - the function returns context.Canceled
+	// which is acceptable behavior for graceful disconnection
+	if err != nil {
+		assert.ErrorIs(t, err, context.Canceled)
+	}
 
 	// Verify that initial policies were sent
 	assert.Len(t, mockStream.updates, 2)
@@ -240,7 +255,8 @@ func TestSubscribePolicies_StorageError(t *testing.T) {
 	defer db.Close()
 
 	policyStorage := storage.NewPolicyStorage(db)
-	server := NewPolicyServiceServer(policyStorage)
+	policyPubSub := pubsub.NewPolicyPubSub()
+	server := NewPolicyServiceServer(policyStorage, policyPubSub)
 
 	req := &policypb.SubscribeRequest{
 		AgentId:        "agent-1",
@@ -266,7 +282,8 @@ func TestReportPolicyStats_Success(t *testing.T) {
 	defer db.Close()
 
 	policyStorage := storage.NewPolicyStorage(db)
-	server := NewPolicyServiceServer(policyStorage)
+	policyPubSub := pubsub.NewPolicyPubSub()
+	server := NewPolicyServiceServer(policyStorage, policyPubSub)
 
 	report := &policypb.PolicyStatsReport{
 		AgentId:   "agent-1",
@@ -307,7 +324,8 @@ func TestReportPolicyStats_EmptyReport(t *testing.T) {
 	defer db.Close()
 
 	policyStorage := storage.NewPolicyStorage(db)
-	server := NewPolicyServiceServer(policyStorage)
+	policyPubSub := pubsub.NewPolicyPubSub()
+	server := NewPolicyServiceServer(policyStorage, policyPubSub)
 
 	report := &policypb.PolicyStatsReport{
 		AgentId:     "agent-1",

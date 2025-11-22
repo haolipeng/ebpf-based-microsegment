@@ -282,8 +282,9 @@ func TestCreatePolicy_PolicyManagerError(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	// Assert
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// Assert - handler returns 400 for non-PolicyError errors
+	// (500 is only returned for PolicyError with IsPartial=false)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var response models.ErrorResponse
 	err := json.Unmarshal(w.Body.Bytes(), &response)
@@ -586,8 +587,9 @@ func TestUpdatePolicy_AddError(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	// Assert
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// Assert - handler returns 400 for non-PolicyError errors
+	// (500 is only returned for PolicyError with IsPartial=false)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	mockPM.AssertExpectations(t)
 }

@@ -3,7 +3,9 @@ package grpc
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
+	"net"
 	"testing"
 	"time"
 
@@ -15,6 +17,20 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 )
+
+// intToIP converts a uint32 IP address to string format (for testing)
+func intToIP(ipUint32 uint32) string {
+	ip := net.IPv4(
+		byte(ipUint32>>24),
+		byte(ipUint32>>16),
+		byte(ipUint32>>8),
+		byte(ipUint32),
+	)
+	return ip.String()
+}
+
+// Suppress unused import warning
+var _ = fmt.Sprint
 
 // mockReportFlowEventsStream is a mock implementation of the gRPC stream
 type mockReportFlowEventsStream struct {
