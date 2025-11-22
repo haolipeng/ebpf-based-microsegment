@@ -1,31 +1,113 @@
-import { Space, Segmented, DatePicker, Switch, InputNumber, Button, Select, Card } from 'antd'
-import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons'
+import { Space, Segmented, DatePicker, Switch, InputNumber, Button, Select, Card, Tooltip, Input } from 'antd'
+import {
+  ReloadOutlined,
+  DownloadOutlined,
+  ClusterOutlined,
+  AppstoreOutlined,
+  ApartmentOutlined,
+  ContainerOutlined,
+  ThunderboltOutlined,
+  GlobalOutlined,
+} from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { TopologyViewMode, TopologyFilters } from '../../types/topology'
 
 const { RangePicker } = DatePicker
+const { Search } = Input
+
+/**
+ * View mode options with icons and descriptions
+ */
+const VIEW_MODE_OPTIONS = [
+  {
+    label: (
+      <Tooltip title="Group traffic by Kubernetes namespace">
+        <Space size={4}>
+          <ClusterOutlined />
+          <span>Namespace</span>
+        </Space>
+      </Tooltip>
+    ),
+    value: 'NAMESPACE',
+  },
+  {
+    label: (
+      <Tooltip title="Group traffic by service (app label)">
+        <Space size={4}>
+          <AppstoreOutlined />
+          <span>Service</span>
+        </Space>
+      </Tooltip>
+    ),
+    value: 'SERVICE',
+  },
+  {
+    label: (
+      <Tooltip title="Show individual pods">
+        <Space size={4}>
+          <ApartmentOutlined />
+          <span>Pod</span>
+        </Space>
+      </Tooltip>
+    ),
+    value: 'POD',
+  },
+  {
+    label: (
+      <Tooltip title="Show containers within pods">
+        <Space size={4}>
+          <ContainerOutlined />
+          <span>Container</span>
+        </Space>
+      </Tooltip>
+    ),
+    value: 'CONTAINER',
+  },
+  {
+    label: (
+      <Tooltip title="Show processes within containers">
+        <Space size={4}>
+          <ThunderboltOutlined />
+          <span>Process</span>
+        </Space>
+      </Tooltip>
+    ),
+    value: 'PROCESS',
+  },
+  {
+    label: (
+      <Tooltip title="Raw IP address view">
+        <Space size={4}>
+          <GlobalOutlined />
+          <span>IP</span>
+        </Space>
+      </Tooltip>
+    ),
+    value: 'IP',
+  },
+]
 
 interface TopologyControlsProps {
-  /** 视图模式 */
+  /** Current view mode */
   viewMode: TopologyViewMode
-  /** 视图模式变更回调 */
+  /** View mode change callback */
   onViewModeChange: (mode: TopologyViewMode) => void
-  /** 筛选条件 */
+  /** Filter settings */
   filters: TopologyFilters
-  /** 筛选条件变更回调 */
+  /** Filter change callback */
   onFiltersChange: (filters: Partial<TopologyFilters>) => void
-  /** 实时更新状态 */
+  /** Real-time update state */
   realtimeEnabled: boolean
-  /** 实时更新切换回调 */
+  /** Real-time update toggle callback */
   onRealtimeToggle: (enabled: boolean) => void
-  /** 刷新回调 */
+  /** Refresh callback */
   onRefresh?: () => void
+  /** Available namespaces for filtering */
+  namespaces?: string[]
 }
 
 /**
- * 拓扑图控制栏组件
- * 
- * 提供视图切换、筛选、实时更新等控制功能
+ * Topology controls component with K8s/Docker view modes
  */
 export default function TopologyControls({
   viewMode,
@@ -35,155 +117,236 @@ export default function TopologyControls({
   realtimeEnabled,
   onRealtimeToggle,
   onRefresh,
+  namespaces = [],
 }: TopologyControlsProps) {
-  // 处理时间范围变更
-  const handleTimeRangeChange = (dates: any) => {
-    if (dates && dates[0] && dates[1]) {
+  // Handle time range change
+  const handleTimeRangeChange = (dates: unknown) => {
+    const d = dates as [dayjs.Dayjs, dayjs.Dayjs] | null
+    if (d && d[0] && d[1]) {
       onFiltersChange({
-        startTime: dates[0].toISOString(),
-        endTime: dates[1].toISOString(),
+        startTime: d[0].toISOString(),
+        endTime: d[1].toISOString(),
       })
     }
   }
 
-  // 重置筛选条件
+  // Reset filters
   const handleReset = () => {
     onFiltersChange({
       protocol: undefined,
       state: undefined,
       policyAction: undefined,
+      namespace: undefined,
+      service: undefined,
+      podPattern: undefined,
+      showExternal: true,
+      onlySuspicious: false,
       maxNodes: 100,
-      startTime: dayjs().subtract(7, 'days').toISOString(),
+      minFlowCount: undefined,
+      startTime: dayjs().subtract(1, 'hour').toISOString(),
       endTime: dayjs().toISOString(),
+    })
+  }
+
+  // Quick time range presets
+  const handleQuickTimeRange = (minutes: number) => {
+    onFiltersChange({
+      startTime: dayjs().subtract(minutes, 'minute').toISOString(),
+      endTime: dayjs().toISOString(),
+      timeRangeMinutes: minutes,
     })
   }
 
   return (
     <Card size="small" style={{ marginBottom: 16 }}>
-      <Space size="middle" wrap>
-        {/* 视图模式切换 */}
-        <Space direction="vertical" size={0}>
-          <span style={{ fontSize: 12, color: '#666' }}>View Mode</span>
-          <Segmented
-            value={viewMode}
-            onChange={(value) => onViewModeChange(value as TopologyViewMode)}
-            options={[
-              { label: 'IP View', value: 'IP' },
-              { label: 'Service View', value: 'LABEL' },
-            ]}
-          />
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        {/* Row 1: View Mode Selection */}
+        <Space size="middle" wrap>
+          <Space direction="vertical" size={0}>
+            <span style={{ fontSize: 12, color: '#666', fontWeight: 500 }}>View Mode</span>
+            <Segmented
+              value={viewMode}
+              onChange={(value) => onViewModeChange(value as TopologyViewMode)}
+              options={VIEW_MODE_OPTIONS}
+              size="small"
+            />
+          </Space>
         </Space>
 
-        {/* 时间范围选择 */}
-        <Space direction="vertical" size={0}>
-          <span style={{ fontSize: 12, color: '#666' }}>Time Range</span>
-          <RangePicker
-            showTime
-            value={
-              filters.startTime && filters.endTime
-                ? [dayjs(filters.startTime), dayjs(filters.endTime)]
-                : [dayjs().subtract(7, 'days'), dayjs()]
-            }
-            onChange={handleTimeRangeChange}
-            format="YYYY-MM-DD HH:mm"
-          />
-        </Space>
+        {/* Row 2: Filters */}
+        <Space size="middle" wrap>
+          {/* Time Range */}
+          <Space direction="vertical" size={0}>
+            <span style={{ fontSize: 12, color: '#666' }}>Time Range</span>
+            <Space.Compact>
+              <RangePicker
+                showTime
+                value={
+                  filters.startTime && filters.endTime
+                    ? [dayjs(filters.startTime), dayjs(filters.endTime)]
+                    : [dayjs().subtract(1, 'hour'), dayjs()]
+                }
+                onChange={handleTimeRangeChange}
+                format="MM-DD HH:mm"
+                size="small"
+                style={{ width: 260 }}
+              />
+              <Button.Group size="small">
+                <Tooltip title="Last 5 minutes">
+                  <Button onClick={() => handleQuickTimeRange(5)}>5m</Button>
+                </Tooltip>
+                <Tooltip title="Last 15 minutes">
+                  <Button onClick={() => handleQuickTimeRange(15)}>15m</Button>
+                </Tooltip>
+                <Tooltip title="Last 1 hour">
+                  <Button onClick={() => handleQuickTimeRange(60)}>1h</Button>
+                </Tooltip>
+                <Tooltip title="Last 24 hours">
+                  <Button onClick={() => handleQuickTimeRange(1440)}>24h</Button>
+                </Tooltip>
+              </Button.Group>
+            </Space.Compact>
+          </Space>
 
-        {/* 协议筛选 */}
-        <Space direction="vertical" size={0}>
-          <span style={{ fontSize: 12, color: '#666' }}>Protocol</span>
-          <Select
-            value={filters.protocol}
-            onChange={(value) => onFiltersChange({ protocol: value })}
-            style={{ width: 120 }}
-            allowClear
-            placeholder="All Protocols"
-          >
-            <Select.Option value="TCP">TCP</Select.Option>
-            <Select.Option value="UDP">UDP</Select.Option>
-            <Select.Option value="ICMP">ICMP</Select.Option>
-          </Select>
-        </Space>
+          {/* Namespace Filter (for K8s views) */}
+          {viewMode !== 'IP' && (
+            <Space direction="vertical" size={0}>
+              <span style={{ fontSize: 12, color: '#666' }}>Namespace</span>
+              <Select
+                value={filters.namespace}
+                onChange={(value) => onFiltersChange({ namespace: value })}
+                style={{ width: 150 }}
+                allowClear
+                placeholder="All Namespaces"
+                size="small"
+              >
+                {namespaces.map(ns => (
+                  <Select.Option key={ns} value={ns}>{ns}</Select.Option>
+                ))}
+              </Select>
+            </Space>
+          )}
 
-        {/* 状态筛选 */}
-        <Space direction="vertical" size={0}>
-          <span style={{ fontSize: 12, color: '#666' }}>State</span>
-          <Select
-            value={filters.state}
-            onChange={(value) => onFiltersChange({ state: value })}
-            style={{ width: 120 }}
-            allowClear
-            placeholder="All States"
-          >
-            <Select.Option value="ACTIVE">Active</Select.Option>
-            <Select.Option value="CLOSED">Closed</Select.Option>
-            <Select.Option value="TIMEOUT">Timeout</Select.Option>
-          </Select>
-        </Space>
+          {/* Service Filter (for Service/Pod/Container views) */}
+          {(viewMode === 'SERVICE' || viewMode === 'POD' || viewMode === 'CONTAINER') && (
+            <Space direction="vertical" size={0}>
+              <span style={{ fontSize: 12, color: '#666' }}>Service</span>
+              <Search
+                placeholder="Filter by service"
+                value={filters.service}
+                onChange={(e) => onFiltersChange({ service: e.target.value || undefined })}
+                style={{ width: 150 }}
+                size="small"
+                allowClear
+              />
+            </Space>
+          )}
 
-        {/* 动作筛选 */}
-        <Space direction="vertical" size={0}>
-          <span style={{ fontSize: 12, color: '#666' }}>Action</span>
-          <Select
-            value={filters.policyAction}
-            onChange={(value) => onFiltersChange({ policyAction: value })}
-            style={{ width: 120 }}
-            allowClear
-            placeholder="All Actions"
-          >
-            <Select.Option value="ALLOW">Allow</Select.Option>
-            <Select.Option value="DENY">Deny</Select.Option>
-            <Select.Option value="LOG">Log</Select.Option>
-          </Select>
-        </Space>
+          {/* Protocol Filter */}
+          <Space direction="vertical" size={0}>
+            <span style={{ fontSize: 12, color: '#666' }}>Protocol</span>
+            <Select
+              value={filters.protocol}
+              onChange={(value) => onFiltersChange({ protocol: value })}
+              style={{ width: 100 }}
+              allowClear
+              placeholder="All"
+              size="small"
+            >
+              <Select.Option value="TCP">TCP</Select.Option>
+              <Select.Option value="UDP">UDP</Select.Option>
+              <Select.Option value="ICMP">ICMP</Select.Option>
+            </Select>
+          </Space>
 
-        {/* 最大节点数 */}
-        <Space direction="vertical" size={0}>
-          <span style={{ fontSize: 12, color: '#666' }}>Max Nodes</span>
-          <InputNumber
-            value={filters.maxNodes || 100}
-            onChange={(value) => onFiltersChange({ maxNodes: value || 100 })}
-            min={10}
-            max={200}
-            step={10}
-            style={{ width: 100 }}
-          />
-        </Space>
+          {/* Policy Action Filter */}
+          <Space direction="vertical" size={0}>
+            <span style={{ fontSize: 12, color: '#666' }}>Action</span>
+            <Select
+              value={filters.policyAction}
+              onChange={(value) => onFiltersChange({ policyAction: value })}
+              style={{ width: 100 }}
+              allowClear
+              placeholder="All"
+              size="small"
+            >
+              <Select.Option value="ALLOW">Allow</Select.Option>
+              <Select.Option value="DENY">Deny</Select.Option>
+              <Select.Option value="LOG">Log</Select.Option>
+            </Select>
+          </Space>
 
-        {/* 实时更新开关 */}
-        <Space direction="vertical" size={0}>
-          <span style={{ fontSize: 12, color: '#666' }}>Real-time</span>
-          <Switch
-            checked={realtimeEnabled}
-            onChange={onRealtimeToggle}
-            checkedChildren="On"
-            unCheckedChildren="Off"
-          />
-        </Space>
+          {/* Max Nodes */}
+          <Space direction="vertical" size={0}>
+            <span style={{ fontSize: 12, color: '#666' }}>Max Nodes</span>
+            <InputNumber
+              value={filters.maxNodes || 100}
+              onChange={(value) => onFiltersChange({ maxNodes: value || 100 })}
+              min={10}
+              max={500}
+              step={10}
+              style={{ width: 80 }}
+              size="small"
+            />
+          </Space>
 
-        {/* 刷新按钮 */}
-        <Space direction="vertical" size={0}>
-          <span style={{ fontSize: 12, color: 'transparent' }}>-</span>
-          <Button icon={<ReloadOutlined />} onClick={onRefresh}>
-            Refresh
-          </Button>
-        </Space>
+          {/* Show External */}
+          <Space direction="vertical" size={0}>
+            <span style={{ fontSize: 12, color: '#666' }}>External</span>
+            <Switch
+              checked={filters.showExternal !== false}
+              onChange={(checked) => onFiltersChange({ showExternal: checked })}
+              checkedChildren="Show"
+              unCheckedChildren="Hide"
+              size="small"
+            />
+          </Space>
 
-        {/* 重置按钮 */}
-        <Space direction="vertical" size={0}>
-          <span style={{ fontSize: 12, color: 'transparent' }}>-</span>
-          <Button onClick={handleReset}>Reset</Button>
-        </Space>
+          {/* Only Suspicious */}
+          <Space direction="vertical" size={0}>
+            <span style={{ fontSize: 12, color: '#666' }}>Suspicious</span>
+            <Switch
+              checked={filters.onlySuspicious === true}
+              onChange={(checked) => onFiltersChange({ onlySuspicious: checked })}
+              checkedChildren="Only"
+              unCheckedChildren="All"
+              size="small"
+            />
+          </Space>
 
-        {/* 导出按钮（占位，可选） */}
-        <Space direction="vertical" size={0}>
-          <span style={{ fontSize: 12, color: 'transparent' }}>-</span>
-          <Button icon={<DownloadOutlined />} disabled>
-            Export
-          </Button>
+          {/* Real-time Toggle */}
+          <Space direction="vertical" size={0}>
+            <span style={{ fontSize: 12, color: '#666' }}>Real-time</span>
+            <Switch
+              checked={realtimeEnabled}
+              onChange={onRealtimeToggle}
+              checkedChildren="On"
+              unCheckedChildren="Off"
+              size="small"
+            />
+          </Space>
+
+          {/* Action Buttons */}
+          <Space direction="vertical" size={0}>
+            <span style={{ fontSize: 12, color: 'transparent' }}>-</span>
+            <Space.Compact>
+              <Tooltip title="Refresh data">
+                <Button icon={<ReloadOutlined />} onClick={onRefresh} size="small">
+                  Refresh
+                </Button>
+              </Tooltip>
+              <Button onClick={handleReset} size="small">
+                Reset
+              </Button>
+              <Tooltip title="Export topology (coming soon)">
+                <Button icon={<DownloadOutlined />} disabled size="small">
+                  Export
+                </Button>
+              </Tooltip>
+            </Space.Compact>
+          </Space>
         </Space>
       </Space>
     </Card>
   )
 }
-

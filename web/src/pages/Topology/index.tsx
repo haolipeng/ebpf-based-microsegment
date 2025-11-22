@@ -1,100 +1,214 @@
 import { useState, useMemo } from 'react'
-import { Typography, Alert, Space } from 'antd'
+import { Typography, Alert, Space, Row, Col, Statistic, Card } from 'antd'
+import {
+  ClusterOutlined,
+  AppstoreOutlined,
+  ApartmentOutlined,
+  ContainerOutlined,
+  GlobalOutlined,
+  ApiOutlined,
+} from '@ant-design/icons'
 import dayjs from 'dayjs'
 import TopologyGraph from '../../components/topology/TopologyGraph'
 import TopologyLegend from '../../components/topology/TopologyLegend'
 import TopologyControls from '../../components/topology/TopologyControls'
 import NodeDetailPanel from '../../components/topology/NodeDetailPanel'
 import { useTopology } from '../../hooks/useTopology'
-import type { TopologyViewMode, TopologyFilters, TopologyNode } from '../../types/topology'
+import type { TopologyViewMode, TopologyFilters, TopologyNode, TopologyData } from '../../types/topology'
 import type { Flow } from '../../types/flow'
+import { formatBytes } from '../../utils/topologyUtils'
 
-const { Title } = Typography
+const { Title, Text } = Typography
 
 /**
- * 网络拓扑图页面
- * 
- * 功能：
- * - IP视图和服务视图切换
- * - 时间范围、协议、状态等筛选
- * - 实时WebSocket更新
- * - 节点点击查看详情
- * - 交互式力导向图
+ * Network Topology Page with K8s/Docker support
+ *
+ * Features:
+ * - Multiple view modes: Namespace, Service, Pod, Container, Process, IP
+ * - Time range and filter controls
+ * - Real-time WebSocket updates
+ * - Node click for details
+ * - Interactive force-directed graph
  */
 export default function Topology() {
-  // 状态管理
-  const [viewMode, setViewMode] = useState<TopologyViewMode>('IP')
+  // State management
+  const [viewMode, setViewMode] = useState<TopologyViewMode>('SERVICE')
   const [realtimeEnabled, setRealtimeEnabled] = useState(false)
   const [selectedNode, setSelectedNode] = useState<TopologyNode | null>(null)
-  
-  // 筛选条件
+
+  // Filter settings
   const [filters, setFilters] = useState<TopologyFilters>({
-    viewMode: 'IP',
+    viewMode: 'SERVICE',
     maxNodes: 100,
-    startTime: dayjs().subtract(7, 'days').toISOString(),
+    showExternal: true,
+    onlySuspicious: false,
+    startTime: dayjs().subtract(1, 'hour').toISOString(),
     endTime: dayjs().toISOString(),
   })
 
-  // 获取拓扑数据
-  const { data, isLoading, error, isConnected, refetch } = useTopology(
+  // Fetch topology data with namespaces
+  const { data, isLoading, error, isConnected, namespaces, refetch } = useTopology(
     { ...filters, viewMode },
     realtimeEnabled
   )
 
-  // 处理视图模式切换
+  // Handle view mode change
   const handleViewModeChange = (mode: TopologyViewMode) => {
     setViewMode(mode)
-    setSelectedNode(null) // 清除选中节点
+    setSelectedNode(null)
+    setFilters(prev => ({ ...prev, viewMode: mode }))
   }
 
-  // 处理筛选条件变更
+  // Handle filter changes
   const handleFiltersChange = (newFilters: Partial<TopologyFilters>) => {
-    setFilters((prev) => ({
-      ...prev,
-      ...newFilters,
-    }))
+    setFilters(prev => ({ ...prev, ...newFilters }))
   }
 
-  // 处理实时更新切换
+  // Handle real-time toggle
   const handleRealtimeToggle = (enabled: boolean) => {
     setRealtimeEnabled(enabled)
   }
 
-  // 处理节点点击
+  // Handle node click
   const handleNodeClick = (node: TopologyNode) => {
     setSelectedNode(node)
   }
 
-  // 处理详情面板关闭
+  // Handle detail panel close
   const handleDetailClose = () => {
     setSelectedNode(null)
   }
 
-  // 获取与选中节点相关的流（用于详情面板）
+  // Related flows for selected node (placeholder)
   const relatedFlows = useMemo<Flow[]>(() => {
     if (!selectedNode || !data) {
       return []
     }
-
-    // 这里需要从实际的flows数据中筛选
-    // 由于useTopology只返回聚合后的拓扑数据，
-    // 我们需要另外获取flows或在useTopology中一并返回
-    // 暂时返回空数组，后续可以优化
     return []
   }, [selectedNode, data])
 
+  // Create default empty data
+  const defaultData: TopologyData = {
+    nodes: [],
+    edges: [],
+    groups: [],
+    stats: {
+      totalNodes: 0,
+      totalEdges: 0,
+      totalFlows: 0,
+      activeFlows: 0,
+      totalBytes: 0,
+    },
+    viewMode,
+    timestamp: new Date().toISOString(),
+  }
+
+  const topologyData = data || defaultData
+
   return (
     <div className="topology-page" style={{ padding: '24px', height: 'calc(100vh - 64px)' }}>
-      <Space direction="vertical" size="large" style={{ width: '100%', height: '100%' }}>
-        {/* 页面标题 */}
+      <Space direction="vertical" size="middle" style={{ width: '100%', height: '100%' }}>
+        {/* Page Header */}
         <div>
-          <Title level={2}>Network Topology</Title>
-          <Typography.Text type="secondary">
-            Visualize network flow topology relationships with IP and Service views
-          </Typography.Text>
+          <Title level={2} style={{ marginBottom: 8 }}>Network Topology</Title>
+          <Text type="secondary">
+            Visualize traffic relationships between Kubernetes namespaces, services, pods, containers, and processes
+          </Text>
         </div>
 
-        {/* 控制栏 */}
+        {/* Statistics Summary */}
+        <Card size="small">
+          <Row gutter={16}>
+            <Col span={3}>
+              <Statistic
+                title="Nodes"
+                value={topologyData.stats.totalNodes}
+                prefix={<ApiOutlined />}
+                valueStyle={{ fontSize: 18 }}
+              />
+            </Col>
+            <Col span={3}>
+              <Statistic
+                title="Connections"
+                value={topologyData.stats.totalEdges}
+                valueStyle={{ fontSize: 18 }}
+              />
+            </Col>
+            <Col span={3}>
+              <Statistic
+                title="Flows"
+                value={topologyData.stats.totalFlows}
+                valueStyle={{ fontSize: 18 }}
+              />
+            </Col>
+            <Col span={3}>
+              <Statistic
+                title="Active"
+                value={topologyData.stats.activeFlows}
+                valueStyle={{ fontSize: 18, color: '#52c41a' }}
+              />
+            </Col>
+            <Col span={3}>
+              <Statistic
+                title="Traffic"
+                value={formatBytes(topologyData.stats.totalBytes || 0)}
+                valueStyle={{ fontSize: 18 }}
+              />
+            </Col>
+            {topologyData.stats.namespaceCount !== undefined && topologyData.stats.namespaceCount > 0 && (
+              <Col span={3}>
+                <Statistic
+                  title="Namespaces"
+                  value={topologyData.stats.namespaceCount}
+                  prefix={<ClusterOutlined />}
+                  valueStyle={{ fontSize: 18 }}
+                />
+              </Col>
+            )}
+            {topologyData.stats.serviceCount !== undefined && topologyData.stats.serviceCount > 0 && (
+              <Col span={3}>
+                <Statistic
+                  title="Services"
+                  value={topologyData.stats.serviceCount}
+                  prefix={<AppstoreOutlined />}
+                  valueStyle={{ fontSize: 18 }}
+                />
+              </Col>
+            )}
+            {topologyData.stats.podCount !== undefined && topologyData.stats.podCount > 0 && (
+              <Col span={3}>
+                <Statistic
+                  title="Pods"
+                  value={topologyData.stats.podCount}
+                  prefix={<ApartmentOutlined />}
+                  valueStyle={{ fontSize: 18 }}
+                />
+              </Col>
+            )}
+            {topologyData.stats.containerCount !== undefined && topologyData.stats.containerCount > 0 && (
+              <Col span={3}>
+                <Statistic
+                  title="Containers"
+                  value={topologyData.stats.containerCount}
+                  prefix={<ContainerOutlined />}
+                  valueStyle={{ fontSize: 18 }}
+                />
+              </Col>
+            )}
+            {topologyData.stats.externalCount !== undefined && topologyData.stats.externalCount > 0 && (
+              <Col span={3}>
+                <Statistic
+                  title="External"
+                  value={topologyData.stats.externalCount}
+                  prefix={<GlobalOutlined />}
+                  valueStyle={{ fontSize: 18, color: '#f5222d' }}
+                />
+              </Col>
+            )}
+          </Row>
+        </Card>
+
+        {/* Controls */}
         <TopologyControls
           viewMode={viewMode}
           onViewModeChange={handleViewModeChange}
@@ -103,26 +217,28 @@ export default function Topology() {
           realtimeEnabled={realtimeEnabled}
           onRealtimeToggle={handleRealtimeToggle}
           onRefresh={refetch}
+          namespaces={namespaces}
         />
 
-        {/* 实时连接状态提示 */}
+        {/* Real-time connection status */}
         {realtimeEnabled && (
           <Alert
             message={
               isConnected
-                ? '✅ Real-time updates enabled, receiving latest flow data'
-                : '⚠️ Real-time connection lost, attempting to reconnect...'
+                ? '✅ Real-time updates enabled - receiving live flow data'
+                : '⚠️ Real-time connection lost - attempting to reconnect...'
             }
             type={isConnected ? 'success' : 'warning'}
             showIcon
             closable
+            banner
           />
         )}
 
-        {/* 错误提示 */}
+        {/* Error message */}
         {error && (
           <Alert
-            message="Failed to load data"
+            message="Failed to load topology data"
             description={error.message}
             type="error"
             showIcon
@@ -130,21 +246,21 @@ export default function Topology() {
           />
         )}
 
-        {/* 拓扑图主体 */}
-        <div style={{ position: 'relative', flex: 1, minHeight: 600 }}>
+        {/* Main topology graph */}
+        <div style={{ position: 'relative', flex: 1, minHeight: 500 }}>
           <TopologyGraph
-            data={data || { nodes: [], edges: [], stats: { totalNodes: 0, totalEdges: 0, totalFlows: 0 } }}
+            data={topologyData}
             viewMode={viewMode}
             onNodeClick={handleNodeClick}
             loading={isLoading}
             height="100%"
           />
 
-          {/* 图例 */}
+          {/* Legend */}
           <TopologyLegend viewMode={viewMode} />
         </div>
 
-        {/* 节点详情面板 */}
+        {/* Node detail panel */}
         <NodeDetailPanel
           node={selectedNode}
           flows={relatedFlows}
@@ -154,4 +270,3 @@ export default function Topology() {
     </div>
   )
 }
-

@@ -6,36 +6,38 @@ import type { Flow } from '../types/flow'
 import { aggregateFlowsToTopology, mergeTopologyUpdate } from '../utils/topologyUtils'
 
 /**
- * 拓扑图数据获取Hook
- * 
- * 功能：
- * - 获取flows数据并转换为拓扑数据
- * - 支持时间范围筛选
- * - 集成WebSocket实时更新
- * - 防抖更新避免频繁重新计算
- * 
- * @param filters - 拓扑图筛选条件
- * @param enableRealtime - 是否启用实时更新
- * @returns 拓扑数据和状态
+ * Topology data hook with K8s/Docker support
+ *
+ * Features:
+ * - Fetches flow data and transforms to topology
+ * - Supports multiple aggregation levels (namespace, service, pod, container, process)
+ * - Integrates WebSocket for real-time updates
+ * - Debounced updates to avoid frequent re-computation
+ * - Extracts unique namespaces for filtering
+ *
+ * @param filters - Topology filter settings
+ * @param enableRealtime - Enable real-time updates via WebSocket
+ * @returns Topology data and state
  */
 export function useTopology(filters: TopologyFilters, enableRealtime: boolean = false) {
   const [realtimeFlows, setRealtimeFlows] = useState<Flow[]>([])
   const [topologyData, setTopologyData] = useState<TopologyData | undefined>(undefined)
+  const [namespaces, setNamespaces] = useState<string[]>([])
   const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // 获取基础流数据
+  // Fetch base flow data
   const { data: flows, isLoading, error, refetch } = useFlows(filters)
 
-  // 实时流更新处理
+  // Handle new real-time flow
   const handleNewFlow = useCallback(
     (flow: Flow) => {
-      // 添加到实时流列表（限制最多100条）
+      // Add to real-time flows list (limit to 200)
       setRealtimeFlows(prev => {
-        const updated = [flow, ...prev].slice(0, 100)
+        const updated = [flow, ...prev].slice(0, 200)
         return updated
       })
 
-      // 防抖更新拓扑数据（500ms聚合更新）
+      // Debounced topology update (500ms aggregation)
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current)
       }
@@ -50,40 +52,86 @@ export function useTopology(filters: TopologyFilters, enableRealtime: boolean = 
     [filters.viewMode]
   )
 
-  // WebSocket实时流
+  // WebSocket real-time stream
   const { isConnected, error: wsError } = useFlowStream({
     enabled: enableRealtime,
     onFlow: handleNewFlow,
   })
 
-  // 聚合flows为拓扑数据
+  // Extract unique namespaces from flows
+  useEffect(() => {
+    if (!flows || flows.length === 0) return
+
+    const nsSet = new Set<string>()
+
+    flows.forEach(flow => {
+      // Extract from source labels
+      if (flow.sourceLabels) {
+        const ns = flow.sourceLabels['kubernetes.io/namespace'] ||
+                   flow.sourceLabels['namespace'] ||
+                   flow.sourceLabels['k8s.namespace']
+        if (ns) nsSet.add(ns)
+      }
+
+      // Extract from dest labels
+      if (flow.destLabels) {
+        const ns = flow.destLabels['kubernetes.io/namespace'] ||
+                   flow.destLabels['namespace'] ||
+                   flow.destLabels['k8s.namespace']
+        if (ns) nsSet.add(ns)
+      }
+    })
+
+    setNamespaces(Array.from(nsSet).sort())
+  }, [flows])
+
+  // Aggregate flows to topology data
   const aggregatedData = useMemo(() => {
     if (!flows || flows.length === 0) {
       return {
         nodes: [],
         edges: [],
+        groups: [],
         stats: {
           totalNodes: 0,
           totalEdges: 0,
           totalFlows: 0,
+          activeFlows: 0,
+          totalBytes: 0,
         },
-      }
+        viewMode: filters.viewMode,
+        timestamp: new Date().toISOString(),
+      } as TopologyData
     }
 
-    // 合并实时流到基础flows（如果启用实时模式）
+    // Merge real-time flows with base flows (if real-time enabled)
     const allFlows = enableRealtime && realtimeFlows.length > 0
       ? [...realtimeFlows, ...flows]
       : flows
 
-    return aggregateFlowsToTopology(allFlows, filters.viewMode, filters.maxNodes)
-  }, [flows, filters.viewMode, filters.maxNodes, enableRealtime, realtimeFlows])
+    // Use the new aggregation function with full filters support
+    return aggregateFlowsToTopology(
+      allFlows,
+      filters.viewMode,
+      filters.maxNodes,
+      {
+        namespace: filters.namespace,
+        service: filters.service,
+        showExternal: filters.showExternal,
+        onlySuspicious: filters.onlySuspicious,
+        minFlowCount: filters.minFlowCount,
+      }
+    )
+  }, [flows, filters.viewMode, filters.maxNodes, filters.namespace, filters.service,
+      filters.showExternal, filters.onlySuspicious, filters.minFlowCount,
+      enableRealtime, realtimeFlows])
 
-  // 更新拓扑数据
+  // Update topology data
   useEffect(() => {
     setTopologyData(aggregatedData)
   }, [aggregatedData])
 
-  // 清理定时器
+  // Cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (updateTimeoutRef.current) {
@@ -92,17 +140,23 @@ export function useTopology(filters: TopologyFilters, enableRealtime: boolean = 
     }
   }, [])
 
+  // Clear real-time flows when view mode changes
+  useEffect(() => {
+    setRealtimeFlows([])
+  }, [filters.viewMode])
+
   return {
-    /** 拓扑数据 */
+    /** Topology data */
     data: topologyData,
-    /** 是否加载中 */
+    /** Loading state */
     isLoading,
-    /** 错误信息 */
+    /** Error (HTTP or WebSocket) */
     error: error || wsError,
-    /** 实时连接状态 */
+    /** Real-time connection status */
     isConnected,
-    /** 重新获取数据 */
+    /** Available namespaces for filtering */
+    namespaces,
+    /** Refetch data */
     refetch,
   }
 }
-

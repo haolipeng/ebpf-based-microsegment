@@ -1,598 +1,838 @@
-import type { Flow } from '../types/flow'
+import type { Flow, ProcessInfo } from '../types/flow'
 import type {
   TopologyData,
   TopologyNode,
   TopologyEdge,
   TopologyViewMode,
+  TopologyFilters,
+  TopologyStats,
+  TopologyGroup,
+  TopologyNodeType,
+  TrafficMetrics,
+  SecurityStatus,
+  K8sMetadata,
+  EdgeProtocol,
 } from '../types/topology'
+import { extractK8sInfo, generateNodeId, parseContainerId } from '../types/topology'
 
 /**
- * 将Flow数组聚合为拓扑图数据
- * 
- * @param flows - 流量记录数组
- * @param viewMode - 视图模式（IP或标签）
- * @param maxNodes - 最多显示的节点数（Top N）
- * @returns 拓扑图数据
+ * Default empty metrics
+ */
+function createEmptyMetrics(): TrafficMetrics {
+  return {
+    flowCount: 0,
+    activeFlows: 0,
+    packetCount: 0,
+    byteCount: 0,
+    connectionCount: 0,
+  }
+}
+
+/**
+ * Default empty security status
+ */
+function createEmptySecurity(): SecurityStatus {
+  return {
+    allowedFlows: 0,
+    deniedFlows: 0,
+    loggedFlows: 0,
+  }
+}
+
+/**
+ * Merge metrics from a flow into existing metrics
+ */
+function mergeFlowMetrics(metrics: TrafficMetrics, flow: Flow): void {
+  metrics.flowCount++
+  metrics.packetCount += flow.packetCount
+  metrics.byteCount += flow.byteCount
+  if (flow.state === 'ACTIVE') {
+    metrics.activeFlows++
+  }
+}
+
+/**
+ * Update security status from a flow
+ */
+function updateSecurity(security: SecurityStatus, flow: Flow): void {
+  switch (flow.policyAction) {
+    case 'ALLOW':
+      security.allowedFlows++
+      break
+    case 'DENY':
+      security.deniedFlows++
+      break
+    case 'LOG':
+      security.loggedFlows++
+      break
+  }
+  if (flow.processInfo?.isSuspicious) {
+    security.hasSuspiciousProcess = true
+  }
+}
+
+/**
+ * Determine if an IP is external (not in private ranges)
+ */
+function isExternalIP(ip: string): boolean {
+  if (!ip) return false
+
+  // Check for private IP ranges
+  if (ip.startsWith('10.') ||
+      ip.startsWith('192.168.') ||
+      ip.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
+      ip.startsWith('127.') ||
+      ip === '0.0.0.0') {
+    return false
+  }
+  return true
+}
+
+/**
+ * Extract endpoint info from flow (source or destination side)
+ */
+interface EndpointInfo {
+  nodeType: TopologyNodeType
+  nodeId: string
+  label: string
+  k8s?: K8sMetadata
+  processInfo?: ProcessInfo
+  ip: string
+}
+
+function extractEndpointInfo(
+  ip: string,
+  labels: Record<string, string> | undefined,
+  processInfo: ProcessInfo | undefined,
+  viewMode: TopologyViewMode
+): EndpointInfo {
+  const k8sInfo = extractK8sInfo(labels)
+  const containerId = processInfo?.containerId
+
+  // Determine node type based on view mode and available data
+  let nodeType: TopologyNodeType
+  let nodeId: string
+  let label: string
+  let k8s: K8sMetadata | undefined
+
+  switch (viewMode) {
+    case 'NAMESPACE':
+      if (k8sInfo?.namespace) {
+        nodeType = 'NAMESPACE'
+        nodeId = generateNodeId('NAMESPACE', { namespace: k8sInfo.namespace })
+        label = k8sInfo.namespace
+        k8s = { namespace: k8sInfo.namespace, labels }
+      } else if (isExternalIP(ip)) {
+        nodeType = 'EXTERNAL'
+        nodeId = generateNodeId('EXTERNAL', { ip })
+        label = `External (${ip})`
+      } else {
+        nodeType = 'IP'
+        nodeId = generateNodeId('IP', { ip })
+        label = ip
+      }
+      break
+
+    case 'SERVICE':
+      if (k8sInfo?.serviceName) {
+        nodeType = 'SERVICE'
+        nodeId = generateNodeId('SERVICE', {
+          namespace: k8sInfo.namespace,
+          service: k8sInfo.serviceName
+        })
+        label = k8sInfo.serviceName
+        k8s = {
+          namespace: k8sInfo.namespace,
+          serviceName: k8sInfo.serviceName,
+          workloadName: k8sInfo.workloadName,
+          labels,
+        }
+      } else if (isExternalIP(ip)) {
+        nodeType = 'EXTERNAL'
+        nodeId = generateNodeId('EXTERNAL', { ip })
+        label = `External (${ip})`
+      } else {
+        nodeType = 'IP'
+        nodeId = generateNodeId('IP', { ip })
+        label = ip
+      }
+      break
+
+    case 'POD':
+      if (k8sInfo?.podName) {
+        nodeType = 'POD'
+        nodeId = generateNodeId('POD', {
+          namespace: k8sInfo.namespace,
+          pod: k8sInfo.podName
+        })
+        label = k8sInfo.podName
+        k8s = {
+          namespace: k8sInfo.namespace,
+          podName: k8sInfo.podName,
+          serviceName: k8sInfo.serviceName,
+          labels,
+        }
+      } else if (isExternalIP(ip)) {
+        nodeType = 'EXTERNAL'
+        nodeId = generateNodeId('EXTERNAL', { ip })
+        label = `External (${ip})`
+      } else {
+        nodeType = 'IP'
+        nodeId = generateNodeId('IP', { ip })
+        label = ip
+      }
+      break
+
+    case 'CONTAINER':
+      if (containerId) {
+        const { runtime, shortId } = parseContainerId(containerId)
+        nodeType = 'CONTAINER'
+        nodeId = generateNodeId('CONTAINER', { containerId: shortId })
+        label = k8sInfo?.containerName || shortId
+        k8s = {
+          namespace: k8sInfo?.namespace,
+          podName: k8sInfo?.podName,
+          containerName: k8sInfo?.containerName,
+          containerId: shortId,
+          containerRuntime: runtime,
+          labels,
+        }
+      } else if (k8sInfo?.podName) {
+        // Fallback to pod if no container ID
+        nodeType = 'POD'
+        nodeId = generateNodeId('POD', {
+          namespace: k8sInfo.namespace,
+          pod: k8sInfo.podName
+        })
+        label = k8sInfo.podName
+        k8s = { namespace: k8sInfo.namespace, podName: k8sInfo.podName, labels }
+      } else if (isExternalIP(ip)) {
+        nodeType = 'EXTERNAL'
+        nodeId = generateNodeId('EXTERNAL', { ip })
+        label = `External (${ip})`
+      } else {
+        nodeType = 'IP'
+        nodeId = generateNodeId('IP', { ip })
+        label = ip
+      }
+      break
+
+    case 'PROCESS':
+      if (processInfo && processInfo.pid > 0) {
+        nodeType = 'PROCESS'
+        nodeId = generateNodeId('PROCESS', {
+          containerId: containerId || 'host',
+          pid: String(processInfo.pid)
+        })
+        label = processInfo.comm || `PID ${processInfo.pid}`
+        k8s = containerId ? {
+          containerId: parseContainerId(containerId).shortId,
+          namespace: k8sInfo?.namespace,
+          podName: k8sInfo?.podName,
+          labels,
+        } : undefined
+      } else if (containerId) {
+        const { shortId } = parseContainerId(containerId)
+        nodeType = 'CONTAINER'
+        nodeId = generateNodeId('CONTAINER', { containerId: shortId })
+        label = shortId
+        k8s = { containerId: shortId, labels }
+      } else if (isExternalIP(ip)) {
+        nodeType = 'EXTERNAL'
+        nodeId = generateNodeId('EXTERNAL', { ip })
+        label = `External (${ip})`
+      } else {
+        nodeType = 'IP'
+        nodeId = generateNodeId('IP', { ip })
+        label = ip
+      }
+      break
+
+    case 'IP':
+    default:
+      if (isExternalIP(ip)) {
+        nodeType = 'EXTERNAL'
+        nodeId = generateNodeId('EXTERNAL', { ip })
+        label = ip
+      } else {
+        nodeType = 'IP'
+        nodeId = generateNodeId('IP', { ip })
+        label = ip
+      }
+      break
+  }
+
+  return {
+    nodeType,
+    nodeId,
+    label,
+    k8s,
+    processInfo,
+    ip,
+  }
+}
+
+/**
+ * Main aggregation function - aggregates flows to topology based on view mode
  */
 export function aggregateFlowsToTopology(
   flows: Flow[],
   viewMode: TopologyViewMode,
-  maxNodes?: number
+  maxNodes?: number,
+  filters?: Partial<TopologyFilters>
 ): TopologyData {
-  if (viewMode === 'IP') {
-    return aggregateByIP(flows, maxNodes)
-  } else {
-    return aggregateByLabel(flows, maxNodes)
-  }
-}
-
-/**
- * 按IP地址聚合流量
- */
-function aggregateByIP(flows: Flow[], maxNodes?: number): TopologyData {
   const nodeMap = new Map<string, TopologyNode>()
   const edgeMap = new Map<string, TopologyEdge>()
+  const connectionSet = new Set<string>() // Track unique connections
 
-  // 聚合节点和边
-  flows.forEach(flow => {
-    const sourceId = flow.sourceIp
-    const targetId = flow.destIp
+  // Process each flow
+  for (const flow of flows) {
+    // Apply filters
+    if (filters?.namespace) {
+      const srcK8s = extractK8sInfo(flow.sourceLabels)
+      const dstK8s = extractK8sInfo(flow.destLabels)
+      if (srcK8s?.namespace !== filters.namespace && dstK8s?.namespace !== filters.namespace) {
+        continue
+      }
+    }
+    if (filters?.minFlowCount && flow.packetCount < filters.minFlowCount) {
+      continue
+    }
+    if (filters?.onlySuspicious && !flow.processInfo?.isSuspicious) {
+      continue
+    }
 
-    // 创建或更新源节点
-    if (!nodeMap.has(sourceId)) {
-      nodeMap.set(sourceId, {
-        id: sourceId,
-        label: sourceId,
-        type: 'IP',
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          activeFlows: 0,
-        },
+    // Extract source and destination endpoint info
+    const srcInfo = extractEndpointInfo(
+      flow.sourceIp,
+      flow.sourceLabels,
+      flow.processInfo,
+      viewMode
+    )
+    const dstInfo = extractEndpointInfo(
+      flow.destIp,
+      flow.destLabels,
+      undefined, // Destination doesn't have process info
+      viewMode
+    )
+
+    // Skip external-only connections if filter set
+    if (filters?.showExternal === false) {
+      if (srcInfo.nodeType === 'EXTERNAL' && dstInfo.nodeType === 'EXTERNAL') {
+        continue
+      }
+    }
+
+    // Create or update source node
+    if (!nodeMap.has(srcInfo.nodeId)) {
+      nodeMap.set(srcInfo.nodeId, {
+        id: srcInfo.nodeId,
+        label: srcInfo.label,
+        type: srcInfo.nodeType,
+        metrics: createEmptyMetrics(),
+        security: createEmptySecurity(),
+        k8s: srcInfo.k8s,
+        processInfo: srcInfo.processInfo,
+        ipAddress: srcInfo.ip,
       })
     }
+    const srcNode = nodeMap.get(srcInfo.nodeId)!
+    mergeFlowMetrics(srcNode.metrics, flow)
+    updateSecurity(srcNode.security!, flow)
 
-    // 创建或更新目标节点
-    if (!nodeMap.has(targetId)) {
-      nodeMap.set(targetId, {
-        id: targetId,
-        label: targetId,
-        type: 'IP',
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          activeFlows: 0,
-        },
+    // Create or update destination node
+    if (!nodeMap.has(dstInfo.nodeId)) {
+      nodeMap.set(dstInfo.nodeId, {
+        id: dstInfo.nodeId,
+        label: dstInfo.label,
+        type: dstInfo.nodeType,
+        metrics: createEmptyMetrics(),
+        security: createEmptySecurity(),
+        k8s: dstInfo.k8s,
+        ipAddress: dstInfo.ip,
       })
     }
+    const dstNode = nodeMap.get(dstInfo.nodeId)!
+    mergeFlowMetrics(dstNode.metrics, flow)
+    updateSecurity(dstNode.security!, flow)
 
-    // 更新节点指标
-    const sourceNode = nodeMap.get(sourceId)!
-    const targetNode = nodeMap.get(targetId)!
-
-    sourceNode.metrics.flowCount++
-    sourceNode.metrics.packetCount += flow.packetCount
-    sourceNode.metrics.byteCount += flow.byteCount
-    if (flow.state === 'ACTIVE') {
-      sourceNode.metrics.activeFlows++
+    // Track connections for both nodes
+    const connKey = `${srcInfo.nodeId}->${dstInfo.nodeId}`
+    if (!connectionSet.has(connKey)) {
+      connectionSet.add(connKey)
+      srcNode.metrics.connectionCount = (srcNode.metrics.connectionCount || 0) + 1
+      dstNode.metrics.connectionCount = (dstNode.metrics.connectionCount || 0) + 1
     }
 
-    targetNode.metrics.flowCount++
-    targetNode.metrics.packetCount += flow.packetCount
-    targetNode.metrics.byteCount += flow.byteCount
-    if (flow.state === 'ACTIVE') {
-      targetNode.metrics.activeFlows++
-    }
+    // Create or update edge
+    const edgeId = `${srcInfo.nodeId}->${dstInfo.nodeId}`
+    const reverseEdgeId = `${dstInfo.nodeId}->${srcInfo.nodeId}`
 
-    // 创建或更新边
-    const edgeId = `${sourceId}->${targetId}`
-    const reverseEdgeId = `${targetId}->${sourceId}`
+    let edge = edgeMap.get(edgeId) || edgeMap.get(reverseEdgeId)
+    const isReverse = edgeMap.has(reverseEdgeId)
 
-    if (!edgeMap.has(edgeId) && !edgeMap.has(reverseEdgeId)) {
-      // 将UNKNOWN方向映射为EGRESS
-      const direction = flow.direction === 'UNKNOWN' ? 'EGRESS' : (flow.direction as 'INGRESS' | 'EGRESS' | 'BIDIRECTIONAL')
-      edgeMap.set(edgeId, {
+    if (!edge) {
+      edge = {
         id: edgeId,
-        source: sourceId,
-        target: targetId,
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          protocols: [],
-        },
-        direction,
-      })
+        source: srcInfo.nodeId,
+        target: dstInfo.nodeId,
+        metrics: createEmptyMetrics(),
+        security: createEmptySecurity(),
+        protocols: [],
+        direction: flow.direction === 'UNKNOWN' ? 'EGRESS' : flow.direction,
+        isBidirectional: false,
+      }
+      edgeMap.set(edgeId, edge)
     }
 
-    const edge = edgeMap.get(edgeId) || edgeMap.get(reverseEdgeId)!
+    // Update edge metrics
+    mergeFlowMetrics(edge.metrics, flow)
+    updateSecurity(edge.security!, flow)
 
-    // 更新边指标
-    edge.metrics.flowCount++
-    edge.metrics.packetCount += flow.packetCount
-    edge.metrics.byteCount += flow.byteCount
-
-    // 添加协议（去重）
-    if (!edge.metrics.protocols.includes(flow.protocol)) {
-      edge.metrics.protocols.push(flow.protocol)
-    }
-
-    // 更新方向（如果有双向流量）
-    if (edgeMap.has(reverseEdgeId)) {
+    // Track bidirectional
+    if (isReverse) {
+      edge.isBidirectional = true
       edge.direction = 'BIDIRECTIONAL'
+    }
+
+    // Update protocol info
+    const protocolKey = `${flow.protocol}:${flow.destPort}`
+    let protocolInfo = edge.protocols.find(p => p.name === flow.protocol && p.port === flow.destPort)
+    if (!protocolInfo) {
+      protocolInfo = {
+        name: flow.protocol,
+        port: flow.destPort,
+        flowCount: 0,
+        byteCount: 0,
+      }
+      edge.protocols.push(protocolInfo)
+    }
+    protocolInfo.flowCount++
+    protocolInfo.byteCount += flow.byteCount
+
+    // Set edge color hint based on security
+    if (flow.policyAction === 'DENY') {
+      edge.colorHint = 'denied'
+    } else if (edge.colorHint !== 'denied') {
+      edge.colorHint = flow.policyAction === 'ALLOW' ? 'allowed' : 'normal'
+    }
+  }
+
+  // Convert to arrays
+  let nodes = Array.from(nodeMap.values())
+  let edges = Array.from(edgeMap.values())
+
+  // Calculate node health
+  nodes.forEach(node => {
+    if (node.security) {
+      if (node.security.deniedFlows > 0 || node.security.hasSuspiciousProcess) {
+        node.health = 'critical'
+      } else if (node.security.loggedFlows > 0) {
+        node.health = 'warning'
+      } else {
+        node.health = 'healthy'
+      }
     }
   })
 
-  // 转换为数组并按流量排序
-  let nodes = Array.from(nodeMap.values())
-  const edges = Array.from(edgeMap.values())
-
-  // 限制节点数量（Top N）
+  // Limit nodes if needed (Top N by traffic)
   if (maxNodes && nodes.length > maxNodes) {
     nodes = nodes
       .sort((a, b) => b.metrics.byteCount - a.metrics.byteCount)
       .slice(0, maxNodes)
 
-    // 只保留涉及这些节点的边
     const nodeIds = new Set(nodes.map(n => n.id))
-    const filteredEdges = edges.filter(
-      e => nodeIds.has(e.source) && nodeIds.has(e.target)
-    )
-
-    return {
-      nodes,
-      edges: filteredEdges,
-      stats: {
-        totalNodes: nodes.length,
-        totalEdges: filteredEdges.length,
-        totalFlows: flows.length,
-      },
-    }
+    edges = edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target))
   }
+
+  // Build groups for hierarchical views
+  const groups = buildGroups(nodes, viewMode)
+
+  // Calculate stats
+  const stats = calculateStats(nodes, edges, flows)
 
   return {
     nodes,
     edges,
-    stats: {
-      totalNodes: nodes.length,
-      totalEdges: edges.length,
-      totalFlows: flows.length,
-    },
+    groups,
+    stats,
+    viewMode,
+    timestamp: new Date().toISOString(),
   }
 }
 
 /**
- * 按标签聚合流量
+ * Build node groups for hierarchical display
  */
-function aggregateByLabel(flows: Flow[], maxNodes?: number): TopologyData {
-  const nodeMap = new Map<string, TopologyNode>()
-  const edgeMap = new Map<string, TopologyEdge>()
+function buildGroups(nodes: TopologyNode[], viewMode: TopologyViewMode): TopologyGroup[] {
+  const groups: TopologyGroup[] = []
 
-  // 聚合节点和边
-  flows.forEach(flow => {
-    // 获取标签键（如果有多个标签，使用app标签或第一个标签）
-    const sourceLabel = getServiceLabel(flow.sourceLabels)
-    const targetLabel = getServiceLabel(flow.destLabels)
+  if (viewMode === 'SERVICE' || viewMode === 'POD' || viewMode === 'CONTAINER') {
+    // Group by namespace
+    const namespaceMap = new Map<string, TopologyNode[]>()
 
-    // 跳过没有标签的流
-    if (!sourceLabel || !targetLabel) {
-      return
-    }
+    nodes.forEach(node => {
+      const ns = node.k8s?.namespace || 'default'
+      if (!namespaceMap.has(ns)) {
+        namespaceMap.set(ns, [])
+      }
+      namespaceMap.get(ns)!.push(node)
+    })
 
-    const sourceId = sourceLabel
-    const targetId = targetLabel
+    namespaceMap.forEach((nsNodes, namespace) => {
+      if (nsNodes.length > 0) {
+        const metrics = createEmptyMetrics()
+        nsNodes.forEach(n => {
+          metrics.flowCount += n.metrics.flowCount
+          metrics.packetCount += n.metrics.packetCount
+          metrics.byteCount += n.metrics.byteCount
+          metrics.activeFlows += n.metrics.activeFlows
+        })
 
-    // 创建或更新源节点
-    if (!nodeMap.has(sourceId)) {
-      nodeMap.set(sourceId, {
-        id: sourceId,
-        label: sourceId,
-        type: 'SERVICE',
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          activeFlows: 0,
-        },
-        labels: flow.sourceLabels,
+        groups.push({
+          id: `ns:${namespace}`,
+          label: namespace,
+          type: 'NAMESPACE',
+          nodeIds: nsNodes.map(n => n.id),
+          k8s: { namespace },
+          metrics,
+          expanded: true,
+        })
+      }
+    })
+  }
+
+  if (viewMode === 'CONTAINER' || viewMode === 'PROCESS') {
+    // Group by pod within namespace groups
+    const podMap = new Map<string, TopologyNode[]>()
+
+    nodes.forEach(node => {
+      if (node.k8s?.podName) {
+        const podKey = `${node.k8s.namespace || 'default'}/${node.k8s.podName}`
+        if (!podMap.has(podKey)) {
+          podMap.set(podKey, [])
+        }
+        podMap.get(podKey)!.push(node)
+      }
+    })
+
+    podMap.forEach((podNodes, podKey) => {
+      const [namespace, podName] = podKey.split('/')
+      const metrics = createEmptyMetrics()
+      podNodes.forEach(n => {
+        metrics.flowCount += n.metrics.flowCount
+        metrics.packetCount += n.metrics.packetCount
+        metrics.byteCount += n.metrics.byteCount
+        metrics.activeFlows += n.metrics.activeFlows
       })
-    }
 
-    // 创建或更新目标节点
-    if (!nodeMap.has(targetId)) {
-      nodeMap.set(targetId, {
-        id: targetId,
-        label: targetId,
-        type: 'SERVICE',
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          activeFlows: 0,
-        },
-        labels: flow.destLabels,
+      groups.push({
+        id: `pod:${podKey}`,
+        label: podName,
+        type: 'POD',
+        nodeIds: podNodes.map(n => n.id),
+        k8s: { namespace, podName },
+        metrics,
+        expanded: true,
+        parentId: `ns:${namespace}`,
       })
-    }
+    })
+  }
 
-    // 更新节点指标
-    const sourceNode = nodeMap.get(sourceId)!
-    const targetNode = nodeMap.get(targetId)!
+  return groups
+}
 
-    sourceNode.metrics.flowCount++
-    sourceNode.metrics.packetCount += flow.packetCount
-    sourceNode.metrics.byteCount += flow.byteCount
-    if (flow.state === 'ACTIVE') {
-      sourceNode.metrics.activeFlows++
-    }
+/**
+ * Calculate topology statistics
+ */
+function calculateStats(
+  nodes: TopologyNode[],
+  edges: TopologyEdge[],
+  flows: Flow[]
+): TopologyStats {
+  const stats: TopologyStats = {
+    totalNodes: nodes.length,
+    totalEdges: edges.length,
+    totalFlows: flows.length,
+    activeFlows: flows.filter(f => f.state === 'ACTIVE').length,
+    totalBytes: flows.reduce((sum, f) => sum + f.byteCount, 0),
+    namespaceCount: 0,
+    serviceCount: 0,
+    podCount: 0,
+    containerCount: 0,
+    processCount: 0,
+    externalCount: 0,
+  }
 
-    targetNode.metrics.flowCount++
-    targetNode.metrics.packetCount += flow.packetCount
-    targetNode.metrics.byteCount += flow.byteCount
-    if (flow.state === 'ACTIVE') {
-      targetNode.metrics.activeFlows++
-    }
+  // Count by type
+  const namespaces = new Set<string>()
+  const services = new Set<string>()
+  const pods = new Set<string>()
 
-    // 创建或更新边
-    const edgeId = `${sourceId}->${targetId}`
-    const reverseEdgeId = `${targetId}->${sourceId}`
-
-    if (!edgeMap.has(edgeId) && !edgeMap.has(reverseEdgeId)) {
-      // 将UNKNOWN方向映射为EGRESS
-      const direction = flow.direction === 'UNKNOWN' ? 'EGRESS' : (flow.direction as 'INGRESS' | 'EGRESS' | 'BIDIRECTIONAL')
-      edgeMap.set(edgeId, {
-        id: edgeId,
-        source: sourceId,
-        target: targetId,
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          protocols: [],
-        },
-        direction,
-      })
-    }
-
-    const edge = edgeMap.get(edgeId) || edgeMap.get(reverseEdgeId)!
-
-    // 更新边指标
-    edge.metrics.flowCount++
-    edge.metrics.packetCount += flow.packetCount
-    edge.metrics.byteCount += flow.byteCount
-
-    // 添加协议（去重）
-    if (!edge.metrics.protocols.includes(flow.protocol)) {
-      edge.metrics.protocols.push(flow.protocol)
-    }
-
-    // 更新方向
-    if (edgeMap.has(reverseEdgeId)) {
-      edge.direction = 'BIDIRECTIONAL'
+  nodes.forEach(node => {
+    switch (node.type) {
+      case 'NAMESPACE':
+        stats.namespaceCount!++
+        break
+      case 'SERVICE':
+        stats.serviceCount!++
+        if (node.k8s?.namespace) namespaces.add(node.k8s.namespace)
+        if (node.k8s?.serviceName) services.add(node.k8s.serviceName)
+        break
+      case 'POD':
+        stats.podCount!++
+        if (node.k8s?.namespace) namespaces.add(node.k8s.namespace)
+        if (node.k8s?.podName) pods.add(node.k8s.podName)
+        break
+      case 'CONTAINER':
+        stats.containerCount!++
+        if (node.k8s?.namespace) namespaces.add(node.k8s.namespace)
+        if (node.k8s?.podName) pods.add(node.k8s.podName)
+        break
+      case 'PROCESS':
+        stats.processCount!++
+        break
+      case 'EXTERNAL':
+        stats.externalCount!++
+        break
     }
   })
 
-  // 转换为数组并按流量排序
-  let nodes = Array.from(nodeMap.values())
-  const edges = Array.from(edgeMap.values())
+  // Update counts from sets for unique values
+  if (stats.namespaceCount === 0) stats.namespaceCount = namespaces.size
+  if (stats.serviceCount === 0) stats.serviceCount = services.size
+  if (stats.podCount === 0) stats.podCount = pods.size
 
-  // 限制节点数量（Top N）
-  if (maxNodes && nodes.length > maxNodes) {
-    nodes = nodes
-      .sort((a, b) => b.metrics.byteCount - a.metrics.byteCount)
-      .slice(0, maxNodes)
-
-    // 只保留涉及这些节点的边
-    const nodeIds = new Set(nodes.map(n => n.id))
-    const filteredEdges = edges.filter(
-      e => nodeIds.has(e.source) && nodeIds.has(e.target)
-    )
-
-    return {
-      nodes,
-      edges: filteredEdges,
-      stats: {
-        totalNodes: nodes.length,
-        totalEdges: filteredEdges.length,
-        totalFlows: flows.length,
-      },
-    }
-  }
-
-  return {
-    nodes,
-    edges,
-    stats: {
-      totalNodes: nodes.length,
-      totalEdges: edges.length,
-      totalFlows: flows.length,
-    },
-  }
+  return stats
 }
 
 /**
- * 从标签中获取服务名称
- * 优先使用app标签，否则使用第一个标签的值
+ * Calculate node size for visualization (logarithmic scale)
  */
-function getServiceLabel(labels?: Record<string, string>): string | null {
-  if (!labels || Object.keys(labels).length === 0) {
-    return null
-  }
-
-  // 优先使用app标签
-  if (labels.app) {
-    return labels.app
-  }
-
-  // 使用第一个标签
-  const firstKey = Object.keys(labels)[0]
-  return `${firstKey}:${labels[firstKey]}`
-}
-
-/**
- * 计算节点大小（用于可视化）
- * 根据流量数量返回合适的节点大小
- * 
- * @param flowCount - 流数量
- * @returns 节点大小（像素）
- */
-export function calculateNodeSize(flowCount: number): number {
-  // 最小20，最大80
-  const minSize = 20
+export function calculateNodeSize(metrics: TrafficMetrics, type: TopologyNodeType): number {
+  const minSize = 24
   const maxSize = 80
-  const baseSize = 30
 
-  // 对数缩放
-  if (flowCount <= 1) return minSize
+  // Different base sizes for different types
+  const baseSizes: Record<TopologyNodeType, number> = {
+    NAMESPACE: 60,
+    SERVICE: 50,
+    POD: 40,
+    CONTAINER: 35,
+    PROCESS: 30,
+    IP: 30,
+    EXTERNAL: 35,
+  }
 
-  const size = baseSize + Math.log10(flowCount) * 15
+  const baseSize = baseSizes[type] || 30
+
+  if (metrics.flowCount <= 1) return Math.max(minSize, baseSize - 10)
+
+  const size = baseSize + Math.log10(metrics.flowCount) * 8
   return Math.min(Math.max(size, minSize), maxSize)
 }
 
 /**
- * 计算边宽度（用于可视化）
- * 根据流量大小返回合适的边宽度
- * 
- * @param byteCount - 字节数
- * @returns 边宽度（像素）
+ * Calculate edge width for visualization (logarithmic scale)
  */
-export function calculateEdgeWidth(byteCount: number): number {
-  // 最小1，最大10
+export function calculateEdgeWidth(metrics: TrafficMetrics): number {
   const minWidth = 1
-  const maxWidth = 10
+  const maxWidth = 12
   const baseWidth = 2
 
-  // 对数缩放
-  if (byteCount <= 1024) return minWidth // < 1KB
+  if (metrics.byteCount <= 1024) return minWidth
 
-  const width = baseWidth + Math.log10(byteCount / 1024) * 1.5 // 以KB为单位
+  const width = baseWidth + Math.log10(metrics.byteCount / 1024) * 1.5
   return Math.min(Math.max(width, minWidth), maxWidth)
 }
 
 /**
- * 合并实时更新的Flow到现有拓扑数据
- * 
- * @param existing - 现有拓扑数据
- * @param newFlow - 新的流记录
- * @param viewMode - 视图模式
- * @returns 更新后的拓扑数据
+ * Get color for node type
+ */
+export function getNodeTypeColor(type: TopologyNodeType): string {
+  const colors: Record<TopologyNodeType, string> = {
+    NAMESPACE: '#722ed1',  // Purple
+    SERVICE: '#1890ff',    // Blue
+    POD: '#52c41a',        // Green
+    CONTAINER: '#13c2c2',  // Cyan
+    PROCESS: '#fa8c16',    // Orange
+    IP: '#8c8c8c',         // Gray
+    EXTERNAL: '#f5222d',   // Red
+  }
+  return colors[type] || '#8c8c8c'
+}
+
+/**
+ * Get icon for node type (for ECharts symbol)
+ */
+export function getNodeTypeSymbol(type: TopologyNodeType): string {
+  const symbols: Record<TopologyNodeType, string> = {
+    NAMESPACE: 'roundRect',
+    SERVICE: 'circle',
+    POD: 'diamond',
+    CONTAINER: 'rect',
+    PROCESS: 'triangle',
+    IP: 'circle',
+    EXTERNAL: 'pin',
+  }
+  return symbols[type] || 'circle'
+}
+
+/**
+ * Merge real-time flow update into existing topology
  */
 export function mergeTopologyUpdate(
   existing: TopologyData,
   newFlow: Flow,
   viewMode: TopologyViewMode
 ): TopologyData {
-  // 简单实现：将新flow添加到数组并重新聚合
-  // 更高效的实现应该直接更新nodes和edges
+  // Clone existing data
   const nodes = [...existing.nodes]
   const edges = [...existing.edges]
+  const groups = existing.groups ? [...existing.groups] : []
 
-  if (viewMode === 'IP') {
-    const sourceId = newFlow.sourceIp
-    const targetId = newFlow.destIp
+  // Extract endpoint info
+  const srcInfo = extractEndpointInfo(
+    newFlow.sourceIp,
+    newFlow.sourceLabels,
+    newFlow.processInfo,
+    viewMode
+  )
+  const dstInfo = extractEndpointInfo(
+    newFlow.destIp,
+    newFlow.destLabels,
+    undefined,
+    viewMode
+  )
 
-    // 更新或创建源节点
-    let sourceNode = nodes.find(n => n.id === sourceId)
-    if (!sourceNode) {
-      sourceNode = {
-        id: sourceId,
-        label: sourceId,
-        type: 'IP',
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          activeFlows: 0,
-        },
-      }
-      nodes.push(sourceNode)
-    }
-
-    // 更新或创建目标节点
-    let targetNode = nodes.find(n => n.id === targetId)
-    if (!targetNode) {
-      targetNode = {
-        id: targetId,
-        label: targetId,
-        type: 'IP',
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          activeFlows: 0,
-        },
-      }
-      nodes.push(targetNode)
-    }
-
-    // 更新节点指标
-    sourceNode.metrics.flowCount++
-    sourceNode.metrics.packetCount += newFlow.packetCount
-    sourceNode.metrics.byteCount += newFlow.byteCount
-    if (newFlow.state === 'ACTIVE') {
-      sourceNode.metrics.activeFlows++
-    }
-
-    targetNode.metrics.flowCount++
-    targetNode.metrics.packetCount += newFlow.packetCount
-    targetNode.metrics.byteCount += newFlow.byteCount
-    if (newFlow.state === 'ACTIVE') {
-      targetNode.metrics.activeFlows++
-    }
-
-    // 更新或创建边
-    const edgeId = `${sourceId}->${targetId}`
-    let edge = edges.find(e => e.id === edgeId || e.id === `${targetId}->${sourceId}`)
-
-    if (!edge) {
-      // 将UNKNOWN方向映射为EGRESS
-      const direction = newFlow.direction === 'UNKNOWN' ? 'EGRESS' : (newFlow.direction as 'INGRESS' | 'EGRESS' | 'BIDIRECTIONAL')
-      edge = {
-        id: edgeId,
-        source: sourceId,
-        target: targetId,
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          protocols: [],
-        },
-        direction,
-      }
-      edges.push(edge)
-    }
-
-    // 更新边指标
-    edge.metrics.flowCount++
-    edge.metrics.packetCount += newFlow.packetCount
-    edge.metrics.byteCount += newFlow.byteCount
-
-    if (!edge.metrics.protocols.includes(newFlow.protocol)) {
-      edge.metrics.protocols.push(newFlow.protocol)
-    }
-  } else if (viewMode === 'LABEL') {
-    // LABEL view realtime update logic
-    const sourceLabel = getServiceLabel(newFlow.sourceLabels)
-    const targetLabel = getServiceLabel(newFlow.destLabels)
-
-    // Skip flows without labels
-    if (!sourceLabel || !targetLabel) {
-      return existing
-    }
-
-    const sourceId = sourceLabel
-    const targetId = targetLabel
-
-    // Update or create source node
-    let sourceNode = nodes.find(n => n.id === sourceId)
-    if (!sourceNode) {
-      sourceNode = {
-        id: sourceId,
-        label: sourceLabel,
-        type: 'SERVICE',
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          activeFlows: 0,
-        },
-        labels: newFlow.sourceLabels,
-      }
-      nodes.push(sourceNode)
-    }
-
-    // Update or create target node
-    let targetNode = nodes.find(n => n.id === targetId)
-    if (!targetNode) {
-      targetNode = {
-        id: targetId,
-        label: targetLabel,
-        type: 'SERVICE',
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          activeFlows: 0,
-        },
-        labels: newFlow.destLabels,
-      }
-      nodes.push(targetNode)
-    }
-
-    // Update node metrics
-    sourceNode.metrics.flowCount++
-    sourceNode.metrics.packetCount += newFlow.packetCount
-    sourceNode.metrics.byteCount += newFlow.byteCount
-    if (newFlow.state === 'ACTIVE') {
-      sourceNode.metrics.activeFlows++
-    }
-
-    targetNode.metrics.flowCount++
-    targetNode.metrics.packetCount += newFlow.packetCount
-    targetNode.metrics.byteCount += newFlow.byteCount
-    if (newFlow.state === 'ACTIVE') {
-      targetNode.metrics.activeFlows++
-    }
-
-    // Update or create edge
-    const edgeId = `${sourceId}->${targetId}`
-    let edge = edges.find(e => e.id === edgeId || e.id === `${targetId}->${sourceId}`)
-
-    if (!edge) {
-      const direction = newFlow.direction === 'UNKNOWN' ? 'EGRESS' : (newFlow.direction as 'INGRESS' | 'EGRESS' | 'BIDIRECTIONAL')
-      edge = {
-        id: edgeId,
-        source: sourceId,
-        target: targetId,
-        metrics: {
-          flowCount: 0,
-          packetCount: 0,
-          byteCount: 0,
-          protocols: [],
-        },
-        direction,
-      }
-      edges.push(edge)
-    }
-
-    // Update edge metrics
-    edge.metrics.flowCount++
-    edge.metrics.packetCount += newFlow.packetCount
-    edge.metrics.byteCount += newFlow.byteCount
-
-    if (!edge.metrics.protocols.includes(newFlow.protocol)) {
-      edge.metrics.protocols.push(newFlow.protocol)
-    }
+  // Update or create source node
+  let srcNodeIndex = nodes.findIndex(n => n.id === srcInfo.nodeId)
+  if (srcNodeIndex === -1) {
+    nodes.push({
+      id: srcInfo.nodeId,
+      label: srcInfo.label,
+      type: srcInfo.nodeType,
+      metrics: createEmptyMetrics(),
+      security: createEmptySecurity(),
+      k8s: srcInfo.k8s,
+      processInfo: srcInfo.processInfo,
+      ipAddress: srcInfo.ip,
+    })
+    srcNodeIndex = nodes.length - 1
   }
+  mergeFlowMetrics(nodes[srcNodeIndex].metrics, newFlow)
+  updateSecurity(nodes[srcNodeIndex].security!, newFlow)
+
+  // Update or create destination node
+  let dstNodeIndex = nodes.findIndex(n => n.id === dstInfo.nodeId)
+  if (dstNodeIndex === -1) {
+    nodes.push({
+      id: dstInfo.nodeId,
+      label: dstInfo.label,
+      type: dstInfo.nodeType,
+      metrics: createEmptyMetrics(),
+      security: createEmptySecurity(),
+      k8s: dstInfo.k8s,
+      ipAddress: dstInfo.ip,
+    })
+    dstNodeIndex = nodes.length - 1
+  }
+  mergeFlowMetrics(nodes[dstNodeIndex].metrics, newFlow)
+  updateSecurity(nodes[dstNodeIndex].security!, newFlow)
+
+  // Update or create edge
+  const edgeId = `${srcInfo.nodeId}->${dstInfo.nodeId}`
+  let edgeIndex = edges.findIndex(e =>
+    e.id === edgeId || e.id === `${dstInfo.nodeId}->${srcInfo.nodeId}`
+  )
+
+  if (edgeIndex === -1) {
+    edges.push({
+      id: edgeId,
+      source: srcInfo.nodeId,
+      target: dstInfo.nodeId,
+      metrics: createEmptyMetrics(),
+      security: createEmptySecurity(),
+      protocols: [],
+      direction: newFlow.direction === 'UNKNOWN' ? 'EGRESS' : newFlow.direction,
+    })
+    edgeIndex = edges.length - 1
+  }
+
+  mergeFlowMetrics(edges[edgeIndex].metrics, newFlow)
+  updateSecurity(edges[edgeIndex].security!, newFlow)
+
+  // Update protocol info
+  const edge = edges[edgeIndex]
+  let protocolInfo = edge.protocols.find(
+    p => p.name === newFlow.protocol && p.port === newFlow.destPort
+  )
+  if (!protocolInfo) {
+    protocolInfo = {
+      name: newFlow.protocol,
+      port: newFlow.destPort,
+      flowCount: 0,
+      byteCount: 0,
+    }
+    edge.protocols.push(protocolInfo)
+  }
+  protocolInfo.flowCount++
+  protocolInfo.byteCount += newFlow.byteCount
 
   return {
     nodes,
     edges,
+    groups,
     stats: {
+      ...existing.stats,
       totalNodes: nodes.length,
       totalEdges: edges.length,
       totalFlows: existing.stats.totalFlows + 1,
     },
+    viewMode,
+    timestamp: new Date().toISOString(),
   }
 }
 
 /**
- * 获取节点的显示标签
- * 
- * @param node - 拓扑节点
- * @returns 显示标签
+ * Get display label for a node
  */
 export function getNodeLabel(node: TopologyNode): string {
-  if (node.type === 'IP') {
-    return node.label
+  switch (node.type) {
+    case 'NAMESPACE':
+      return node.k8s?.namespace || node.label
+    case 'SERVICE':
+      return node.k8s?.serviceName || node.label
+    case 'POD':
+      return node.k8s?.podName || node.label
+    case 'CONTAINER':
+      return node.k8s?.containerName || node.k8s?.containerId || node.label
+    case 'PROCESS':
+      return node.processInfo?.comm || node.label
+    case 'EXTERNAL':
+      return `External: ${node.ipAddress || node.label}`
+    default:
+      return node.label
   }
-
-  // 服务节点，显示服务名称
-  if (node.labels?.app) {
-    return node.labels.app
-  }
-
-  return node.label
 }
 
+/**
+ * Format bytes to human readable
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
+}
+
+/**
+ * Format number with K/M/B suffix
+ */
+export function formatNumber(num: number): string {
+  if (num >= 1e9) return `${(num / 1e9).toFixed(1)}B`
+  if (num >= 1e6) return `${(num / 1e6).toFixed(1)}M`
+  if (num >= 1e3) return `${(num / 1e3).toFixed(1)}K`
+  return String(num)
+}
