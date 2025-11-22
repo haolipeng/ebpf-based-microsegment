@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type { Flow } from '../types/flow'
+import { apiConfig } from '../config/api'
 
 interface UseFlowStreamOptions {
   enabled?: boolean
@@ -21,11 +22,8 @@ export function useFlowStream(options: UseFlowStreamOptions = {}) {
     }
 
     try {
-      // Construct WebSocket URL from current location
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const host = window.location.hostname
-      const port = import.meta.env.VITE_API_PORT || '8080'
-      const wsUrl = `${protocol}//${host}:${port}/api/v1/flows/stream`
+      // Get WebSocket URL from centralized config
+      const wsUrl = apiConfig.getWebSocketUrl('/v1/flows/stream')
 
       const ws = new WebSocket(wsUrl)
 
