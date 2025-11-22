@@ -101,55 +101,85 @@ rg --json "pattern"               # JSON 输出
 #### 查找函数
 ```bash
 # 所有函数定义
-grep -Ern "^func " --include="*.go" .
+grep -Ern "^func " --include="*.go" src/
 
-# 特定函数
-grep -Ern "^func NewReporter" --include="*.go" .
+# Agent 中的函数
+grep -Ern "^func " --include="*.go" src/agent/
+
+# Server 中的函数
+grep -Ern "^func " --include="*.go" src/server/
 
 # 导出的函数（大写开头）
-grep -Ern "^func [A-Z]" --include="*.go" .
+grep -Ern "^func [A-Z]" --include="*.go" src/
 
 # 方法（有接收者）
-grep -Ern "^func \(.*\) " --include="*.go" .
+grep -Ern "^func \(.*\) " --include="*.go" src/
 ```
 
 #### 查找类型
 ```bash
 # 所有结构体
-grep -Ern "^type [a-zA-Z]+ struct" --include="*.go" .
+grep -Ern "^type [a-zA-Z]+ struct" --include="*.go" src/
 
 # 所有接口
-grep -Ern "^type [a-zA-Z]+ interface" --include="*.go" .
+grep -Ern "^type [a-zA-Z]+ interface" --include="*.go" src/
 
 # 特定类型
-grep -Ern "^type Reporter" --include="*.go" .
+grep -Ern "^type Policy" --include="*.go" src/
+grep -Ern "^type Flow" --include="*.go" src/
 ```
 
 #### 查找导入
 ```bash
 # 所有导入语句
-grep -rh "^import" --include="*.go" .
+grep -rh "^import" --include="*.go" src/
 
-# 特定包
-grep -rn "github.com/sirupsen/logrus" --include="*.go" .
+# 查找 protobuf 导入
+grep -rn "api/proto" --include="*.go" src/
 
 # 统计最常用的包
-grep -rh "import" --include="*.go" . | grep -o '"[^"]*"' | sort | uniq -c | sort -rn | head -10
+grep -rh "import" --include="*.go" src/ | grep -o '"[^"]*"' | sort | uniq -c | sort -rn | head -10
 ```
 
 #### 查找模式
 ```bash
 # 错误处理
-grep -rn "if err != nil" --include="*.go" .
+grep -rn "if err != nil" --include="*.go" src/
 
 # goroutine
-grep -rn "go func" --include="*.go" .
+grep -rn "go func" --include="*.go" src/
 
 # defer 语句
-grep -rn "defer " --include="*.go" .
+grep -rn "defer " --include="*.go" src/
 
 # channel 操作
-grep -rn " <- " --include="*.go" .
+grep -rn " <- " --include="*.go" src/
+
+# gRPC 服务定义
+grep -rn "func.*Service.*Server" --include="*.go" src/server/
+```
+
+### TypeScript 代码搜索
+
+#### 查找组件
+```bash
+# React 组件
+grep -rn "export.*function\|export.*const" --include="*.tsx" web/src/
+
+# Hooks
+grep -rn "export.*use[A-Z]" --include="*.ts" web/src/hooks/
+
+# 类型定义
+grep -rn "^export type\|^export interface" --include="*.ts" web/src/
+```
+
+#### 查找 API 调用
+```bash
+# API 客户端调用
+grep -rn "api\." --include="*.ts" web/src/
+
+# Fetch 调用
+grep -rn "fetch\|axios" --include="*.ts" web/src/
 ```
 
 ### 配置文件搜索
@@ -296,7 +326,7 @@ grep -Ern '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 ## 📚 相关文档
 
 - [详细指南](code-search-guide.md) - 完整的搜索教程
-- [会话记录](SESSION-INDEX.md) - 实战案例
+- [架构指南](code-architecture-guide.md) - 项目架构详解
 
 ---
 
@@ -308,4 +338,4 @@ grep -Ern '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
 ---
 
-**最后更新**: 2025-11-05
+**最后更新**: 2025-11-22
