@@ -1,0 +1,240 @@
+# Simple Docker Test Environment - No Build Required!
+#
+# Quick Start:
+#   cd deploy/docker-test
+#   docker-compose -f docker-compose-simple.yml up -d
+#
+# Topology (expected traffic patterns):
+#
+#   [client] ──> [nginx:80] ──> [httpbin:8080]
+#      │                              │
+#      └──────────────────────────────┤
+#                                     ▼
+#   [busybox-1] <───> [busybox-2] ──> [redis:6379]
+#      │                   │
+#      ▼                   ▼
+#   [postgres:5432] <──────┘
+
+version: '3.8'
+
+networks:
+  test-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+    labels:
+      - "app.environment=test"
+      - "app.purpose=topology-testing"
+
+services:
+  # ============================================
+  # Web Services
+  # ============================================
+
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    hostname: nginx-proxy
+    networks:
+      test-net:
+        ipv4_address: 172.31.0.10
+    ports:
+      - "8880:80"
+    volumes:
+      - ./config/simple-nginx.conf:/etc/nginx/nginx.conf:ro
+    labels:
+      - "app=nginx"
+      - "service=proxy"
+      - "tier=frontend"
+    depends_on:
+      - httpbin
+    restart: unless-stopped
+
+  httpbin:
+    image: kennethreitz/httpbin
+    container_name: httpbin
+    hostname: httpbin
+    networks:
+      test-net:
+        ipv4_address: 172.31.0.20
+    labels:
+      - "app=httpbin"
+      - "service=api"
+      - "tier=backend"
+    restart: unless-stopped
+
+  # ============================================
+  # Data Services
+  # ============================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    hostname: redis
+    networks:
+      test-net:
+        ipv4_address: 172.31.0.30
+    command: redis-server --appendonly yes
+    labels:
+      - "app=redis"
+      - "service=cache"
+      - "tier=data"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    hostname: postgres
+    networks:
+      test-net:
+        ipv4_address: 172.31.0.40
+    environment:
+      - POSTGRES_USER=test
+      - POSTGRES_PASSWORD=test
+      - POSTGRES_DB=testdb
+    labels:
+      - "app=postgres"
+      - "service=database"
+      - "tier=data"
+    restart: unless-stopped
+
+  # ============================================
+  # Traffic Generators (using alpine/busybox)
+  # ============================================
+
+  client-1:
+    image: alpine:latest
+    container_name: client-1
+    hostname: client-1
+    networks:
+      test-net:
+        ipv4_address: 172.31.0.100
+    command: |
+      sh -c '
+        apk add --no-cache curl redis
+        while true; do
+          # HTTP requests to nginx
+          curl -s http://nginx-proxy/get > /dev/null 2>&1
+          curl -s http://nginx-proxy/headers > /dev/null 2>&1
+
+          # Direct httpbin calls
+          curl -s http://httpbin:80/ip > /dev/null 2>&1
+          curl -s http://httpbin:80/delay/1 > /dev/null 2>&1
+
+          # Redis operations
+          redis-cli -h redis SET "client1_key" "value_$(date +%s)" > /dev/null 2>&1
+          redis-cli -h redis GET "client1_key" > /dev/null 2>&1
+          redis-cli -h redis INCR "counter" > /dev/null 2>&1
+
+          echo "[client-1] Traffic generated at $(date)"
+          sleep 3
+        done
+      '
+    labels:
+      - "app=client"
+      - "service=traffic-gen"
+      - "tier=test"
+      - "instance=1"
+    depends_on:
+      - nginx-proxy
+      - redis
+    restart: unless-stopped
+
+  client-2:
+    image: alpine:latest
+    container_name: client-2
+    hostname: client-2
+    networks:
+      test-net:
+        ipv4_address: 172.31.0.101
+    command: |
+      sh -c '
+        apk add --no-cache curl postgresql-client redis
+        while true; do
+          # HTTP requests
+          curl -s http://nginx-proxy/anything > /dev/null 2>&1
+          curl -s http://httpbin:80/uuid > /dev/null 2>&1
+          curl -s -X POST http://httpbin:80/post -d "test=data" > /dev/null 2>&1
+
+          # PostgreSQL query
+          PGPASSWORD=test psql -h postgres -U test -d testdb -c "SELECT 1" > /dev/null 2>&1
+
+          # Redis operations
+          redis-cli -h redis LPUSH "queue" "task_$(date +%s)" > /dev/null 2>&1
+          redis-cli -h redis RPOP "queue" > /dev/null 2>&1
+
+          # Ping other client
+          ping -c 1 client-1 > /dev/null 2>&1
+
+          echo "[client-2] Traffic generated at $(date)"
+          sleep 4
+        done
+      '
+    labels:
+      - "app=client"
+      - "service=traffic-gen"
+      - "tier=test"
+      - "instance=2"
+    depends_on:
+      - nginx-proxy
+      - redis
+      - postgres
+    restart: unless-stopped
+
+  client-3:
+    image: alpine:latest
+    container_name: client-3
+    hostname: client-3
+    networks:
+      test-net:
+        ipv4_address: 172.31.0.102
+    command: |
+      sh -c '
+        apk add --no-cache curl redis
+        while true; do
+          # Burst traffic pattern
+          for i in 1 2 3 4 5; do
+            curl -s http://nginx-proxy/get > /dev/null 2>&1 &
+          done
+          wait
+
+          # Redis pub/sub simulation
+          redis-cli -h redis PUBLISH "events" "event_$(date +%s)" > /dev/null 2>&1
+
+          # Cross-client communication
+          ping -c 2 client-1 > /dev/null 2>&1
+          ping -c 2 client-2 > /dev/null 2>&1
+
+          echo "[client-3] Burst traffic generated at $(date)"
+          sleep 5
+        done
+      '
+    labels:
+      - "app=client"
+      - "service=traffic-gen"
+      - "tier=test"
+      - "instance=3"
+    depends_on:
+      - nginx-proxy
+      - redis
+    restart: unless-stopped
+
+  # ============================================
+  # External Service Simulator
+  # ============================================
+
+  external-service:
+    image: nginx:alpine
+    container_name: external-service
+    hostname: external-service
+    networks:
+      test-net:
+        ipv4_address: 172.31.0.200
+    volumes:
+      - ./config/external.conf:/etc/nginx/nginx.conf:ro
+    labels:
+      - "app=external"
+      - "service=external-api"
+      - "tier=external"
+    restart: unless-stopped
