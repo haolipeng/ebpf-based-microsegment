@@ -38,6 +38,8 @@ dataplane:
   mode: auto  # Options: "auto", "xdp-native", "xdp-generic", "tc"
   prefer_xdp: true
   allow_generic_xdp: true
+  enable_nat: true        # Sync with ENABLE_NAT_SUPPORT eBPF macro
+  enable_fragment: true   # Sync with ENABLE_IP_FRAGMENT_HANDLING eBPF macro
 
 # Kubernetes Integration
 kubernetes:

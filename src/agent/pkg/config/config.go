@@ -109,6 +109,14 @@ type DataPlaneConfig struct {
 
 	// AllowGenericXDP controls whether Generic XDP fallback is allowed
 	AllowGenericXDP bool `mapstructure:"allow_generic_xdp"`
+
+	// EnableNAT controls whether NAT support (conntrack sync) is enabled
+	// Set to false when eBPF is compiled without ENABLE_NAT_SUPPORT macro
+	EnableNAT bool `mapstructure:"enable_nat"`
+
+	// EnableFragment controls whether IP fragment handling is enabled
+	// Set to false when eBPF is compiled without ENABLE_IP_FRAGMENT_HANDLING macro
+	EnableFragment bool `mapstructure:"enable_fragment"`
 }
 
 // KubernetesConfig holds Kubernetes integration configuration
@@ -228,9 +236,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("flow.retention_days", 7)
 
 	// DataPlane defaults
-	v.SetDefault("dataplane.mode", "auto")                // Auto-select best mode
-	v.SetDefault("dataplane.prefer_xdp", true)            // Prefer XDP for better performance
-	v.SetDefault("dataplane.allow_generic_xdp", true)     // Allow Generic XDP fallback
+	v.SetDefault("dataplane.mode", "auto")            // Auto-select best mode
+	v.SetDefault("dataplane.prefer_xdp", true)        // Prefer XDP for better performance
+	v.SetDefault("dataplane.allow_generic_xdp", true) // Allow Generic XDP fallback
+	v.SetDefault("dataplane.enable_nat", true)        // Enable NAT support (sync with ENABLE_NAT_SUPPORT macro)
+	v.SetDefault("dataplane.enable_fragment", true)   // Enable fragment handling (sync with ENABLE_IP_FRAGMENT_HANDLING macro)
 
 	// Kubernetes defaults
 	v.SetDefault("kubernetes.enabled", false)             // Disabled by default

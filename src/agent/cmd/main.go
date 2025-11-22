@@ -69,24 +69,32 @@ func runAgent(cmd *cobra.Command, args []string) {
 
 	log.Info("✓ Data plane initialized")
 
-	// Initialize NAT support (conntrack synchronization)
+	// Initialize NAT support (conntrack synchronization) - controlled by config
 	var ctSyncer *conntrack.ConntrackSyncer
-	ctSyncer, err = initNATSupport(dp)
-	if err != nil {
-		log.Warnf("NAT support initialization failed: %v (continuing without NAT support)", err)
-	} else if ctSyncer != nil {
-		defer ctSyncer.Stop()
-		log.Info("✓ NAT support initialized (conntrack sync started)")
+	if cfg.DataPlane.EnableNAT {
+		ctSyncer, err = initNATSupport(dp)
+		if err != nil {
+			log.Warnf("NAT support initialization failed: %v (continuing without NAT support)", err)
+		} else if ctSyncer != nil {
+			defer ctSyncer.Stop()
+			log.Info("✓ NAT support initialized (conntrack sync started)")
+		}
+	} else {
+		log.Info("NAT support disabled by configuration")
 	}
 
-	// Initialize fragment cleanup (fragment timeout cleaner)
+	// Initialize fragment cleanup (fragment timeout cleaner) - controlled by config
 	var fragCleaner *fragment.FragmentCleaner
-	fragCleaner, err = initFragmentSupport(dp)
-	if err != nil {
-		log.Warnf("Fragment support initialization failed: %v (continuing without fragment cleanup)", err)
-	} else if fragCleaner != nil {
-		defer fragCleaner.Stop()
-		log.Info("✓ Fragment support initialized (fragment cleaner started)")
+	if cfg.DataPlane.EnableFragment {
+		fragCleaner, err = initFragmentSupport(dp)
+		if err != nil {
+			log.Warnf("Fragment support initialization failed: %v (continuing without fragment cleanup)", err)
+		} else if fragCleaner != nil {
+			defer fragCleaner.Stop()
+			log.Info("✓ Fragment support initialized (fragment cleaner started)")
+		}
+	} else {
+		log.Info("Fragment support disabled by configuration")
 	}
 
 	// Initialize process monitor

@@ -46,6 +46,14 @@ server:
   # Time to wait before attempting to reconnect on server failure
   reconnect_interval: 30s
 
+# DataPlane configuration
+dataplane:
+  # Disable NAT support (sync with ENABLE_NAT_SUPPORT=0 in eBPF)
+  enable_nat: false
+
+  # Disable IP fragment handling (sync with ENABLE_IP_FRAGMENT_HANDLING=0 in eBPF)
+  enable_fragment: false
+
 # Flow collection configuration
 flow:
   # Path to SQLite database for flow storage (standalone mode only)

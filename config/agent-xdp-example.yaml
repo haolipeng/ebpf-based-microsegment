@@ -34,6 +34,12 @@ dataplane:
   # 允许 Generic XDP 回退
   allow_generic_xdp: true
 
+  # NAT 支持（需与 eBPF 编译宏 ENABLE_NAT_SUPPORT 同步）
+  enable_nat: true
+
+  # IP 分片处理（需与 eBPF 编译宏 ENABLE_IP_FRAGMENT_HANDLING 同步）
+  enable_fragment: true
+
 # 流量收集配置
 flow:
   enabled: true
