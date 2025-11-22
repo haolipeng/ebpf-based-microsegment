@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	// Default cache capacity: 20000 entries (as per Issue #48 specification)
+	// Default cache capacity: 20000 entries
 	DefaultCacheCapacity = 20000
 
-	// Default cache TTL: 5 minutes (as per Issue #48 specification)
+	// Default cache TTL: 5 minutes
 	DefaultCacheTTL = 5 * time.Minute
 
 	// Default cleanup interval: 30 seconds
@@ -119,7 +119,7 @@ func (m *ProcessMonitor) Stop() error {
 }
 
 // GetProcessInfo retrieves process information by PID
-// This is the primary API used by FlowCollector (Issue #48/#49)
+// This is the primary API used by FlowCollector
 // Returns interface{} to avoid circular dependency with flow package
 // The returned value is actually *ProcessInfo
 func (m *ProcessMonitor) GetProcessInfo(pid uint32) (interface{}, bool) {

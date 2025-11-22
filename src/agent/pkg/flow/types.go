@@ -156,7 +156,7 @@ type FlowEvent struct {
 	State        FlowState    // Flow state
 	Reserved     uint16       // Reserved for future use
 
-	// Process context (92 bytes) - Issue #47, #48
+	// Process context (92 bytes)
 	// These fields are populated by eBPF looking up process_info_map
 	ProcessName     [16]byte // Process command name (from process cache)
 	PID             uint32   // Process ID (0 if not available)
@@ -168,7 +168,7 @@ type FlowEvent struct {
 // Assumes little-endian byte order (x86_64)
 // Structure size: 36 (5-tuple) + 8 (metadata) + 24 (stats) + 12 (TCP) + 8 (policy) + 92 (process) = 180 bytes
 func ParseFlowEvent(data []byte) (*FlowEvent, error) {
-	expectedSize := 180 // Total size with process context fields (Issue #47/#48)
+	expectedSize := 180 // Total size with process context fields
 	if len(data) < expectedSize {
 		return nil, fmt.Errorf("invalid flow event size: expected at least %d bytes, got %d", expectedSize, len(data))
 	}
@@ -221,10 +221,10 @@ func ParseFlowEvent(data []byte) (*FlowEvent, error) {
 		Reserved:     binary.LittleEndian.Uint16(data[86:88]),
 	}
 
-	// Parse process context fields (92 bytes, offset 88-179) - Issue #47/#48
-	copy(event.ProcessName[:], data[88:104])          // 16 bytes
-	event.PID = binary.LittleEndian.Uint32(data[104:108]) // 4 bytes
-	copy(event.ContainerID[:], data[108:172])         // 64 bytes
+	// Parse process context fields (92 bytes, offset 88-179)
+	copy(event.ProcessName[:], data[88:104])                          // 16 bytes
+	event.PID = binary.LittleEndian.Uint32(data[104:108])             // 4 bytes
+	copy(event.ContainerID[:], data[108:172])                         // 64 bytes
 	event.ProcessExecTime = binary.LittleEndian.Uint64(data[172:180]) // 8 bytes
 
 	return event, nil
@@ -233,12 +233,12 @@ func ParseFlowEvent(data []byte) (*FlowEvent, error) {
 // Flow represents a complete network flow with enrichment
 type Flow struct {
 	// Identification
-	ID        string    `json:"id"`         // Unique flow ID (hash of 5-tuple)
-	SourceIP  string    `json:"source_ip"`  // Source IP address
-	SourcePort uint16   `json:"source_port"` // Source port
-	DestIP    string    `json:"dest_ip"`    // Destination IP address
-	DestPort  uint16    `json:"dest_port"`  // Destination port
-	Protocol  string    `json:"protocol"`   // Protocol name (TCP/UDP/ICMP)
+	ID         string `json:"id"`          // Unique flow ID (hash of 5-tuple)
+	SourceIP   string `json:"source_ip"`   // Source IP address
+	SourcePort uint16 `json:"source_port"` // Source port
+	DestIP     string `json:"dest_ip"`     // Destination IP address
+	DestPort   uint16 `json:"dest_port"`   // Destination port
+	Protocol   string `json:"protocol"`    // Protocol name (TCP/UDP/ICMP)
 
 	// Traffic Statistics
 	PacketCount uint64 `json:"packet_count"` // Total packets
@@ -246,19 +246,19 @@ type Flow struct {
 	Duration    int64  `json:"duration_ms"`  // Duration in milliseconds
 
 	// Timestamps
-	StartTime time.Time  `json:"start_time"`           // Flow start time
-	EndTime   *time.Time `json:"end_time,omitempty"`   // Flow end time (nil if active)
-	LastSeen  time.Time  `json:"last_seen"`            // Last packet timestamp
+	StartTime time.Time  `json:"start_time"`         // Flow start time
+	EndTime   *time.Time `json:"end_time,omitempty"` // Flow end time (nil if active)
+	LastSeen  time.Time  `json:"last_seen"`          // Last packet timestamp
 
 	// Workload Enrichment
 	SourceLabels map[string]string `json:"source_labels,omitempty"` // Source workload labels
 	DestLabels   map[string]string `json:"dest_labels,omitempty"`   // Destination workload labels
 
 	// Policy Context
-	PolicyID     uint32 `json:"policy_id,omitempty"`     // Matched policy ID
-	PolicyAction string `json:"policy_action"`           // Policy action (ALLOW/DENY/LOG)
+	PolicyID     uint32 `json:"policy_id,omitempty"` // Matched policy ID
+	PolicyAction string `json:"policy_action"`       // Policy action (ALLOW/DENY/LOG)
 
-	// Process Context (Issue #47/#48)
+	// Process Context
 	ProcessName     string `json:"process_name,omitempty"`      // Process command name
 	ProcessPID      uint32 `json:"process_pid,omitempty"`       // Process ID
 	ProcessPath     string `json:"process_path,omitempty"`      // Full executable path (from ProcessMonitor)
@@ -266,8 +266,8 @@ type Flow struct {
 	ProcessExecTime uint64 `json:"process_exec_time,omitempty"` // Process start timestamp
 
 	// State
-	State     string `json:"state"`     // Flow state (ACTIVE/CLOSED/TIMEOUT)
-	Direction string `json:"direction"` // Traffic direction (INGRESS/EGRESS)
+	State     string `json:"state"`      // Flow state (ACTIVE/CLOSED/TIMEOUT)
+	Direction string `json:"direction"`  // Traffic direction (INGRESS/EGRESS)
 	EventType string `json:"event_type"` // Last event type
 }
 
@@ -330,12 +330,12 @@ func (e *FlowEvent) ToFlow() *Flow {
 		DestLabels:   make(map[string]string),
 	}
 
-	// Convert process context fields (Issue #47/#48)
+	// Convert process context fields
 	flow.ProcessName = nullTerminatedByteArrayToString(e.ProcessName[:])
 	flow.ProcessPID = e.PID
 	flow.ContainerID = nullTerminatedByteArrayToString(e.ContainerID[:])
 	flow.ProcessExecTime = e.ProcessExecTime
-	// Note: ProcessPath will be enriched by FlowCollector via ProcessMonitor lookup (Issue #49)
+	// Note: ProcessPath will be enriched by FlowCollector via ProcessMonitor lookup
 
 	// Set end time if flow is closed
 	if e.EventType == FlowEventClosed || e.State == FlowStateClosed {
@@ -362,12 +362,12 @@ type FlowQuery struct {
 	EndTime   *time.Time `json:"end_time,omitempty"`   // End of time range
 
 	// Flow filters
-	SourceIP   *string            `json:"source_ip,omitempty"`   // Filter by source IP
-	DestIP     *string            `json:"dest_ip,omitempty"`     // Filter by destination IP
-	Protocol   *string            `json:"protocol,omitempty"`    // Filter by protocol
-	State      *string            `json:"state,omitempty"`       // Filter by state
-	Direction  *string            `json:"direction,omitempty"`   // Filter by direction
-	PolicyAction *string          `json:"policy_action,omitempty"` // Filter by policy action
+	SourceIP     *string `json:"source_ip,omitempty"`     // Filter by source IP
+	DestIP       *string `json:"dest_ip,omitempty"`       // Filter by destination IP
+	Protocol     *string `json:"protocol,omitempty"`      // Filter by protocol
+	State        *string `json:"state,omitempty"`         // Filter by state
+	Direction    *string `json:"direction,omitempty"`     // Filter by direction
+	PolicyAction *string `json:"policy_action,omitempty"` // Filter by policy action
 
 	// Label filters
 	SourceLabels map[string]string `json:"source_labels,omitempty"` // Filter by source labels
@@ -384,32 +384,32 @@ type FlowQuery struct {
 
 // FlowSummary represents aggregated flow statistics
 type FlowSummary struct {
-	TotalFlows      int64   `json:"total_flows"`      // Total number of flows
-	ActiveFlows     int64   `json:"active_flows"`     // Number of active flows
-	ClosedFlows     int64   `json:"closed_flows"`     // Number of closed flows
-	TotalPackets    uint64  `json:"total_packets"`    // Total packets across all flows
-	TotalBytes      uint64  `json:"total_bytes"`      // Total bytes across all flows
-	AllowedFlows    int64   `json:"allowed_flows"`    // Number of allowed flows
-	DeniedFlows     int64   `json:"denied_flows"`     // Number of denied flows
-	TopProtocols    []ProtocolStats `json:"top_protocols"`    // Top protocols by flow count
-	TopSourceIPs    []IPStats       `json:"top_source_ips"`   // Top source IPs by flow count
-	TopDestIPs      []IPStats       `json:"top_dest_ips"`     // Top destination IPs by flow count
+	TotalFlows   int64           `json:"total_flows"`    // Total number of flows
+	ActiveFlows  int64           `json:"active_flows"`   // Number of active flows
+	ClosedFlows  int64           `json:"closed_flows"`   // Number of closed flows
+	TotalPackets uint64          `json:"total_packets"`  // Total packets across all flows
+	TotalBytes   uint64          `json:"total_bytes"`    // Total bytes across all flows
+	AllowedFlows int64           `json:"allowed_flows"`  // Number of allowed flows
+	DeniedFlows  int64           `json:"denied_flows"`   // Number of denied flows
+	TopProtocols []ProtocolStats `json:"top_protocols"`  // Top protocols by flow count
+	TopSourceIPs []IPStats       `json:"top_source_ips"` // Top source IPs by flow count
+	TopDestIPs   []IPStats       `json:"top_dest_ips"`   // Top destination IPs by flow count
 }
 
 // ProtocolStats represents protocol statistics
 type ProtocolStats struct {
-	Protocol   string `json:"protocol"`    // Protocol name
-	FlowCount  int64  `json:"flow_count"`  // Number of flows
+	Protocol    string `json:"protocol"`     // Protocol name
+	FlowCount   int64  `json:"flow_count"`   // Number of flows
 	PacketCount uint64 `json:"packet_count"` // Total packets
-	ByteCount  uint64 `json:"byte_count"`  // Total bytes
+	ByteCount   uint64 `json:"byte_count"`   // Total bytes
 }
 
 // IPStats represents IP address statistics
 type IPStats struct {
-	IP         string `json:"ip"`          // IP address
-	FlowCount  int64  `json:"flow_count"`  // Number of flows
+	IP          string `json:"ip"`           // IP address
+	FlowCount   int64  `json:"flow_count"`   // Number of flows
 	PacketCount uint64 `json:"packet_count"` // Total packets
-	ByteCount  uint64 `json:"byte_count"`  // Total bytes
+	ByteCount   uint64 `json:"byte_count"`   // Total bytes
 }
 
 // Dependency represents a dependency between two workloads

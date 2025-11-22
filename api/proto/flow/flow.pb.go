@@ -7,12 +7,13 @@
 package flow
 
 import (
-	common "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	common "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -60,7 +61,7 @@ type FlowEvent struct {
 	SourceLabels map[string]string `protobuf:"bytes,16,rep,name=source_labels,json=sourceLabels,proto3" json:"source_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Labels of the destination workload
 	DestLabels map[string]string `protobuf:"bytes,17,rep,name=dest_labels,json=destLabels,proto3" json:"dest_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// Process information (Issue #51 - Process-Level Policy)
+	// Process information
 	ProcessInfo   *ProcessInfo `protobuf:"bytes,18,opt,name=process_info,json=processInfo,proto3" json:"process_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -235,7 +236,7 @@ type ProcessInfo struct {
 	Cmdline string `protobuf:"bytes,7,opt,name=cmdline,proto3" json:"cmdline,omitempty"`
 	// Process start time (Unix nanoseconds, used for PID reuse detection)
 	StartTime uint64 `protobuf:"varint,8,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
-	// Marked as suspicious by security validator (Issue #50)
+	// Marked as suspicious by security validator
 	IsSuspicious bool `protobuf:"varint,9,opt,name=is_suspicious,json=isSuspicious,proto3" json:"is_suspicious,omitempty"`
 	// Container ID (extracted from cgroup path)
 	ContainerId   string `protobuf:"bytes,10,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
@@ -370,13 +371,13 @@ type FlowQuery struct {
 	Limit uint32 `protobuf:"varint,11,opt,name=limit,proto3" json:"limit,omitempty"`
 	// Offset for pagination
 	Offset uint32 `protobuf:"varint,12,opt,name=offset,proto3" json:"offset,omitempty"`
-	// Filter by process ID (Issue #51)
+	// Filter by process ID
 	Pid uint32 `protobuf:"varint,13,opt,name=pid,proto3" json:"pid,omitempty"`
-	// Filter by process name (Issue #51)
+	// Filter by process name
 	ProcessName string `protobuf:"bytes,14,opt,name=process_name,json=processName,proto3" json:"process_name,omitempty"`
-	// Filter by process path prefix (Issue #51)
+	// Filter by process path prefix
 	ProcessPath string `protobuf:"bytes,15,opt,name=process_path,json=processPath,proto3" json:"process_path,omitempty"`
-	// Filter by container ID (Issue #51)
+	// Filter by container ID
 	ContainerId   string `protobuf:"bytes,16,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -625,7 +626,7 @@ type Flow struct {
 	SourceLabels map[string]string `protobuf:"bytes,16,rep,name=source_labels,json=sourceLabels,proto3" json:"source_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Destination workload labels
 	DestLabels map[string]string `protobuf:"bytes,17,rep,name=dest_labels,json=destLabels,proto3" json:"dest_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// Process information (Issue #51 - Process-Level Policy)
+	// Process information
 	ProcessInfo   *ProcessInfo `protobuf:"bytes,18,opt,name=process_info,json=processInfo,proto3" json:"process_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

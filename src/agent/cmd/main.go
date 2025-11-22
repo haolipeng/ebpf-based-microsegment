@@ -21,7 +21,6 @@ import (
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/policy"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/process"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/reporter"
-	"github.com/haolipeng/ebpf-based-microsegment/pkg/security"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -90,7 +89,7 @@ func runAgent(cmd *cobra.Command, args []string) {
 		log.Info("✓ Fragment support initialized (fragment cleaner started)")
 	}
 
-	// Initialize process monitor (Issue #48)
+	// Initialize process monitor
 	var processMonitor *process.ProcessMonitor
 	processMonitor, err = initProcessMonitor(dp)
 	if err != nil {
@@ -98,14 +97,6 @@ func runAgent(cmd *cobra.Command, args []string) {
 	} else if processMonitor != nil {
 		defer processMonitor.Stop()
 		log.Info("✓ Process monitor initialized (process event tracking started)")
-	}
-
-	// Initialize security alert manager (Issue #50)
-	var alertManager *security.AlertManager
-	alertManager = initAlertManager()
-	if alertManager != nil {
-		defer alertManager.Stop()
-		log.Info("✓ Security alert manager initialized (security monitoring started)")
 	}
 
 	// Create policy manager
@@ -168,16 +159,10 @@ func runAgent(cmd *cobra.Command, args []string) {
 	log.Info("Initializing flow collection...")
 	var flowCollector *flow.Collector
 
-	// Wrap alert manager in adapter to match flow.SecurityAlertManager interface
-	var alertAdapter flow.SecurityAlertManager
-	if alertManager != nil {
-		alertAdapter = security.NewAlertManagerAdapter(alertManager)
-	}
-
 	if cfg.IsAgentServerMode() {
-		flowCollector = initFlowCollectorForServerMode(cfg, dp, rep, processMonitor, alertAdapter)
+		flowCollector = initFlowCollectorForServerMode(cfg, dp, rep, processMonitor)
 	} else {
-		flowCollector = initFlowCollectorForStandaloneMode(cfg, dp, flowStorage, processMonitor, alertAdapter)
+		flowCollector = initFlowCollectorForStandaloneMode(cfg, dp, flowStorage, processMonitor)
 	}
 
 	if flowCollector != nil {
@@ -220,38 +205,9 @@ func runAgent(cmd *cobra.Command, args []string) {
 	// Start flow event monitoring
 	go dp.MonitorFlowEvents()
 
-	// Print statistics periodically
-	ticker := time.NewTicker(time.Duration(cfg.StatsInterval) * time.Second)
-	defer ticker.Stop()
-
-	go func() {
-		for range ticker.C {
-			stats := dp.GetStatistics()
-			log.Info("=== Statistics ===")
-			log.Infof("  Total Packets:    %d", stats.TotalPackets)
-			log.Infof("  Allowed Packets:  %d", stats.AllowedPackets)
-			log.Infof("  Denied Packets:   %d", stats.DeniedPackets)
-			log.Infof("  New Sessions:     %d", stats.NewSessions)
-			log.Infof("  Policy Hits:      %d", stats.PolicyHits)
-			log.Infof("  Policy Misses:    %d", stats.PolicyMisses)
-
-			// Ring buffer statistics
-			if stats.RingBufferFull > 0 {
-				dropRate := float64(0)
-				if stats.NewSessions > 0 {
-					dropRate = float64(stats.RingBufferFull) / float64(stats.NewSessions) * 100
-				}
-				log.Warnf("  Ring Buffer Drops: %d (%.2f%% drop rate)", stats.RingBufferFull, dropRate)
-			}
-
-			// Update agent metrics if in agent-server mode
-			if agentClient != nil {
-				flowCount := stats.NewSessions
-				policyCount := uint32(pm.GetPolicyCount())
-				agentClient.UpdateMetrics(flowCount, policyCount)
-			}
-		}
-	}()
+	// Start statistics printer goroutine
+	stopStats := startStatisticsPrinter(dp, pm, agentClient, cfg.StatsInterval)
+	defer close(stopStats)
 
 	// Wait for interrupt signal
 	sig := make(chan os.Signal, 1)
@@ -402,7 +358,7 @@ func initStorage(cfg *config.Config) flow.Storage {
 // initFlowCollectorForServerMode initializes flow collector for agent-server mode.
 // In this mode, flows are sent to the control plane server via gRPC reporter.
 // No local storage or lifecycle management is configured.
-func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane, rep reporter.Reporter, procMon *process.ProcessMonitor, alertMgr flow.SecurityAlertManager) *flow.Collector {
+func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane, rep reporter.Reporter, procMon *process.ProcessMonitor) *flow.Collector {
 	// Get Ring Buffer from dataplane
 	ringBuf := dp.GetFlowRingBuffer()
 	if ringBuf == nil {
@@ -422,14 +378,9 @@ func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane,
 	// Create collector without storage (workloadMgr can be added later for K8s)
 	collector := flow.NewCollector(ringBuf, nil, nil, collectorConfig)
 
-	// Configure process monitor for process info enrichment (Issue #48/#49)
+	// Configure process monitor for process info enrichment
 	if procMon != nil {
 		collector.SetProcessMonitor(procMon)
-	}
-
-	// Configure security alert manager (Issue #50)
-	if alertMgr != nil {
-		collector.SetAlertManager(alertMgr)
 	}
 
 	// Configure reporter to send flows to server
@@ -449,7 +400,7 @@ func initFlowCollectorForServerMode(cfg *config.Config, dp *dataplane.DataPlane,
 
 // initFlowCollectorForStandaloneMode initializes flow collector for standalone mode.
 // In this mode, flows are persisted to local SQLite storage with lifecycle management.
-func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPlane, storage flow.Storage, procMon *process.ProcessMonitor, alertMgr flow.SecurityAlertManager) *flow.Collector {
+func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPlane, storage flow.Storage, procMon *process.ProcessMonitor) *flow.Collector {
 	// Get Ring Buffer from dataplane
 	ringBuf := dp.GetFlowRingBuffer()
 	if ringBuf == nil {
@@ -469,14 +420,9 @@ func initFlowCollectorForStandaloneMode(cfg *config.Config, dp *dataplane.DataPl
 	// Create collector with storage (workloadMgr can be added later for K8s)
 	collector := flow.NewCollector(ringBuf, storage, nil, collectorConfig)
 
-	// Configure process monitor for process info enrichment (Issue #48/#49)
+	// Configure process monitor for process info enrichment
 	if procMon != nil {
 		collector.SetProcessMonitor(procMon)
-	}
-
-	// Configure security alert manager (Issue #50)
-	if alertMgr != nil {
-		collector.SetAlertManager(alertMgr)
 	}
 
 	// Start collector
@@ -538,9 +484,9 @@ func initNATSupport(dp *dataplane.DataPlane) (*conntrack.ConntrackSyncer, error)
 	// Configure NAT detection (enable cache lookup by default)
 	natConfig := &dataplane.NATConfig{
 		MatchMode:       dataplane.NATMatchModeOriginal, // Match using pre-NAT addresses
-		EnableCache:     true,                            // Enable conntrack cache lookup
-		EnableBPFHelper: false,                           // BPF helper not yet fully implemented
-		LogEvents:       false,                           // Disable event logging for performance
+		EnableCache:     true,                           // Enable conntrack cache lookup
+		EnableBPFHelper: false,                          // BPF helper not yet fully implemented
+		LogEvents:       false,                          // Disable event logging for performance
 	}
 
 	if err := dp.SetNATConfig(natConfig); err != nil {
@@ -621,7 +567,7 @@ func initFragmentSupport(dp *dataplane.DataPlane) (*fragment.FragmentCleaner, er
 	return cleaner, nil
 }
 
-// initProcessMonitor initializes process monitoring (Issue #48)
+// initProcessMonitor initializes process monitoring
 func initProcessMonitor(dp *dataplane.DataPlane) (*process.ProcessMonitor, error) {
 	log.Info("Initializing process monitor...")
 
@@ -658,26 +604,56 @@ func initProcessMonitor(dp *dataplane.DataPlane) (*process.ProcessMonitor, error
 	return monitor, nil
 }
 
-// initAlertManager initializes security alert manager (Issue #50)
-func initAlertManager() *security.AlertManager {
-	log.Info("Initializing security alert manager...")
+// startStatisticsPrinter starts a goroutine that periodically prints statistics.
+// Returns a channel that can be closed to stop the printer.
+func startStatisticsPrinter(dp *dataplane.DataPlane, pm *policy.PolicyManager, agentClient *client.AgentClient, intervalSeconds int) chan struct{} {
+	stopCh := make(chan struct{})
 
-	// Create path validator with default configuration
-	validator := security.DefaultPathValidator()
+	go func() {
+		ticker := time.NewTicker(time.Duration(intervalSeconds) * time.Second)
+		defer ticker.Stop()
 
-	// Create alert manager with default configuration
-	alertConfig := security.DefaultAlertManagerConfig()
-	alertManager := security.NewAlertManager(validator, alertConfig)
+		for {
+			select {
+			case <-stopCh:
+				log.Debug("Statistics printer stopped")
+				return
+			case <-ticker.C:
+				printStatistics(dp, pm, agentClient)
+			}
+		}
+	}()
 
-	// Add log alert handler (logs alerts to stdout/stderr)
-	logHandler := security.NewLogAlertHandler()
-	alertManager.AddHandler(logHandler)
+	return stopCh
+}
 
-	// Log initial configuration
-	log.Info("✓ Security alert manager initialized")
-	log.Debug("Alert rate limiting enabled: 10 alerts per minute")
+// printStatistics prints current data plane statistics and updates agent metrics.
+func printStatistics(dp *dataplane.DataPlane, pm *policy.PolicyManager, agentClient *client.AgentClient) {
+	stats := dp.GetStatistics()
 
-	return alertManager
+	log.Info("=== Statistics ===")
+	log.Infof("  Total Packets:    %d", stats.TotalPackets)
+	log.Infof("  Allowed Packets:  %d", stats.AllowedPackets)
+	log.Infof("  Denied Packets:   %d", stats.DeniedPackets)
+	log.Infof("  New Sessions:     %d", stats.NewSessions)
+	log.Infof("  Policy Hits:      %d", stats.PolicyHits)
+	log.Infof("  Policy Misses:    %d", stats.PolicyMisses)
+
+	// Ring buffer statistics
+	if stats.RingBufferFull > 0 {
+		dropRate := float64(0)
+		if stats.NewSessions > 0 {
+			dropRate = float64(stats.RingBufferFull) / float64(stats.NewSessions) * 100
+		}
+		log.Warnf("  Ring Buffer Drops: %d (%.2f%% drop rate)", stats.RingBufferFull, dropRate)
+	}
+
+	// Update agent metrics if in agent-server mode
+	if agentClient != nil {
+		flowCount := stats.NewSessions
+		policyCount := uint32(pm.GetPolicyCount())
+		agentClient.UpdateMetrics(flowCount, policyCount)
+	}
 }
 
 func main() {

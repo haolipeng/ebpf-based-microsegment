@@ -201,21 +201,21 @@ func (l *XDPLoader) GetMaps() (*DataPlaneMaps, error) {
 	}
 
 	return &DataPlaneMaps{
-		SessionMap:         l.objs.SessionMap,
-		PolicyMap:          l.objs.PolicyMap,
-		WildcardPolicyMap:  l.objs.WildcardPolicyMap,
-		ProtocolOffsetMap:  l.objs.ProtocolOffsetMap,
-		StatsMap:           l.objs.StatsMap,
-		FlowEventsRB:       l.objs.FlowEvents,
-		ProcessEventsRB:    l.objs.ProcessEvents,   // Issue #48
-		ProcessInfoMap:     l.objs.ProcessInfoMap,   // Issue #46
-		ConntrackCacheMap:  l.objs.ConntrackCacheMap,
-		NATConfigMap:       l.objs.NatConfigMap,
-		NATStatsMap:        l.objs.NatStatsMap,
-		TimeoutConfigMap:   l.objs.TimeoutConfigMap,
-		FragStateMap:       l.objs.FragStateMap,
-		FragConfigMap:      l.objs.FragConfigMap,
-		FragStatsMap:       l.objs.FragStatsMap,
+		SessionMap:        l.objs.SessionMap,
+		PolicyMap:         l.objs.PolicyMap,
+		WildcardPolicyMap: l.objs.WildcardPolicyMap,
+		ProtocolOffsetMap: l.objs.ProtocolOffsetMap,
+		StatsMap:          l.objs.StatsMap,
+		FlowEventsRB:      l.objs.FlowEvents,
+		ProcessEventsRB:   l.objs.ProcessEvents,
+		ProcessInfoMap:    l.objs.ProcessInfoMap,
+		ConntrackCacheMap: l.objs.ConntrackCacheMap,
+		NATConfigMap:      l.objs.NatConfigMap,
+		NATStatsMap:       l.objs.NatStatsMap,
+		TimeoutConfigMap:  l.objs.TimeoutConfigMap,
+		FragStateMap:      l.objs.FragStateMap,
+		FragConfigMap:     l.objs.FragConfigMap,
+		FragStatsMap:      l.objs.FragStatsMap,
 	}, nil
 }
 

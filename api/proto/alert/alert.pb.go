@@ -7,13 +7,14 @@
 package alert
 
 import (
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
+
 	common "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
 	flow "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
 )
 
 const (
@@ -142,7 +143,7 @@ func (AlertType) EnumDescriptor() ([]byte, []int) {
 }
 
 // SecurityAlert represents a security alert event
-// Generated when suspicious process activity is detected (Issue #50)
+// Generated when suspicious process activity is detected
 type SecurityAlert struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Unique alert ID (UUID)

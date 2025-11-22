@@ -58,9 +58,9 @@ const (
 // DataPlane 管理 eBPF 数据平面
 // 高级 API，封装了统计、监控等功能
 type DataPlane struct {
-	manager        *Manager                 // 数据平面管理器 (底层)
-	rbReader       *ringbuf.Reader          // Ring buffer reader
-	timeoutManager *session.TimeoutManager  // Session timeout manager (optional)
+	manager        *Manager                // 数据平面管理器 (底层)
+	rbReader       *ringbuf.Reader         // Ring buffer reader
+	timeoutManager *session.TimeoutManager // Session timeout manager (optional)
 }
 
 // Statistics 保存数据包处理统计信息
@@ -307,7 +307,7 @@ func (dp *DataPlane) GetFlowRingBuffer() *ringbuf.Reader {
 }
 
 // GetProcessRingBuffer returns process events ring buffer map
-// This allows external components (like ProcessMonitor) to create ring buffer reader (Issue #48)
+// This allows external components (like ProcessMonitor) to create ring buffer reader
 func (dp *DataPlane) GetProcessRingBuffer() *ebpf.Map {
 	maps, err := dp.manager.GetMaps()
 	if err != nil {
@@ -317,7 +317,7 @@ func (dp *DataPlane) GetProcessRingBuffer() *ebpf.Map {
 	return maps.ProcessEventsRB
 }
 
-// GetProcessInfoMap returns process info map for cache queries (Issue #46)
+// GetProcessInfoMap returns process info map for cache queries
 func (dp *DataPlane) GetProcessInfoMap() *ebpf.Map {
 	maps, err := dp.manager.GetMaps()
 	if err != nil {

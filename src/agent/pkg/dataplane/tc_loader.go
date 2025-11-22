@@ -14,15 +14,15 @@ import (
 
 // TCLoader 负责加载和管理 TC (Traffic Control) eBPF 程序
 type TCLoader struct {
-	mode         DataPlaneMode      // ModeTCX 或 ModeLegacyTC
-	iface        string             // 网卡名称
-	ifaceIdx     int                // 网卡索引
-	objs         *bpfObjects        // eBPF 对象
-	ingressLink  link.Link          // TCX ingress link (kernel >= 6.6)
-	egressLink   link.Link          // TCX egress link (kernel >= 6.6) - 新增
+	mode          DataPlaneMode      // ModeTCX 或 ModeLegacyTC
+	iface         string             // 网卡名称
+	ifaceIdx      int                // 网卡索引
+	objs          *bpfObjects        // eBPF 对象
+	ingressLink   link.Link          // TCX ingress link (kernel >= 6.6)
+	egressLink    link.Link          // TCX egress link (kernel >= 6.6) - 新增
 	ingressFilter *netlink.BpfFilter // Legacy TC ingress filter (kernel < 6.6)
 	egressFilter  *netlink.BpfFilter // Legacy TC egress filter (kernel < 6.6) - 新增
-	pinConfig    *MapPinConfig      // Map pinning 配置
+	pinConfig     *MapPinConfig      // Map pinning 配置
 }
 
 // NewTCLoader 创建一个新的 TC 加载器
@@ -115,7 +115,7 @@ func (l *TCLoader) attachTCXEgress() error {
 	egressLink, err := link.AttachTCX(link.TCXOptions{
 		Interface: l.ifaceIdx,
 		Program:   l.objs.TcMicrosegmentFilter, // 使用同一个程序
-		Attach:    ebpf.AttachTCXEgress,         // Egress 方向
+		Attach:    ebpf.AttachTCXEgress,        // Egress 方向
 	})
 	if err != nil {
 		return fmt.Errorf("attaching TCX egress: %w", err)
@@ -340,21 +340,21 @@ func (l *TCLoader) GetMaps() (*DataPlaneMaps, error) {
 	}
 
 	return &DataPlaneMaps{
-		SessionMap:         l.objs.SessionMap,
-		PolicyMap:          l.objs.PolicyMap,
-		WildcardPolicyMap:  l.objs.WildcardPolicyMap,
-		ProtocolOffsetMap:  l.objs.ProtocolOffsetMap,
-		StatsMap:           l.objs.StatsMap,
-		FlowEventsRB:       l.objs.FlowEvents,
-		ProcessEventsRB:    l.objs.ProcessEvents,   // Issue #48
-		ProcessInfoMap:     l.objs.ProcessInfoMap,   // Issue #46
-		ConntrackCacheMap:  l.objs.ConntrackCacheMap,
-		NATConfigMap:       l.objs.NatConfigMap,
-		NATStatsMap:        l.objs.NatStatsMap,
-		TimeoutConfigMap:   l.objs.TimeoutConfigMap,
-		FragStateMap:       l.objs.FragStateMap,
-		FragConfigMap:      l.objs.FragConfigMap,
-		FragStatsMap:       l.objs.FragStatsMap,
+		SessionMap:        l.objs.SessionMap,
+		PolicyMap:         l.objs.PolicyMap,
+		WildcardPolicyMap: l.objs.WildcardPolicyMap,
+		ProtocolOffsetMap: l.objs.ProtocolOffsetMap,
+		StatsMap:          l.objs.StatsMap,
+		FlowEventsRB:      l.objs.FlowEvents,
+		ProcessEventsRB:   l.objs.ProcessEvents,
+		ProcessInfoMap:    l.objs.ProcessInfoMap,
+		ConntrackCacheMap: l.objs.ConntrackCacheMap,
+		NATConfigMap:      l.objs.NatConfigMap,
+		NATStatsMap:       l.objs.NatStatsMap,
+		TimeoutConfigMap:  l.objs.TimeoutConfigMap,
+		FragStateMap:      l.objs.FragStateMap,
+		FragConfigMap:     l.objs.FragConfigMap,
+		FragStatsMap:      l.objs.FragStatsMap,
 	}, nil
 }
 

@@ -60,7 +60,7 @@
 
 #include "headers/common_types.h"
 #include "headers/tcp_state_machine.h"
-#include "headers/process_monitor.h"  // Issue #47: Process monitoring support
+#include "headers/process_monitor.h"  // Process monitoring support
 
 // Conditionally include headers based on feature flags
 #if ENABLE_IP_FRAGMENT_HANDLING
@@ -144,7 +144,7 @@ struct {
 	__uint(max_entries, 256 * 1024);  // 256KB ring buffer
 } flow_events SEC(".maps");
 
-// Issue #47: process_info_map is defined in process_monitor.h (included above)
+// process_info_map is defined in process_monitor.h (included above)
 // No need for extern declaration here - it's already available
 
 // Note: NAT maps (conntrack_cache_map, nat_config_map, nat_stats_map) are now
@@ -167,7 +167,7 @@ static __always_inline void update_stats(__u32 key) {
 // Include shared policy matching logic
 #include "headers/policy_match.h"
 
-// Include process-aware policy matching (Issue #47)
+// Include process-aware policy matching
 #include "headers/process_policy_match.h"
 
 // Include indexed policy matching (optional, controlled by USE_INDEXED_LOOKUP)
@@ -308,7 +308,7 @@ static __always_inline int extract_tcp_details_xdp(
 // Helper: Push flow event to user-space via Ring Buffer (XDP version)
 // 推送流事件到用户空间的 Ring Buffer (XDP 版本) - Enhanced with VLAN and TCP tracking
 // Returns 0 on success, -1 on failure
-// Issue #47: Added proc_info parameter for process-level policy support
+// Added proc_info parameter for process-level policy support
 static __always_inline int push_flow_event_xdp(
 	struct xdp_md *ctx,
 	struct flow_key *key,
@@ -322,7 +322,7 @@ static __always_inline int push_flow_event_xdp(
 	__u8 direction,
 	__u8 tcp_state,
 	__u8 conn_flags,
-	struct process_match_info *proc_info)  // Issue #47: Process information
+	struct process_match_info *proc_info)  //Process information
 {
 	// Reserve space in ring buffer (non-blocking)
 	// 在 Ring Buffer 中预留空间 (非阻塞)
@@ -386,7 +386,7 @@ static __always_inline int push_flow_event_xdp(
 	event->state = state;
 	event->reserved = 0;
 
-	// Issue #47: Fill process context fields
+	// Fill process context fields
 	if (proc_info) {
 		fill_flow_event_process_fields(event, proc_info);
 	} else {
@@ -618,7 +618,7 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 					POLICY_DIR_INGRESS,  // XDP only supports ingress
 					session->tcp_state,
 					session->flags,
-					NULL  // Issue #47: No proc_info in HOT PATH (performance)
+					NULL  // No proc_info in HOT PATH (performance)
 				);
 
 #if DEBUG_MODE
@@ -686,7 +686,7 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 		&nat_stats_map             // NAT statistics map
 	);
 
-	// Issue #47: Get current process information for process-level policy matching
+	// Get current process information for process-level policy matching
 	struct process_match_info proc_info = {0};
 	get_current_process_info(&proc_info);
 	lookup_process_cache(&proc_info, &process_info_map);
@@ -694,7 +694,7 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 	// 3. 查询策略 (使用共享的策略匹配逻辑)
 	// XDP 只能在 ingress 方向运行,所以方向固定为 INGRESS
 	// Use original addresses for policy matching (pre-NAT addresses)
-	// Issue #47: Use process-aware indexed policy matching (V3)
+	// Use process-aware indexed policy matching (V3)
 #if USE_INDEXED_LOOKUP
 	__u8 action = lookup_policy_action_indexed_v3(
 		&original_key, &proc_info, POLICY_DIR_INGRESS, &matched_rule_id);
@@ -754,7 +754,7 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 		update_stats(STATS_ACTIVE_SESSIONS);  // 增加活跃会话计数
 
 		// 推送流事件到 Ring Buffer
-		// Issue #47: Include process information for new connections
+		// Include process information for new connections
 		push_flow_event_xdp(
 			ctx,  // XDP context
 			&key,
@@ -768,7 +768,7 @@ int xdp_microsegment_prog(struct xdp_md *ctx) {
 			POLICY_DIR_INGRESS,  // XDP 仅支持 ingress
 			initial_tcp_state,
 			(key.vlan_id != 0) ? CONN_FLAG_VLAN : 0,
-			&proc_info  // Issue #47: Process information
+			&proc_info  // Process information
 		);
 
 #if ENABLE_IP_FRAGMENT_HANDLING
