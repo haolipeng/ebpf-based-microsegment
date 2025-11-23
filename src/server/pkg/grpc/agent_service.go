@@ -76,15 +76,27 @@ func (s *AgentServiceServer) Heartbeat(ctx context.Context, req *agentpb.Heartbe
 
 // ReportStatus handles detailed status reports from agents
 func (s *AgentServiceServer) ReportStatus(ctx context.Context, report *agentpb.StatusReport) (*agentpb.StatusResponse, error) {
-	logrus.Infof("Status report from agent %s: status=%s, uptime=%ds",
-		report.AgentId, report.Status, report.Uptime)
+	logrus.Infof("Status report from agent %s: status=%s, uptime=%ds, policy_count=%d, workload_count=%d",
+		report.AgentId, report.Status, report.Uptime, report.PolicyCount, report.WorkloadCount)
 
-	// MVP: Just acknowledge receipt
-	// TODO: Persist and analyze status reports
+	// Persist status report to database
+	if err := s.agentStorage.UpdateStatusReport(ctx, report); err != nil {
+		logrus.Errorf("Failed to persist status report from agent %s: %v", report.AgentId, err)
+		return &agentpb.StatusResponse{
+			Success:  false,
+			Message:  fmt.Sprintf("Failed to persist status report: %v", err),
+			Commands: []*agentpb.AgentCommand{},
+		}, nil
+	}
+
+	// Log errors if present
+	if len(report.Errors) > 0 {
+		logrus.Warnf("Agent %s reported %d errors: %v", report.AgentId, len(report.Errors), report.Errors)
+	}
 
 	return &agentpb.StatusResponse{
 		Success:  true,
-		Message:  "Status report received",
+		Message:  "Status report received and persisted",
 		Commands: []*agentpb.AgentCommand{},
 	}, nil
 }
@@ -93,11 +105,24 @@ func (s *AgentServiceServer) ReportStatus(ctx context.Context, report *agentpb.S
 func (s *AgentServiceServer) UnregisterAgent(ctx context.Context, req *agentpb.UnregisterRequest) (*agentpb.UnregisterResponse, error) {
 	logrus.Infof("Agent unregistration: %s (reason: %s)", req.AgentId, req.Reason)
 
-	// MVP: Just acknowledge, agent remains in database with last heartbeat
-	// TODO: Mark agent as inactive/offline
+	// Mark agent as offline with reason
+	reason := req.Reason
+	if reason == "" {
+		reason = "graceful shutdown"
+	}
+
+	if err := s.agentStorage.MarkAgentOffline(ctx, req.AgentId, reason); err != nil {
+		logrus.Errorf("Failed to mark agent %s as offline: %v", req.AgentId, err)
+		return &agentpb.UnregisterResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to unregister agent: %v", err),
+		}, nil
+	}
+
+	logrus.Infof("Agent %s marked as offline (reason: %s)", req.AgentId, reason)
 
 	return &agentpb.UnregisterResponse{
 		Success: true,
-		Message: "Agent unregistered",
+		Message: "Agent unregistered and marked as offline",
 	}, nil
 }
