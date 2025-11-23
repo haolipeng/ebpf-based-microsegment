@@ -1,0 +1,185 @@
+# eBPF 微隔离系统文档配置
+site_name: eBPF 微隔离系统
+site_description: 基于 eBPF 的容器网络微隔离解决方案
+site_author: Your Organization
+site_url: https://your-org.github.io/ebpf-based-microsegment/
+
+# 仓库信息
+repo_name: ebpf-based-microsegment
+repo_url: https://github.com/your-org/ebpf-based-microsegment
+edit_uri: edit/main/docs/
+
+# 主题配置
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: 切换到深色模式
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: 切换到浅色模式
+  font:
+    text: Roboto
+    code: Roboto Mono
+  icon:
+    repo: fontawesome/brands/github
+
+# 插件
+plugins:
+  - search:
+      lang:
+        - zh
+        - en
+  - minify:
+      minify_html: true
+
+# Markdown 扩展
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# 导航结构
+nav:
+  - 首页: index.md
+
+  - 入门指南:
+    - getting-started/index.md
+    - 概述: getting-started/overview.md
+    - 快速开始: getting-started/quickstart.md
+    - 核心概念: getting-started/concepts.md
+
+  - 教程:
+    - tutorials/index.md
+    - 基础教程:
+      - 创建第一个策略: tutorials/basic/first-policy.md
+      - 流量监控入门: tutorials/basic/flow-monitoring.md
+      - 会话追踪: tutorials/basic/session-tracking.md
+      - 统计与指标: tutorials/basic/statistics.md
+    - 高级教程:
+      - Kubernetes 集成: tutorials/advanced/kubernetes-integration.md
+      - 自定义策略规则: tutorials/advanced/custom-policies.md
+      - 基于标签的策略: tutorials/advanced/label-based-policies.md
+      - 性能调优: tutorials/advanced/performance-tuning.md
+      - 故障排查: tutorials/advanced/troubleshooting.md
+
+  - 参考文档:
+    - docs/index.md
+    - 安装指南:
+      - docs/install/index.md
+      - 系统要求: docs/install/requirements.md
+      - Docker 安装: docs/install/docker.md
+      - Kubernetes 安装: docs/install/kubernetes.md
+      - 二进制安装: docs/install/binary.md
+      - 源码编译: docs/install/build-from-source.md
+    - 架构设计:
+      - docs/architecture/index.md
+      - 架构概述: docs/architecture/overview.md
+      - 数据流: docs/architecture/data-flow.md
+      - 数据平面: docs/architecture/data-plane.md
+      - 控制平面: docs/architecture/control-plane.md
+      - eBPF Maps: docs/architecture/ebpf-maps.md
+    - 事件系统:
+      - docs/events/index.md
+      - 事件概述: docs/events/overview.md
+      - 流事件: docs/events/flow-events.md
+      - 会话事件: docs/events/session-events.md
+      - 策略事件: docs/events/policy-events.md
+    - 策略系统:
+      - docs/policies/index.md
+      - 策略概述: docs/policies/overview.md
+      - 策略语法: docs/policies/syntax.md
+      - 精确匹配策略: docs/policies/exact-match.md
+      - 通配符策略: docs/policies/wildcard.md
+      - 基于标签的策略: docs/policies/label-based.md
+    - CLI 参数:
+      - docs/cli-flags/index.md
+      - Agent 参数: docs/cli-flags/agent.md
+      - Server 参数: docs/cli-flags/server.md
+    - 数据源:
+      - docs/data-sources/index.md
+      - 概述: docs/data-sources/overview.md
+      - 会话数据: docs/data-sources/sessions.md
+      - 流数据: docs/data-sources/flows.md
+      - 统计数据: docs/data-sources/statistics.md
+    - 集成:
+      - docs/integrations/index.md
+      - Prometheus: docs/integrations/prometheus.md
+      - Grafana: docs/integrations/grafana.md
+      - 日志系统: docs/integrations/logging.md
+
+  - 贡献指南:
+    - contributing/index.md
+    - 开发环境搭建: contributing/development-setup.md
+    - 代码规范: contributing/code-style.md
+    - 提交指南: contributing/pull-requests.md
+    - 测试指南: contributing/testing.md
+    - 发布流程: contributing/release.md
+
+# 额外配置
+extra:
+  version:
+    provider: mike
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/your-org/ebpf-based-microsegment
+  analytics:
+    provider: google
+    property: G-XXXXXXXXXX
+
+# 版权
+copyright: Copyright &copy; 2024 Your Organization
