@@ -428,9 +428,9 @@ func TestQueryFlows_StorageError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to query flows")
 }
 
-// TestGetFlowSummary_ReturnsBasicStats tests the MVP implementation
+// TestGetFlowSummary_ReturnsBasicStats tests flow summary aggregation
 func TestGetFlowSummary_ReturnsBasicStats(t *testing.T) {
-	db, _, err := sqlmock.New()
+	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -444,13 +444,27 @@ func TestGetFlowSummary_ReturnsBasicStats(t *testing.T) {
 		},
 	}
 
-	// Note: Current MVP implementation returns zeros, not calling storage
+	// Mock the main aggregation query
+	summaryRows := sqlmock.NewRows([]string{
+		"total_flows", "active_flows", "closed_flows", "total_packets", "total_bytes",
+		"allowed_flows", "denied_flows", "unique_source_ips", "unique_dest_ips", "avg_duration_ms",
+	}).AddRow(100, 30, 70, 5000, 1024000, 90, 10, 15, 20, 150.5)
+
+	mock.ExpectQuery("SELECT").WillReturnRows(summaryRows)
+
+	// Mock the protocol stats query
+	protoRows := sqlmock.NewRows([]string{"protocol", "count", "bytes"}).
+		AddRow("TCP", 80, 800000).
+		AddRow("UDP", 20, 224000)
+
+	mock.ExpectQuery("SELECT").WillReturnRows(protoRows)
+
 	resp, err := server.GetFlowSummary(context.Background(), req)
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
-	assert.Equal(t, uint64(0), resp.TotalFlows)
-	assert.Equal(t, uint64(0), resp.TotalPackets)
-	assert.Equal(t, uint64(0), resp.TotalBytes)
+	assert.Equal(t, uint64(100), resp.TotalFlows)
+	assert.Equal(t, uint64(5000), resp.TotalPackets)
+	assert.Equal(t, uint64(1024000), resp.TotalBytes)
 }
 
 // TestIntToIP tests IP conversion utility

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
 	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
@@ -110,12 +111,28 @@ func (s *FlowServiceServer) QueryFlows(ctx context.Context, query *flowpb.FlowQu
 
 // GetFlowSummary returns aggregated flow statistics
 func (s *FlowServiceServer) GetFlowSummary(ctx context.Context, req *flowpb.FlowSummaryRequest) (*flowpb.FlowSummary, error) {
-	// MVP: Return basic statistics
-	// TODO: Implement proper aggregation
+	// Parse time range from request
+	var startTime, endTime time.Time
+	if req.TimeRange != nil {
+		startTime = time.Unix(0, req.TimeRange.StartTime)
+		endTime = time.Unix(0, req.TimeRange.EndTime)
+	} else {
+		// Default: last 24 hours
+		endTime = time.Now()
+		startTime = endTime.Add(-24 * time.Hour)
+	}
+
+	// Query aggregated statistics from storage
+	summary, err := s.flowStorage.GetFlowSummary(ctx, startTime, endTime)
+	if err != nil {
+		logrus.Errorf("Failed to get flow summary: %v", err)
+		return nil, fmt.Errorf("failed to get flow summary: %w", err)
+	}
+
 	return &flowpb.FlowSummary{
-		TotalFlows:   0,
-		TotalPackets: 0,
-		TotalBytes:   0,
+		TotalFlows:   uint64(summary.TotalFlows),
+		TotalPackets: uint64(summary.TotalPackets),
+		TotalBytes:   uint64(summary.TotalBytes),
 	}, nil
 }
 
