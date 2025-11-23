@@ -339,3 +339,47 @@ func (s *PolicyStorage) GetCurrentVersion(ctx context.Context) (uint64, error) {
 	}
 	return version, nil
 }
+
+// SavePolicyStats saves policy enforcement statistics from an agent
+func (s *PolicyStorage) SavePolicyStats(ctx context.Context, agentID string, stats []*policypb.PolicyStats) error {
+	if len(stats) == 0 {
+		return nil
+	}
+
+	// Use a transaction for batch insert
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO policy_stats (agent_id, rule_id, packet_count, byte_count, flow_count, hit_count, last_match_time, report_time)
+		VALUES ($1, $2, $3, $4, $5, $6, to_timestamp($7/1000000000.0), CURRENT_TIMESTAMP)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, stat := range stats {
+		_, err := stmt.ExecContext(ctx,
+			agentID,
+			stat.RuleId,
+			stat.PacketCount,
+			stat.ByteCount,
+			stat.FlowCount,
+			stat.HitCount,
+			stat.LastMatchTime,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to insert policy stat: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}

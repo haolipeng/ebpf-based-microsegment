@@ -116,12 +116,21 @@ func (s *PolicyServiceServer) SubscribePolicies(req *policypb.SubscribeRequest, 
 func (s *PolicyServiceServer) ReportPolicyStats(ctx context.Context, report *policypb.PolicyStatsReport) (*commonpb.ReportResponse, error) {
 	logrus.Debugf("Received policy stats from agent %s: %d rules", report.AgentId, len(report.PolicyStats))
 
-	// MVP: Just acknowledge receipt
-	// TODO: Persist policy statistics for analysis
+	// Persist policy statistics to database
+	if err := s.policyStorage.SavePolicyStats(ctx, report.AgentId, report.PolicyStats); err != nil {
+		logrus.Errorf("Failed to save policy stats from agent %s: %v", report.AgentId, err)
+		return &commonpb.ReportResponse{
+			Success:       false,
+			Message:       fmt.Sprintf("Failed to save policy stats: %v", err),
+			AcceptedCount: 0,
+		}, nil
+	}
+
+	logrus.Infof("Saved %d policy stats from agent %s", len(report.PolicyStats), report.AgentId)
 
 	return &commonpb.ReportResponse{
 		Success:       true,
-		Message:       "Policy stats received",
+		Message:       "Policy stats received and persisted",
 		AcceptedCount: uint32(len(report.PolicyStats)),
 	}, nil
 }

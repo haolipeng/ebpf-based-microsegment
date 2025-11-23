@@ -277,7 +277,7 @@ func TestSubscribePolicies_StorageError(t *testing.T) {
 
 // TestReportPolicyStats_Success tests successful policy stats reporting
 func TestReportPolicyStats_Success(t *testing.T) {
-	db, _, err := sqlmock.New()
+	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -308,12 +308,18 @@ func TestReportPolicyStats_Success(t *testing.T) {
 		},
 	}
 
-	// Note: MVP implementation just acknowledges receipt
+	// Mock transaction and insert statements
+	mock.ExpectBegin()
+	mock.ExpectPrepare("INSERT INTO policy_stats")
+	mock.ExpectExec("INSERT INTO policy_stats").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO policy_stats").WillReturnResult(sqlmock.NewResult(2, 1))
+	mock.ExpectCommit()
+
 	resp, err := server.ReportPolicyStats(context.Background(), report)
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.True(t, resp.Success)
-	assert.Equal(t, "Policy stats received", resp.Message)
+	assert.Equal(t, "Policy stats received and persisted", resp.Message)
 	assert.Equal(t, uint32(2), resp.AcceptedCount)
 }
 

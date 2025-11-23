@@ -1,376 +1,295 @@
-# eBPF-based Microsegmentation
+# eBPF Microsegmentation
 
-[![License](https://img.shields.io/badge/License-GPL%202.0%20%7C%20BSD--3-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://go.dev/)
-[![eBPF](https://img.shields.io/badge/eBPF-Powered-orange)](https://ebpf.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://golang.org/)
+[![Linux Kernel](https://img.shields.io/badge/Linux-6.x+-FCC624?logo=linux&logoColor=black)](https://kernel.org/)
+[![eBPF](https://img.shields.io/badge/eBPF-TC%20Hook-orange)](https://ebpf.io/)
 
-🔒 A high-performance, eBPF-powered microsegmentation solution for cloud-native workloads, inspired by **Illumio** and **蔷薇灵动**.
+**[English](README.md) | [中文](README_CN.md)**
 
-## 🌟 Features
+A high-performance, kernel-native microsegmentation solution using eBPF for fine-grained network traffic control in cloud-native environments.
 
-- **🚀 High Performance**: Kernel-level packet filtering with <10μs latency overhead
-- **🎯 Session Tracking**: Intelligent connection tracking using LRU hash maps
-- **📊 Real-time Visibility**: Live flow events and traffic statistics
-- **📈 Flow Collection API**: Network flow data collection, storage, and analysis (Phase 1-3 ✅)
-  - 7 REST API endpoints for flow queries
-  - SQLite persistence with optimized indexes
-  - Application dependency mapping
-  - Top Talkers analysis
-- **🏷️ Label-based Policies**: Cloud-native policy management (in progress)
-- **👤 Process-Level Policies**: Application-aware microsegmentation
-  - Process name-based policy matching in TC/XDP programs (Issue #47 ✅)
-  - Integration with eBPF tracepoint process monitoring (Issue #46 ✅)
-  - Flow events enriched with process context (PID, comm, container ID, path) (Issue #49 ✅)
-  - ProcessMonitor daemon for process info enrichment (Issue #48 ✅)
-  - Security monitoring and suspicious process detection (Issue #50 ✅)
-- **🔴 Real-time Flow Streaming**: WebSocket push for live flow events (Phase 4, coming soon)
-- **🤖 Auto Policy Generation**: ML-powered policy recommendations (planned)
-- **🛡️ Zero Trust Ready**: Built for zero trust network architecture
+## Overview
 
-## 🏗️ Architecture
+eBPF Microsegmentation provides network isolation and access control at the kernel level, delivering sub-microsecond latency for packet processing. The system consists of:
+
+- **Data Plane**: eBPF programs attached to TC (Traffic Control) hooks for line-rate packet filtering
+- **Control Plane**: Go-based agent and server components for policy management and monitoring
+- **Web UI**: React-based dashboard for visualization and management
+
+## Features
+
+- **High Performance**: Hot path latency < 1μs, cold path < 20μs
+- **Session Tracking**: LRU-based connection tracking with 100K concurrent sessions
+- **Multi-tier Policy Matching**: Exact match + Wildcard (CIDR/port ranges) + Default policy
+- **Per-CPU Statistics**: Lock-free counters with zero CPU contention
+- **Real-time Events**: Ring buffer for flow events (new connections, denials)
+- **RESTful API**: Full CRUD operations for policy management
+- **gRPC Communication**: Agent-Server communication with Protocol Buffers
+- **TCP State Machine**: Connection state tracking for stateful filtering
+
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Web Console (前端)                    │
-│        React + D3.js (流量拓扑可视化)                   │
-└────────────────────┬────────────────────────────────────┘
-                     │ REST API
-┌────────────────────▼────────────────────────────────────┐
-│              Control Plane (控制平面)                    │
-│    Go: 策略管理 + 标签管理 + 流量分析                   │
-└────────────────────┬────────────────────────────────────┘
-                     │ gRPC/JSON
-┌────────────────────▼────────────────────────────────────┐
-│               Data Plane (数据平面)                      │
-│    eBPF + TC: 策略执行引擎                               │
-│    - 5-tuple Flow Matching                              │
-│    - Session Tracking (LRU_HASH)                        │
-│    - Policy Enforcement (ALLOW/DENY/LOG)                │
-│    - Ring Buffer Events                                  │
-└─────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│                     User / External Systems                     │
+│                  (Web UI / API / Orchestrators)                 │
+└─────────────────────────────┬──────────────────────────────────┘
+                              │ HTTP/gRPC
+┌─────────────────────────────▼──────────────────────────────────┐
+│                    Control Plane (User Space)                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐ │
+│  │    Server    │  │    Agent     │  │   Policy Manager      │ │
+│  │  (gRPC API)  │◄─┤  (eBPF Mgr)  │──┤   + DataPlane Mgr     │ │
+│  └──────────────┘  └──────────────┘  └───────────────────────┘ │
+└─────────────────────────────┬──────────────────────────────────┘
+                              │ Cilium eBPF Library
+┌─────────────────────────────▼──────────────────────────────────┐
+│                     Data Plane (Kernel Space)                   │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  TC eBPF Program                                         │  │
+│  │  • Packet parsing (5-tuple)  • Session tracking (LRU)    │  │
+│  │  • Policy matching (Hash)    • Statistics (Per-CPU)      │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  eBPF Maps: session_map | policy_map | stats_map | ...   │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
-- Linux Kernel ≥ 5.10 (with BTF support)
-- Go ≥ 1.21
-- Clang ≥ 11
-- libbpf development files
+- Linux kernel 6.x+ (with eBPF support)
+- Go 1.21+
+- Clang/LLVM (for eBPF compilation)
+- PostgreSQL 14+ (for server)
+- Node.js 18+ (for web UI)
 
 ### Installation
 
 ```bash
-# Install dependencies (Ubuntu/Debian)
-sudo apt-get update
-sudo apt-get install -y clang llvm libbpf-dev linux-headers-$(uname -r) build-essential
-
-# Clone repository
-git clone https://github.com/yourusername/ebpf-based-microsegment.git
+# Clone the repository
+git clone https://github.com/your-org/ebpf-based-microsegment.git
 cd ebpf-based-microsegment
 
-# Download Go dependencies
+# Install dependencies
 make deps
 
-# Generate eBPF bindings and build
-make bpf
-make agent
+# Build all components
+make all
+
+# Or build specific components
+make agent    # Build agent only
+make server   # Build server only
 ```
 
-### Running the Agent
+### Running
+
+**Start the Server:**
+```bash
+# Initialize database
+./src/server/scripts/migrate.sh
+
+# Start server
+./bin/microsegment-server --config config/server.yaml
+```
+
+**Start the Agent:**
+```bash
+# Requires root privileges for eBPF
+sudo ./bin/microsegment-agent --interface eth0 --server localhost:50051
+```
+
+**Start Web UI:**
+```bash
+cd web
+npm install
+npm run dev
+```
+
+### Quick Demo
 
 ```bash
-# Run on loopback interface (for testing)
-sudo ./bin/microsegment-agent --interface lo --log-level info
+# Start all components (server + agent + web)
+./start-all.sh
 
-# Run on production interface
-sudo ./bin/microsegment-agent --interface eth0 --log-level warn --stats-interval 10
+# Access Web UI at http://localhost:5173
+# API available at http://localhost:8080
 ```
 
-### CLI Options
+## Configuration
 
+### Agent Configuration
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--interface` | Network interface to attach eBPF | `eth0` |
+| `--server` | Server gRPC address | `localhost:50051` |
+| `--api-addr` | Local API listen address | `127.0.0.1:8080` |
+| `--log-level` | Log level (debug/info/warn/error) | `info` |
+
+### Server Configuration
+
+Configuration via `config/server.yaml`:
+
+```yaml
+server:
+  grpc_port: 50051
+  http_port: 8081
+
+database:
+  host: localhost
+  port: 5432
+  user: microsegment_user
+  password: secret
+  name: microsegment
 ```
-Flags:
-  -i, --interface string       Network interface to attach eBPF program (default "lo")
-  -l, --log-level string       Log level (debug, info, warn, error) (default "info")
-  -s, --stats-interval int     Statistics print interval in seconds (default 5)
-  -h, --help                   help for microsegment-agent
-```
 
-## 📖 Documentation
+## API Reference
 
-### Core Documentation
-- [Project Structure](PROJECT_STRUCTURE.md) - Detailed directory layout and module descriptions
-- [Implementation Plan](docs/microsegmentation-mvp-implementation-plan.md) - MVP roadmap and milestones
-- [Architecture Design](design-docs/architecture/design.md) - Technical architecture details
-- [Weekly Guide](docs/weekly-guide/) - 6-week learning and implementation guide
+### Policy Management
 
-### eBPF Data Plane Development (NEW! 🔥)
-- **[Quick Start Guide](docs/EBPF_QUICK_START_GUIDE.md)** - Priority roadmap and implementation guide
-- **[Full Roadmap](docs/EBPF_MICROSEGMENTATION_ROADMAP.md)** - Complete feature development plan (15-20 days)
-- **Current Status**: ~60-65% complete | **Next Priority**: NAT Support (P0)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/policies` | Create policy |
+| GET | `/api/v1/policies` | List all policies |
+| GET | `/api/v1/policies/:id` | Get policy by ID |
+| PUT | `/api/v1/policies/:id` | Update policy |
+| DELETE | `/api/v1/policies/:id` | Delete policy |
 
-### Flow Collection API (Phase 1-3 ✅)
-- [Quick Start Guide](docs/flow-quick-start.md) - Get started with Flow Collection API in 10 minutes
-- [Implementation Summary](docs/flow-collection-implementation-summary.md) - Complete technical documentation (32,000 words)
-- [Progress Report](docs/flow-implementation-progress.md) - Current status and roadmap
-- [OpenSpec Design](openspec/changes/add-flow-collection-api/design.md) - Detailed architecture design
+### Statistics
 
-## 🚀 Deployment
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/stats` | Get all statistics |
+| GET | `/api/v1/stats/packets` | Get packet statistics |
+| GET | `/api/v1/stats/policies` | Get policy hit statistics |
 
-### Systemd Deployment (Linux Services)
+### Health Check
 
-Deploy on traditional Linux environments using Systemd services:
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/health` | Simple health check |
+| GET | `/api/v1/status` | Detailed system status |
+
+### Example: Create Policy
 
 ```bash
-# Quick installation
+curl -X POST http://localhost:8080/api/v1/policies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rule_id": 1001,
+    "src_ip": "10.0.0.0/24",
+    "dst_ip": "192.168.1.100",
+    "dst_port": 443,
+    "protocol": "tcp",
+    "action": "allow"
+  }'
+```
+
+## Build Options
+
+```bash
+# Production build (optimized, all features)
+make build-production
+
+# Debug build (with debug logging)
+make build-debug
+
+# Minimal build (no NAT/fragment handling)
+make build-minimal
+
+# Show current configuration
+make show-config
+```
+
+### eBPF Feature Flags
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `DEBUG_MODE` | Enable eBPF debug logging | 0 |
+| `ENABLE_IP_FRAGMENT_HANDLING` | Handle IP fragments | 1 |
+| `ENABLE_NAT_SUPPORT` | NAT detection support | 1 |
+
+## Performance
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Hot path latency | < 1μs | 99%+ packets (existing sessions) |
+| Cold path latency | 5-20μs | New sessions with policy lookup |
+| Exact policy match | ~0.1μs | O(1) hash lookup |
+| Wildcard policy match | 2-20μs | Index scan with CIDR matching |
+| Max concurrent sessions | 100K | LRU auto-eviction |
+| Max policies | 10K exact + 1K wildcard | Configurable |
+
+## Project Structure
+
+```
+.
+├── src/
+│   ├── agent/          # Agent component (eBPF management)
+│   │   ├── cmd/        # Entry point
+│   │   └── pkg/        # Packages (api, dataplane, policy)
+│   ├── bpf/            # eBPF C programs
+│   └── server/         # Server component (policy server)
+├── api/
+│   └── proto/          # Protocol Buffer definitions
+├── web/                # React Web UI
+├── config/             # Configuration files
+├── deploy/             # Deployment scripts (systemd, docker)
+├── docs/               # Documentation
+└── tests/              # Integration tests
+```
+
+## Testing
+
+```bash
+# Run unit tests
+make test
+
+# Run integration tests (requires root)
+sudo make test-integration
+
+# Run specific test
+cd src/agent && go test -v ./pkg/dataplane/...
+```
+
+## Deployment
+
+### Systemd
+
+```bash
+# Install systemd services
 sudo ./deploy/scripts/install-systemd.sh
 
-# Check service status
-systemctl status microsegment-server microsegment-agent
-
-# View logs
-journalctl -u microsegment-server -f
+# Start services
+sudo systemctl start microsegment-server
+sudo systemctl start microsegment-agent
 ```
 
-📚 [Full Systemd Deployment Guide](deploy/systemd/README.md)
-
-### Coming Soon
-- **Docker Deployment**: Container-based deployment with Docker Compose
-- **Kubernetes Deployment**: Production-grade orchestration for K8s clusters
-
-## 🛠️ Development
-
-### Project Structure
-
-```
-ebpf-based-microsegment/
-├── src/
-│   ├── bpf/                    # eBPF kernel programs (C)
-│   │   ├── headers/           # Shared header files
-│   │   └── tc_microsegment.bpf.c
-│   └── agent/                 # User-space agent (Go)
-│       ├── cmd/               # CLI entrypoint
-│       └── pkg/               # Packages
-│           ├── dataplane/     # eBPF program management
-│           ├── policy/        # Policy CRUD operations
-│           └── stats/         # Statistics collection
-├── docs/                      # Documentation
-├── tests/                     # Test suites
-└── scripts/                   # Build and deployment scripts
-```
-
-### Build Commands
+### Docker
 
 ```bash
-make help              # Show all available targets
-make bpf               # Generate eBPF Go bindings
-make agent             # Build the agent binary
-make test              # Run unit tests
-make test-integration  # Run integration tests
-make clean             # Clean build artifacts
-make fmt               # Format Go code
-make lint              # Run linters
-make install           # Install to /usr/local/bin
+# Build and run with docker-compose
+docker-compose up -d
 ```
 
-### Testing Traffic
-
-```bash
-# Terminal 1: Start agent
-sudo ./bin/microsegment-agent --interface lo --log-level debug
-
-# Terminal 2: Generate traffic
-ping 127.0.0.1
-curl http://127.0.0.1:8080
-
-# Terminal 3: Monitor eBPF logs
-sudo cat /sys/kernel/debug/tracing/trace_pipe
-```
-
-## 🎯 Roadmap
-
-### ✅ Phase 1: Data Plane (Weeks 1-2)
-- [x] eBPF session tracking (LRU_HASH)
-- [x] 5-tuple policy matching
-- [x] Policy enforcement (ALLOW/DENY/LOG)
-- [x] Flow events and statistics
-- [ ] Performance optimization (<10μs)
-
-### 🚧 Phase 2: Control Plane (Week 3)
-- [ ] RESTful API service
-- [ ] Policy management (CRUD)
-- [ ] gRPC communication with data plane
-- [ ] PostgreSQL persistence
-
-### 📅 Phase 3: Label System (Week 4)
-- [ ] Workload auto-discovery (containers/processes)
-- [ ] Auto-tagging engine (Role/App/Env/Location)
-- [ ] Label-driven policy matching
-- [ ] Flow data collection
-
-### 📅 Phase 4: Visualization (Week 5)
-- [ ] Application dependency mapping
-- [ ] React + D3.js web UI
-- [ ] Interactive topology graph
-- [ ] Real-time flow analytics
-
-### 📅 Phase 5: Intelligence (Week 6)
-- [ ] Learning mode (traffic pattern observation)
-- [ ] Auto policy generation
-- [ ] Anomaly detection
-- [ ] Policy recommendations
-
-### 📅 Phase 6: Production Ready (Weeks 7-8)
-- [ ] Comprehensive testing
-- [ ] Performance benchmarks
-- [ ] Documentation
-- [ ] Docker/K8s deployment
-
-## 🔬 Technical Stack
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| Data Plane | eBPF + TC | Kernel-level packet filtering |
-| User Space | Go + Cilium eBPF | eBPF program management |
-| Control Plane | Go + gRPC | Policy and label management |
-| Database | PostgreSQL | Policy persistence |
-| Time Series | InfluxDB | Flow data storage |
-| Frontend | React + D3.js | Visualization dashboard |
-| Container | Docker + K8s | Deployment platform |
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📝 License
+## License
 
-This project is licensed under GPL 2.0 OR BSD-3-Clause - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- Inspired by [Illumio](https://www.illumio.com/) and 蔷薇灵动
-- Built with [Cilium eBPF](https://github.com/cilium/ebpf)
-- Architecture influenced by [NeuVector](https://github.com/neuvector/neuvector) and [ZFW](https://github.com/netfoundry/zfw)
-
-## 📧 Contact
-
-- Project Link: [https://github.com/yourusername/ebpf-based-microsegment](https://github.com/yourusername/ebpf-based-microsegment)
-- Documentation: [https://ebpf-microsegment.readthedocs.io](https://ebpf-microsegment.readthedocs.io)
-
----
-
-Made with ❤️ and eBPF
-
-## Process Monitoring (New Feature)
-
-### Overview
-
-The system now includes eBPF tracepoint-based process monitoring that captures process execution events in real-time. This feature solves the short-lived process problem and provides process context for network traffic analysis.
-
-### Key Features
-
-- **Real-time Process Capture**: Hooks into `sched_process_exec` tracepoint
-- **Low Overhead**: ~1-2μs per exec event, negligible CPU impact
-- **Container-Aware**: Extracts container ID for Docker/Kubernetes workloads
-- **Dual-Layer Cache**: Kernel-side LRU map + userspace cache
-- **Short-Lived Process Support**: Captures curl, wget, scripts before they exit
-
-### Architecture
-
-```
-Process Exec → Tracepoint → eBPF Handler
-                               ├─→ Cache to Map (TC/XDP fast lookup)
-                               └─→ Ring Buffer (Userspace processing)
-```
-
-### Usage
-
-**Build**:
-```bash
-make bpf
-```
-
-**Test**:
-```bash
-sudo ./tests/test_process_monitor.sh
-```
-
-**Documentation**:
-- [Process Monitoring Guide](docs/process-monitoring.md)
-- Source: `src/bpf/process_monitor.bpf.c`
-- Headers: `src/bpf/headers/process_monitor.h`
-
-### Technical Details
-
-- **Maps**:
-  - `process_info_map`: LRU Hash (10000 entries, ~820KB)
-  - `process_events`: Ring Buffer (256KB, ~2700 events)
-
-- **Data Captured**:
-  - Process ID (PID)
-  - Command name (comm, 16 bytes)
-  - Execution timestamp
-  - Container ID (extracted in userspace)
-
-- **Performance**:
-  - Memory: ~1.1MB kernel + cache in userspace
-  - CPU: < 0.1% at 100 execs/sec
-  - Latency: 1-2μs per event
-
-### Integration
-
-- **Issue #47**: TC/XDP programs query `process_info_map` for process context ✅ **COMPLETED**
-  - Wildcard policies now support `process_name` field
-  - Process-aware policy matching with priority (process policies > network policies)
-  - Flow events enriched with process information (PID, comm, container ID)
-- **Issue #48**: ProcessMonitor daemon consumes ring buffer events ✅ **COMPLETED**
-  - LRU+TTL cache (20000 entries, 5min TTL)
-  - Process path resolution via /proc/<pid>/exe
-  - GetProcessInfo(pid) API for FlowCollector
-  - Background cleanup of expired cache entries
-- **Issue #49**: FlowCollector and PolicyManager extensions ✅ **COMPLETED**
-  - FlowEvent parsing of process fields (PID, process_name, container_id, exec_time)
-  - Flow structure enriched with process context
-  - ProcessMonitor integration for full process path enrichment
-  - Process info available in flow events for analysis and policy decisions
-- **Issue #50**: Security hardening implementation ✅ **COMPLETED**
-  - Process path legitimacy validation (system vs suspicious directories)
-  - Suspicious process detection (deleted executables, hidden files, privilege escalation)
-  - Structured security alert generation with severity levels (INFO, WARNING, CRITICAL)
-  - Alert rate limiting to prevent flooding (10 alerts per minute)
-  - Real-time security monitoring integrated with FlowCollector
-  - LogAlertHandler for immediate security alert logging
-- **Issue #51**: gRPC API and data model extensions ✅ **COMPLETED**
-  - FlowEvent proto extended with ProcessInfo message (10 fields: PID, PPID, UID, GID, comm, exe_path, etc.)
-  - Policy proto extended with process matching fields (process_name, process_path, match_mode)
-  - SecurityAlert proto definition with AlertService (ReportAlerts, QueryAlerts, GetAlertSummary)
-  - Database schema migrations for process policies, flow process info, and security alerts
-  - Backward compatibility maintained (all new fields are optional)
-  - Generated Go code compiles successfully
-- **Issue #52**: Process Policy and Security Alert APIs ✅ **COMPLETED**
-  - Process Policy CRUD API with process matching fields (process_name, process_path, match_mode)
-  - Security Alert Query API with pagination and multi-dimensional filtering
-  - Alert Statistics API with aggregation by level, type, top processes, and timeline
-  - HTTP endpoints: POST/GET/PUT/DELETE /api/v1/policies (extended), GET /api/v1/alerts, GET /api/v1/alerts/:id, GET /api/v1/alerts/stats
-  - Database storage layer: AlertStorage with QueryAlerts, GetAlertByID, CreateAlert, GetAlertStats
-  - Type-safe IP address conversion (uint32 ↔ string) and proper NULL handling
-  - Request validation, error handling, and comprehensive logging
-- **Issue #53**: Dashboard Process Visibility ✅ **COMPLETED**
-  - Flow table extended with Process and Container columns
-  - Process filtering by name, path, and container ID
-  - Process statistics visualization with Recharts (Top processes by bandwidth, Connection distribution)
-  - ProcessStats component with sortable tables and interactive charts
-  - useProcessFilter hook for client-side filtering and aggregation
-  - Expandable row details showing full process information (executable path, cmdline, UID/GID, PPID)
-  - Security indicators for suspicious processes (⚠️ red tags)
-  - Graceful handling of missing process data (kernel processes)
-- **Future**: Security Alert Panel (Issue #54), Integration Testing (Issue #55), gRPC Alert Service
-
+- [Cilium eBPF Library](https://github.com/cilium/ebpf) - Go library for eBPF
+- [libbpf](https://github.com/libbpf/libbpf) - eBPF library
+- [NeuVector](https://github.com/neuvector/neuvector) - Reference for network security concepts
