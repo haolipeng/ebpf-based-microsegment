@@ -35,6 +35,49 @@ type Policy struct {
 	ProcessName string // Process name for process-level policies (empty = network-only)
 }
 
+// PolicyKey represents the key structure for exact-match policy in eBPF hash map
+// Must match struct policy_key in src/bpf/headers/common_types.h (16 bytes)
+type PolicyKey struct {
+	SrcIP     uint32 // Source IP in little-endian
+	DstIP     uint32 // Destination IP in little-endian
+	SrcPort   uint16 // Source port in network byte order
+	DstPort   uint16 // Destination port in network byte order
+	Protocol  uint8  // Protocol number (6=TCP, 17=UDP, 1=ICMP, 0=any)
+	Direction uint8  // Direction (0=any, 1=ingress, 2=egress)
+	Pad       uint16 // Padding for 16-byte alignment
+}
+
+// PolicyValue represents the value structure for exact-match policy in eBPF hash map
+// Must match struct policy_value in src/bpf/headers/common_types.h (16 bytes)
+type PolicyValue struct {
+	Action     uint8  // Action (0=allow, 1=deny, 2=log)
+	LogEnabled uint8  // Whether to log this policy
+	Priority   uint16 // Policy priority
+	RuleID     uint32 // Unique rule identifier
+	HitCount   uint64 // Number of times this policy was matched
+}
+
+// WildcardPolicy represents a wildcard policy entry in eBPF array map
+// Must match struct wildcard_policy in src/bpf/headers/common_types.h (100 bytes)
+type WildcardPolicy struct {
+	SrcIP       [4]uint32  // 16 bytes - IPv6 support (IPv4 in last element)
+	SrcIPMask   [4]uint32  // 16 bytes - Source IP mask
+	DstIP       [4]uint32  // 16 bytes - Destination IP
+	DstIPMask   [4]uint32  // 16 bytes - Destination IP mask
+	SrcPort     uint16     // 2 bytes - Source port (0 = wildcard)
+	DstPort     uint16     // 2 bytes - Destination port (0 = wildcard)
+	Protocol    uint8      // 1 byte - Protocol (0 = wildcard)
+	Action      uint8      // 1 byte - Action
+	LogEnabled  uint8      // 1 byte - Log flag
+	Direction   uint8      // 1 byte - Direction
+	IPVersion   uint8      // 1 byte - IP version (4 = IPv4, 6 = IPv6)
+	Pad         [3]uint8   // 3 bytes - Padding for alignment
+	Priority    uint16     // 2 bytes - Priority
+	VlanID      uint16     // 2 bytes - VLAN ID (0 = any)
+	RuleID      uint32     // 4 bytes - Rule ID
+	ProcessName [16]byte   // 16 bytes - Process name matching
+}
+
 // PolicyManager manages network policies
 type PolicyManager struct {
 	policyMap         *ebpf.Map
@@ -190,32 +233,18 @@ func (pm *PolicyManager) addExactPolicy(p *Policy) error {
 	}
 
 	// Build policy key (6-tuple with direction)
-	key := struct {
-		SrcIp     uint32
-		DstIp     uint32
-		SrcPort   uint16
-		DstPort   uint16
-		Protocol  uint8
-		Direction uint8  // ✅ New: direction field
-		Pad       uint16 // Updated padding for 16-byte alignment
-	}{
-		SrcIp:     ipToUint32LE(srcIP),
-		DstIp:     ipToUint32LE(dstIP),
+	key := PolicyKey{
+		SrcIP:     ipToUint32LE(srcIP),
+		DstIP:     ipToUint32LE(dstIP),
 		SrcPort:   htons(p.SrcPort),
 		DstPort:   htons(p.DstPort),
 		Protocol:  proto,
-		Direction: p.GetDirectionValue(), // ✅ New: add direction
+		Direction: p.GetDirectionValue(),
 		Pad:       0,
 	}
 
 	// Build policy value
-	value := struct {
-		Action     uint8
-		LogEnabled uint8
-		Priority   uint16
-		RuleID     uint32
-		HitCount   uint64
-	}{
+	value := PolicyValue{
 		Action:     action,
 		LogEnabled: boolToUint8(p.Action == "log"),
 		Priority:   p.Priority,
@@ -263,21 +292,13 @@ func (pm *PolicyManager) DeletePolicy(p *Policy) error {
 	}
 
 	// Build policy key (6-tuple with direction)
-	key := struct {
-		SrcIp     uint32
-		DstIp     uint32
-		SrcPort   uint16
-		DstPort   uint16
-		Protocol  uint8
-		Direction uint8  // ✅ New: direction field
-		Pad       uint16 // Updated padding for 16-byte alignment
-	}{
-		SrcIp:     ipToUint32LE(srcIP),
-		DstIp:     ipToUint32LE(dstIP),
+	key := PolicyKey{
+		SrcIP:     ipToUint32LE(srcIP),
+		DstIP:     ipToUint32LE(dstIP),
 		SrcPort:   htons(p.SrcPort),
 		DstPort:   htons(p.DstPort),
 		Protocol:  proto,
-		Direction: p.GetDirectionValue(), // ✅ New: add direction
+		Direction: p.GetDirectionValue(),
 		Pad:       0,
 	}
 
@@ -310,36 +331,21 @@ func (pm *PolicyManager) ListPolicies() ([]Policy, error) {
 	var policies []Policy
 
 	// Iterate through eBPF policy map
-	var key struct {
-		SrcIp     uint32
-		DstIp     uint32
-		SrcPort   uint16
-		DstPort   uint16
-		Protocol  uint8
-		Direction uint8  // ✅ New: direction field
-		Pad       uint16 // Updated padding
-	}
-
-	var value struct {
-		Action     uint8
-		LogEnabled uint8
-		Priority   uint16
-		RuleID     uint32
-		HitCount   uint64
-	}
+	var key PolicyKey
+	var value PolicyValue
 
 	iter := pm.policyMap.Iterate()
 	for iter.Next(&key, &value) {
 		// Convert back to Policy struct
 		policy := Policy{
 			RuleID:    value.RuleID,
-			SrcIP:     uint32ToIP(key.SrcIp),
-			DstIP:     uint32ToIP(key.DstIp),
+			SrcIP:     uint32ToIP(key.SrcIP),
+			DstIP:     uint32ToIP(key.DstIP),
 			SrcPort:   ntohs(key.SrcPort),
 			DstPort:   ntohs(key.DstPort),
 			Protocol:  protoToString(key.Protocol),
 			Action:    actionToString(value.Action),
-			Direction: directionToString(key.Direction), // ✅ New: convert direction
+			Direction: directionToString(key.Direction),
 			Priority:  value.Priority,
 		}
 		policies = append(policies, policy)
@@ -365,23 +371,8 @@ func (pm *PolicyManager) GetPolicyCount() int {
 func (pm *PolicyManager) Clear() error {
 	// 1. Clear exact policy map (hash map)
 	// Delete all entries by iterating
-	var key struct {
-		SrcIp     uint32
-		DstIp     uint32
-		SrcPort   uint16
-		DstPort   uint16
-		Protocol  uint8
-		Direction uint8
-		Pad       uint16
-	}
-
-	var value struct {
-		Action     uint8
-		LogEnabled uint8
-		Priority   uint16
-		RuleID     uint32
-		HitCount   uint64
-	}
+	var key PolicyKey
+	var value PolicyValue
 
 	iter := pm.policyMap.Iterate()
 	for iter.Next(&key, &value) {
@@ -393,23 +384,7 @@ func (pm *PolicyManager) Clear() error {
 
 	// 2. Clear wildcard policy map (array map)
 	// Zero out all slots up to MAX_ENTRIES_WILDCARD_POLICY
-	zeroPolicy := struct {
-		SrcIP      uint32
-		SrcIPMask  uint32
-		DstIP      uint32
-		DstIPMask  uint32
-		SrcPort    uint16
-		DstPort    uint16
-		Protocol   uint8
-		Action     uint8
-		LogEnabled uint8
-		Direction  uint8
-		Priority   uint16
-		Pad        uint16
-		RuleID     uint32
-	}{
-		// All fields zero
-	}
+	zeroPolicy := WildcardPolicy{} // All fields zero
 
 	// Clear up to 1000 slots (MAX_ENTRIES_WILDCARD_POLICY)
 	for i := uint32(0); i < 1000; i++ {
@@ -513,25 +488,7 @@ func (pm *PolicyManager) addWildcardPolicy(p *Policy) error {
 	}
 
 	// Build wildcard policy entry
-	// Must match struct wildcard_policy in src/bpf/headers/common_types.h (100 bytes)
-	wildcard := struct {
-		SrcIP       [4]uint32   // 16 bytes - IPv6 support
-		SrcIPMask   [4]uint32   // 16 bytes
-		DstIP       [4]uint32   // 16 bytes
-		DstIPMask   [4]uint32   // 16 bytes
-		SrcPort     uint16      // 2 bytes
-		DstPort     uint16      // 2 bytes
-		Protocol    uint8       // 1 byte
-		Action      uint8       // 1 byte
-		LogEnabled  uint8       // 1 byte
-		Direction   uint8       // 1 byte
-		IPVersion   uint8       // 1 byte - 4 = IPv4, 6 = IPv6
-		Pad         [3]uint8    // 3 bytes - padding for alignment
-		Priority    uint16      // 2 bytes
-		VlanID      uint16      // 2 bytes
-		RuleID      uint32      // 4 bytes
-		ProcessName [16]byte    // 16 bytes - process name matching
-	}{
+	wildcard := WildcardPolicy{
 		// Convert IPv4 to IPv6-mapped format for src_ip
 		SrcIP: [4]uint32{
 			0, 0, 0, ipToUint32LE(srcIP),
@@ -548,42 +505,25 @@ func (pm *PolicyManager) addWildcardPolicy(p *Policy) error {
 		DstIPMask: [4]uint32{
 			0, 0, 0, maskToUint32(dstMask),
 		},
-		SrcPort:    htons(p.SrcPort),         // 0 = wildcard
-		DstPort:    htons(p.DstPort),         // 0 = wildcard
-		Protocol:   proto,                    // 0 = wildcard
-		Action:     action,
-		LogEnabled: boolToUint8(p.Action == "log"),
-		Direction:  p.GetDirectionValue(),
-		IPVersion:  4,                        // IPv4
-		Pad:        [3]uint8{0, 0, 0},
-		Priority:   p.Priority,
-		VlanID:     0,                        // Match any VLAN
-		RuleID:     p.RuleID,
-		ProcessName: [16]byte{},              // Empty = match any process
+		SrcPort:     htons(p.SrcPort), // 0 = wildcard
+		DstPort:     htons(p.DstPort), // 0 = wildcard
+		Protocol:    proto,            // 0 = wildcard
+		Action:      action,
+		LogEnabled:  boolToUint8(p.Action == "log"),
+		Direction:   p.GetDirectionValue(),
+		IPVersion:   4,                // IPv4
+		Pad:         [3]uint8{0, 0, 0},
+		Priority:    p.Priority,
+		VlanID:      0,               // Match any VLAN
+		RuleID:      p.RuleID,
+		ProcessName: [16]byte{},      // Empty = match any process
 	}
 
 	// Find empty slot in wildcard array map
 	// Try up to MAX_ENTRIES_WILDCARD_POLICY (1000)
 	for i := uint32(0); i < 1000; i++ {
-		// Try to read existing entry - must match the exact struct layout in eBPF (100 bytes)
-		var existing struct {
-			SrcIP       [4]uint32   // 16 bytes
-			SrcIPMask   [4]uint32   // 16 bytes
-			DstIP       [4]uint32   // 16 bytes
-			DstIPMask   [4]uint32   // 16 bytes
-			SrcPort     uint16      // 2 bytes
-			DstPort     uint16      // 2 bytes
-			Protocol    uint8       // 1 byte
-			Action      uint8       // 1 byte
-			LogEnabled  uint8       // 1 byte
-			Direction   uint8       // 1 byte
-			IPVersion   uint8       // 1 byte
-			Pad         [3]uint8    // 3 bytes
-			Priority    uint16      // 2 bytes
-			VlanID      uint16      // 2 bytes
-			RuleID      uint32      // 4 bytes
-			ProcessName [16]byte    // 16 bytes
-		}
+		// Try to read existing entry
+		var existing WildcardPolicy
 
 		// Read the existing entry
 		err := pm.wildcardPolicyMap.Lookup(&i, &existing)
@@ -619,24 +559,7 @@ func (pm *PolicyManager) addWildcardPolicy(p *Policy) error {
 func (pm *PolicyManager) deleteWildcardPolicy(p *Policy) error {
 	// Search for the policy by RuleID in all slots
 	for i := uint32(0); i < 1000; i++ {
-		var existing struct {
-			SrcIP       [4]uint32   // 16 bytes
-			SrcIPMask   [4]uint32   // 16 bytes
-			DstIP       [4]uint32   // 16 bytes
-			DstIPMask   [4]uint32   // 16 bytes
-			SrcPort     uint16      // 2 bytes
-			DstPort     uint16      // 2 bytes
-			Protocol    uint8       // 1 byte
-			Action      uint8       // 1 byte
-			LogEnabled  uint8       // 1 byte
-			Direction   uint8       // 1 byte
-			IPVersion   uint8       // 1 byte
-			Pad         [3]uint8    // 3 bytes
-			Priority    uint16      // 2 bytes
-			VlanID      uint16      // 2 bytes
-			RuleID      uint32      // 4 bytes
-			ProcessName [16]byte    // 16 bytes
-		}
+		var existing WildcardPolicy
 
 		// Read the existing entry
 		err := pm.wildcardPolicyMap.Lookup(&i, &existing)
@@ -647,27 +570,8 @@ func (pm *PolicyManager) deleteWildcardPolicy(p *Policy) error {
 
 		// Check if this slot has our target RuleID
 		if existing.RuleID == p.RuleID {
-			// Found the policy, zero it out (100 bytes)
-			zeroPolicy := struct {
-				SrcIP       [4]uint32   // 16 bytes
-				SrcIPMask   [4]uint32   // 16 bytes
-				DstIP       [4]uint32   // 16 bytes
-				DstIPMask   [4]uint32   // 16 bytes
-				SrcPort     uint16      // 2 bytes
-				DstPort     uint16      // 2 bytes
-				Protocol    uint8       // 1 byte
-				Action      uint8       // 1 byte
-				LogEnabled  uint8       // 1 byte
-				Direction   uint8       // 1 byte
-				IPVersion   uint8       // 1 byte
-				Pad         [3]uint8    // 3 bytes
-				Priority    uint16      // 2 bytes
-				VlanID      uint16      // 2 bytes
-				RuleID      uint32      // 4 bytes
-				ProcessName [16]byte    // 16 bytes
-			}{
-				// All fields zero
-			}
+			// Found the policy, zero it out
+			zeroPolicy := WildcardPolicy{}
 
 			// Delete from eBPF map (critical operation)
 			ebpfErr := pm.wildcardPolicyMap.Put(&i, &zeroPolicy)
