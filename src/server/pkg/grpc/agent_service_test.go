@@ -192,7 +192,7 @@ func TestHeartbeat_StorageError(t *testing.T) {
 
 // TestReportStatus_Success tests successful status reporting
 func TestReportStatus_Success(t *testing.T) {
-	db, _, err := sqlmock.New()
+	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -218,19 +218,43 @@ func TestReportStatus_Success(t *testing.T) {
 		Errors:        []string{"Temporary connection loss", "High memory usage"},
 	}
 
-	// Note: MVP implementation just acknowledges receipt
+	// Mock INSERT INTO agent_metrics
+	mock.ExpectExec("INSERT INTO agent_metrics").
+		WithArgs(
+			"agent-test-1",
+			float32(15.0),
+			uint64(1024*1024*256),
+			uint64(5000),
+			uint32(20),
+			uint64(200),
+			uint32(5),
+			uint32(5),
+			uint64(1),
+			uint32(10),
+			"running",
+			uint64(3600),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	// Mock UPDATE agents
+	mock.ExpectExec("UPDATE agents").
+		WithArgs("agent-test-1", "running").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
 	resp, err := server.ReportStatus(context.Background(), report)
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.True(t, resp.Success)
-	assert.Equal(t, "Status report received", resp.Message)
+	assert.Equal(t, "Status report received and persisted", resp.Message)
 	assert.NotNil(t, resp.Commands)
-	assert.Len(t, resp.Commands, 0) // MVP returns no commands
+	assert.Len(t, resp.Commands, 0)
 }
 
 // TestReportStatus_EmptyReport tests handling empty status report
 func TestReportStatus_EmptyReport(t *testing.T) {
-	db, _, err := sqlmock.New()
+	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -244,6 +268,31 @@ func TestReportStatus_EmptyReport(t *testing.T) {
 		Uptime:    0,
 	}
 
+	// Mock INSERT INTO agent_metrics
+	mock.ExpectExec("INSERT INTO agent_metrics").
+		WithArgs(
+			"agent-test-1",
+			float32(0),
+			uint64(0),
+			uint64(0),
+			uint32(0),
+			uint64(0),
+			uint32(0),
+			uint32(0),
+			uint64(0),
+			uint32(0),
+			"unknown",
+			uint64(0),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	// Mock UPDATE agents
+	mock.ExpectExec("UPDATE agents").
+		WithArgs("agent-test-1", "unknown").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
 	resp, err := server.ReportStatus(context.Background(), report)
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
@@ -252,7 +301,7 @@ func TestReportStatus_EmptyReport(t *testing.T) {
 
 // TestUnregisterAgent_Success tests successful agent unregistration
 func TestUnregisterAgent_Success(t *testing.T) {
-	db, _, err := sqlmock.New()
+	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -264,17 +313,21 @@ func TestUnregisterAgent_Success(t *testing.T) {
 		Reason:  "Graceful shutdown",
 	}
 
-	// Note: MVP implementation just acknowledges, no database update
+	// Mock UPDATE agents to mark offline
+	mock.ExpectExec("UPDATE agents").
+		WithArgs("agent-test-1", "Graceful shutdown").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
 	resp, err := server.UnregisterAgent(context.Background(), req)
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.True(t, resp.Success)
-	assert.Equal(t, "Agent unregistered", resp.Message)
+	assert.Equal(t, "Agent unregistered and marked as offline", resp.Message)
 }
 
 // TestUnregisterAgent_EmptyReason tests unregistration without reason
 func TestUnregisterAgent_EmptyReason(t *testing.T) {
-	db, _, err := sqlmock.New()
+	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -285,6 +338,11 @@ func TestUnregisterAgent_EmptyReason(t *testing.T) {
 		AgentId: "agent-test-1",
 		Reason:  "",
 	}
+
+	// Mock UPDATE agents - empty reason defaults to "graceful shutdown"
+	mock.ExpectExec("UPDATE agents").
+		WithArgs("agent-test-1", "graceful shutdown").
+		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	resp, err := server.UnregisterAgent(context.Background(), req)
 	require.NoError(t, err)
