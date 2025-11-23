@@ -192,6 +192,52 @@ func TestGetFlowDependencies_InvalidGroupBy(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestQueryFlows_WithLabelFilters(t *testing.T) {
+	storage, mock, cleanup := newMockFlowStorage(t)
+	defer cleanup()
+
+	sourceLabels := map[string]string{"app": "web", "env": "prod"}
+	destLabels := map[string]string{"app": "db"}
+	sourceLabelsJSON, _ := json.Marshal(sourceLabels)
+	destLabelsJSON, _ := json.Marshal(destLabels)
+
+	// Expect count query with JSONB filter
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "flows" WHERE source_labels @> \$1 AND dest_labels @> \$2`).
+		WithArgs(string(sourceLabelsJSON), string(destLabelsJSON)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	// Expect select query with JSONB filter
+	rows := sqlmock.NewRows([]string{
+		"id", "timestamp_ns", "src_ip", "dst_ip", "src_port", "dst_port",
+		"protocol", "direction", "packet_count", "byte_count", "policy_id",
+		"policy_action", "state", "agent_id", "source_labels", "dest_labels",
+		"start_time", "end_time", "last_seen",
+	}).AddRow(
+		1, int64(1111), "192.168.1.1", "192.168.1.2", 12345, 80,
+		6, 1, 10, 1000, 1, 1, 1, "agent-1",
+		[]byte(`{"app":"web","env":"prod"}`), []byte(`{"app":"db"}`),
+		time.Now(), time.Now(), time.Now(),
+	)
+
+	mock.ExpectQuery(`SELECT .* FROM "flows" WHERE source_labels @> \$1 AND dest_labels @> \$2 ORDER BY timestamp_ns DESC LIMIT \$3`).
+		WithArgs(string(sourceLabelsJSON), string(destLabelsJSON), 10).
+		WillReturnRows(rows)
+
+	result, total, err := storage.QueryFlows(context.Background(), &flowpb.FlowQuery{
+		Limit:        10,
+		SourceLabels: sourceLabels,
+		DestLabels:   destLabels,
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, result, 1)
+	assert.Equal(t, "web", result[0].SourceLabels["app"])
+	assert.Equal(t, "prod", result[0].SourceLabels["env"])
+	assert.Equal(t, "db", result[0].DestLabels["app"])
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestIntToIP(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -104,6 +104,16 @@ func (s *FlowStorage) QueryFlows(ctx context.Context, query *flowpb.FlowQuery) (
 		db = db.Where("protocol = ?", query.Protocol)
 	}
 
+	// JSONB label filtering using @> (contains) operator
+	if len(query.SourceLabels) > 0 {
+		labelsJSON, _ := json.Marshal(query.SourceLabels)
+		db = db.Where("source_labels @> ?", string(labelsJSON))
+	}
+	if len(query.DestLabels) > 0 {
+		labelsJSON, _ := json.Marshal(query.DestLabels)
+		db = db.Where("dest_labels @> ?", string(labelsJSON))
+	}
+
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to count flows: %w", err)
@@ -375,6 +385,20 @@ func (s *FlowStorage) queryFlowsLegacy(ctx context.Context, query *flowpb.FlowQu
 	if query.Protocol != 0 {
 		where += fmt.Sprintf(" AND protocol = $%d", argIdx)
 		args = append(args, query.Protocol)
+		argIdx++
+	}
+
+	// JSONB label filtering using @> (contains) operator
+	if len(query.SourceLabels) > 0 {
+		labelsJSON, _ := json.Marshal(query.SourceLabels)
+		where += fmt.Sprintf(" AND source_labels @> $%d", argIdx)
+		args = append(args, string(labelsJSON))
+		argIdx++
+	}
+	if len(query.DestLabels) > 0 {
+		labelsJSON, _ := json.Marshal(query.DestLabels)
+		where += fmt.Sprintf(" AND dest_labels @> $%d", argIdx)
+		args = append(args, string(labelsJSON))
 		argIdx++
 	}
 

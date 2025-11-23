@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -101,7 +102,22 @@ func (h *FlowHandler) ListFlows(c *gin.Context) {
 	// Parse label filters (JSON query)
 	// source_labels={"app":"nginx"}
 	// dest_labels={"env":"prod"}
-	// TODO: Implement JSONB label filtering
+	if sourceLabels := c.Query("source_labels"); sourceLabels != "" {
+		var labels map[string]string
+		if err := json.Unmarshal([]byte(sourceLabels), &labels); err == nil {
+			query.SourceLabels = labels
+		} else {
+			logrus.Warnf("Invalid source_labels JSON: %v", err)
+		}
+	}
+	if destLabels := c.Query("dest_labels"); destLabels != "" {
+		var labels map[string]string
+		if err := json.Unmarshal([]byte(destLabels), &labels); err == nil {
+			query.DestLabels = labels
+		} else {
+			logrus.Warnf("Invalid dest_labels JSON: %v", err)
+		}
+	}
 
 	// Query flows from storage
 	flows, total, err := h.flowStorage.QueryFlows(c.Request.Context(), query)
