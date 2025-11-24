@@ -2,65 +2,55 @@ package storage
 
 import (
 	"time"
-
-	"gorm.io/datatypes"
 )
 
-// Flow represents a row in the flows table for GORM operations.
+// Flow represents a row in the flows table.
+// This legacy struct is kept for backward compatibility with tests.
 type Flow struct {
-	ID           int64             `gorm:"column:id;primaryKey;autoIncrement"`
-	AgentID      string            `gorm:"column:agent_id"`
-	SrcIP        string            `gorm:"column:src_ip"`
-	DstIP        string            `gorm:"column:dst_ip"`
-	SrcPort      int32             `gorm:"column:src_port"`
-	DstPort      int32             `gorm:"column:dst_port"`
-	Protocol     int32             `gorm:"column:protocol"`
-	Direction    int32             `gorm:"column:direction"`
-	PacketCount  int64             `gorm:"column:packet_count"`
-	ByteCount    int64             `gorm:"column:byte_count"`
-	PolicyID     *int32            `gorm:"column:policy_id"`
-	PolicyAction *int32            `gorm:"column:policy_action"`
-	State        *int32            `gorm:"column:state"`
-	TimestampNS  int64             `gorm:"column:timestamp_ns"`
-	StartTime    *time.Time        `gorm:"column:start_time"`
-	EndTime      *time.Time        `gorm:"column:end_time"`
-	LastSeen     *time.Time        `gorm:"column:last_seen"`
-	SourceLabels datatypes.JSONMap `gorm:"column:source_labels"`
-	DestLabels   datatypes.JSONMap `gorm:"column:dest_labels"`
-	CreatedAt    time.Time         `gorm:"column:created_at"`
+	ID           int64             `json:"id"`
+	AgentID      string            `json:"agent_id"`
+	SrcIP        string            `json:"src_ip"`
+	DstIP        string            `json:"dst_ip"`
+	SrcPort      int32             `json:"src_port"`
+	DstPort      int32             `json:"dst_port"`
+	Protocol     int32             `json:"protocol"`
+	Direction    int32             `json:"direction"`
+	PacketCount  int64             `json:"packet_count"`
+	ByteCount    int64             `json:"byte_count"`
+	PolicyID     *int32            `json:"policy_id"`
+	PolicyAction *int32            `json:"policy_action"`
+	State        *int32            `json:"state"`
+	TimestampNS  int64             `json:"timestamp_ns"`
+	StartTime    *time.Time        `json:"start_time"`
+	EndTime      *time.Time        `json:"end_time"`
+	LastSeen     *time.Time        `json:"last_seen"`
+	SourceLabels map[string]string `json:"source_labels"`
+	DestLabels   map[string]string `json:"dest_labels"`
+	CreatedAt    time.Time         `json:"created_at"`
 }
 
-// TableName overrides the default pluralized table name.
-func (Flow) TableName() string {
-	return "flows"
-}
-
-// SecurityAlert represents a row in the security_alerts table for GORM operations.
+// SecurityAlert represents a row in the security_alerts table.
+// This legacy struct is kept for backward compatibility with tests.
 type SecurityAlert struct {
-	ID          int64             `gorm:"column:id;primaryKey;autoIncrement"`
-	AlertID     string            `gorm:"column:alert_id;uniqueIndex;not null"`
-	Level       int32             `gorm:"column:level;not null"`
-	Type        int32             `gorm:"column:type;not null"`
-	PID         *uint32           `gorm:"column:pid"`
-	PPID        *uint32           `gorm:"column:ppid"`
-	UID         *uint32           `gorm:"column:uid"`
-	GID         *uint32           `gorm:"column:gid"`
-	Comm        *string           `gorm:"column:comm;size:16"`
-	ExePath     *string           `gorm:"column:exe_path;size:1024"`
-	ContainerID *string           `gorm:"column:container_id;size:64"`
-	FlowID      *int64            `gorm:"column:flow_id"`
-	SrcIP       *string           `gorm:"column:src_ip"`
-	DstIP       *string           `gorm:"column:dst_ip"`
-	DstPort     *uint32           `gorm:"column:dst_port"`
-	Protocol    *string           `gorm:"column:protocol;size:16"`
-	Reason      string            `gorm:"column:reason;type:text;not null"`
-	Metadata    datatypes.JSONMap `gorm:"column:metadata;type:jsonb"`
-	Timestamp   int64             `gorm:"column:timestamp;not null"`
-	CreatedAt   time.Time         `gorm:"column:created_at;autoCreateTime"`
-	AgentID     *string           `gorm:"column:agent_id;size:64"`
-}
-
-// TableName overrides the default pluralized table name.
-func (SecurityAlert) TableName() string {
-	return "security_alerts"
+	ID          int64             `json:"id"`
+	AlertID     string            `json:"alert_id"`
+	Level       int32             `json:"level"`
+	Type        int32             `json:"type"`
+	PID         *uint32           `json:"pid"`
+	PPID        *uint32           `json:"ppid"`
+	UID         *uint32           `json:"uid"`
+	GID         *uint32           `json:"gid"`
+	Comm        *string           `json:"comm"`
+	ExePath     *string           `json:"exe_path"`
+	ContainerID *string           `json:"container_id"`
+	FlowID      *int64            `json:"flow_id"`
+	SrcIP       *string           `json:"src_ip"`
+	DstIP       *string           `json:"dst_ip"`
+	DstPort     *uint32           `json:"dst_port"`
+	Protocol    *string           `json:"protocol"`
+	Reason      string            `json:"reason"`
+	Metadata    map[string]string `json:"metadata"`
+	Timestamp   int64             `json:"timestamp"`
+	CreatedAt   time.Time         `json:"created_at"`
+	AgentID     *string           `json:"agent_id"`
 }
