@@ -8,11 +8,12 @@
 import {
   GraphNode,
   GraphLink,
+} from './types';
+import type {
   NewLinkCallback,
   DelNodeCallback,
   DelLinkCallback,
   UpdateLinkAttrCallback,
-  ConnectedNodeCallback,
   GraphStats,
   GraphExportOptions,
   D3GraphData,

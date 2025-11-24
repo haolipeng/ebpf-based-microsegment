@@ -118,11 +118,11 @@ export default function NodeDetailPanel({ node, flows, onClose }: NodeDetailPane
               <Descriptions.Item label="Node Type">
                 {node.type === 'IP' ? 'IP Address' : 'Service'}
               </Descriptions.Item>
-              {node.labels && Object.keys(node.labels).length > 0 && (
+              {node.k8s?.labels && Object.keys(node.k8s.labels).length > 0 && (
                 <Descriptions.Item label="Labels">
-                  {Object.entries(node.labels).map(([key, value]) => (
+                  {Object.entries(node.k8s.labels).map(([key, value]) => (
                     <Tag key={key} color="blue">
-                      {key}: {value}
+                      {key}: {String(value)}
                     </Tag>
                   ))}
                 </Descriptions.Item>

@@ -6,7 +6,7 @@
  */
 
 import { Graph } from './Graph';
-import { ConnectedNodeCallback } from './types';
+import type { ConnectedNodeCallback } from './types';
 
 /**
  * Find all nodes connected to the start node via BFS traversal

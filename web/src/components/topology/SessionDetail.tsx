@@ -144,15 +144,15 @@ function NodeDetail({
       </Descriptions>
 
       {/* Labels (if in service view) */}
-      {node.labels && Object.keys(node.labels).length > 0 && (
+      {node.k8s?.labels && Object.keys(node.k8s.labels).length > 0 && (
         <>
           <Divider orientation="left" plain>
             Labels
           </Divider>
           <div style={{ marginBottom: 16 }}>
-            {Object.entries(node.labels).map(([key, value]) => (
+            {Object.entries(node.k8s.labels).map(([key, value]) => (
               <Tag key={key} style={{ marginBottom: 4 }}>
-                {key}={value}
+                {key}={String(value)}
               </Tag>
             ))}
           </div>
@@ -385,9 +385,9 @@ function EdgeDetail({
         Protocols
       </Divider>
       <div style={{ marginBottom: 16 }}>
-        {edge.metrics.protocols.map(protocol => (
-          <Tag key={protocol} color="blue" style={{ marginBottom: 4 }}>
-            {protocol}
+        {edge.protocols.map((protocol) => (
+          <Tag key={`${protocol.name}:${protocol.port}`} color="blue" style={{ marginBottom: 4 }}>
+            {protocol.name}:{protocol.port}
           </Tag>
         ))}
       </div>
@@ -439,10 +439,7 @@ function EdgeDetail({
                   </div>
                   <div>
                     <strong>State:</strong>{' '}
-                    <Tag
-                      size="small"
-                      color={flow.state === 'ACTIVE' ? 'green' : 'default'}
-                    >
+                    <Tag color={flow.state === 'ACTIVE' ? 'green' : 'default'}>
                       {flow.state}
                     </Tag>
                   </div>

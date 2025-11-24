@@ -171,7 +171,7 @@ export default function ProcessStatsComponent({
                   height={100}
                   interval={0}
                 />
-                <YAxis tickFormatter={value => formatBytes(value)} />
+                <YAxis tickFormatter={(value: number) => formatBytes(value)} />
                 <Tooltip formatter={(value: number) => formatBytes(value)} />
                 <Legend />
                 <Bar dataKey="bandwidth" fill="#8884d8" name="Bandwidth" />
@@ -190,7 +190,7 @@ export default function ProcessStatsComponent({
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={entry => `${entry.name}: ${entry.value}`}
+                  label={(entry) => `${entry.name || ''}: ${entry.value}`}
                   outerRadius={100}
                   fill="#8884d8"
                   dataKey="value"

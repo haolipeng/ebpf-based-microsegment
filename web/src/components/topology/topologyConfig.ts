@@ -200,37 +200,47 @@ export function getTopologyChartOption(
         type: 'graph',
         layout: 'force',
         categories,
-        data: data.nodes.map(node => ({
-          id: node.id,
-          name: node.label,
-          value: node.metrics.byteCount,
-          symbol: getNodeTypeSymbol(node.type),
-          symbolSize: calculateNodeSize(node.metrics, node.type),
-          category: getCategoryIndex(node, categories),
-          itemStyle: getNodeStyle(node),
-          label: {
-            show: true,
-            position: 'bottom',
-            formatter: '{b}',
-            fontSize: 10,
-            color: '#333',
-            textShadowColor: 'rgba(255, 255, 255, 0.9)',
-            textShadowBlur: 3,
-          },
-          // Store full node data for click events
-          ...node,
-        })),
-        edges: data.edges.map(edge => ({
-          source: edge.source,
-          target: edge.target,
-          value: edge.metrics.byteCount,
-          lineStyle: getEdgeStyle(edge),
-          label: {
-            show: false,
-          },
-          // Store full edge data for click events
-          ...edge,
-        })),
+        data: data.nodes.map(node => {
+          // Destructure to separate ECharts props from node data
+          const { id, label: nodeLabel, ...nodeData } = node;
+          return {
+            // Store full node data for click events
+            ...nodeData,
+            // ECharts specific properties (override spread)
+            id,
+            name: nodeLabel,
+            value: node.metrics.byteCount,
+            symbol: getNodeTypeSymbol(node.type),
+            symbolSize: calculateNodeSize(node.metrics, node.type),
+            category: getCategoryIndex(node, categories),
+            itemStyle: getNodeStyle(node),
+            label: {
+              show: true,
+              position: 'bottom' as const,
+              formatter: '{b}',
+              fontSize: 10,
+              color: '#333',
+              textShadowColor: 'rgba(255, 255, 255, 0.9)',
+              textShadowBlur: 3,
+            },
+          };
+        }),
+        edges: data.edges.map(edge => {
+          // Destructure to separate ECharts props from edge data
+          const { source, target, ...edgeData } = edge;
+          return {
+            // Store full edge data for click events
+            ...edgeData,
+            // ECharts specific properties (override spread)
+            source,
+            target,
+            value: edge.metrics.byteCount,
+            lineStyle: getEdgeStyle(edge),
+            label: {
+              show: false,
+            },
+          };
+        }),
         roam: true,
         draggable: true,
         force: {

@@ -259,7 +259,8 @@ describe('topologyUtils', () => {
       const existing: TopologyData = {
         nodes: [],
         edges: [],
-        stats: { totalNodes: 0, totalEdges: 0, totalFlows: 0 },
+        stats: { totalNodes: 0, totalEdges: 0, totalFlows: 0, activeFlows: 0, totalBytes: 0 },
+        viewMode: 'IP',
       }
       const newFlow = createMockFlow({ sourceIp: '10.0.0.1', destIp: '10.0.0.2' })
 
@@ -288,7 +289,7 @@ describe('topologyUtils', () => {
           },
         ],
         edges: [],
-        stats: { totalNodes: 2, totalEdges: 0, totalFlows: 1 },
+        stats: { totalNodes: 2, totalEdges: 0, totalFlows: 1, activeFlows: 1, totalBytes: 1000 },
         viewMode: 'IP',
       }
       const newFlow = createMockFlow({
@@ -335,7 +336,7 @@ describe('topologyUtils', () => {
             direction: 'EGRESS',
           },
         ],
-        stats: { totalNodes: 2, totalEdges: 1, totalFlows: 1 },
+        stats: { totalNodes: 2, totalEdges: 1, totalFlows: 1, activeFlows: 1, totalBytes: 1000 },
         viewMode: 'IP',
       }
       const newFlow = createMockFlow({
@@ -358,7 +359,8 @@ describe('topologyUtils', () => {
       const existing: TopologyData = {
         nodes: [],
         edges: [],
-        stats: { totalNodes: 0, totalEdges: 0, totalFlows: 0 },
+        stats: { totalNodes: 0, totalEdges: 0, totalFlows: 0, activeFlows: 0, totalBytes: 0 },
+        viewMode: 'SERVICE',
       }
       const newFlow = createMockFlow({
         sourceLabels: { app: 'web' },
@@ -376,7 +378,7 @@ describe('topologyUtils', () => {
       const existing: TopologyData = {
         nodes: [],
         edges: [],
-        stats: { totalNodes: 0, totalEdges: 0, totalFlows: 0 },
+        stats: { totalNodes: 0, totalEdges: 0, totalFlows: 0, activeFlows: 0, totalBytes: 0 },
         viewMode: 'SERVICE',
       }
       const newFlow = createMockFlow({
@@ -401,11 +403,11 @@ describe('topologyUtils', () => {
             type: 'SERVICE',
             metrics: { flowCount: 1, packetCount: 10, byteCount: 1000, activeFlows: 1 },
             security: { allowedFlows: 1, deniedFlows: 0, loggedFlows: 0 },
-            labels: { app: 'web' },
+            k8s: { labels: { app: 'web' } },
           },
         ],
         edges: [],
-        stats: { totalNodes: 1, totalEdges: 0, totalFlows: 1 },
+        stats: { totalNodes: 1, totalEdges: 0, totalFlows: 1, activeFlows: 1, totalBytes: 1000 },
         viewMode: 'SERVICE',
       }
       const newFlow = createMockFlow({
@@ -442,7 +444,7 @@ describe('topologyUtils', () => {
         label: 'web',
         type: 'SERVICE',
         metrics: { flowCount: 0, packetCount: 0, byteCount: 0, activeFlows: 0 },
-        labels: { app: 'web' },
+        k8s: { labels: { app: 'web' } },
       }
 
       expect(getNodeLabel(node)).toBe('web')

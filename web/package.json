@@ -23,6 +23,7 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.5",
+    "recharts": "^3.5.0",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
@@ -30,7 +31,8 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^24.6.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.10.1",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.4",

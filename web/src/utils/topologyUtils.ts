@@ -11,7 +11,6 @@ import type {
   TrafficMetrics,
   SecurityStatus,
   K8sMetadata,
-  EdgeProtocol,
 } from '../types/topology'
 import { extractK8sInfo, generateNodeId, parseContainerId } from '../types/topology'
 
@@ -396,7 +395,6 @@ export function aggregateFlowsToTopology(
     }
 
     // Update protocol info
-    const protocolKey = `${flow.protocol}:${flow.destPort}`
     let protocolInfo = edge.protocols.find(p => p.name === flow.protocol && p.port === flow.destPort)
     if (!protocolInfo) {
       protocolInfo = {

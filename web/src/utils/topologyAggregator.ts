@@ -69,12 +69,15 @@ export class TopologyAggregator {
       totalNodes: filteredData.nodes.length,
       totalEdges: filteredData.edges.length,
       totalFlows: flows.length,
+      activeFlows: flows.filter(f => f.policyAction !== 'DENY').length,
+      totalBytes: flows.reduce((sum, f) => sum + (f.byteCount || 0), 0),
     };
 
     return {
       nodes: filteredData.nodes,
       edges: filteredData.edges,
       stats,
+      viewMode: filters.viewMode,
     };
   }
 
@@ -181,7 +184,7 @@ export class TopologyAggregator {
         packetCount: flow.packetCount,
         byteCount: flow.byteCount,
         protocols: new Set([flow.protocol]),
-        direction: flow.direction,
+        direction: flow.direction === 'UNKNOWN' ? 'EGRESS' : flow.direction,
       };
 
       this.graph.addLink(src, linkType, dst, newAttr);
@@ -212,9 +215,9 @@ export class TopologyAggregator {
         },
       };
 
-      // Add labels if in label view mode
-      if (viewMode === 'LABEL' && nodeId.includes('=')) {
-        node.labels = this.stringToLabels(nodeId);
+      // Add labels to k8s metadata if in service view mode
+      if (viewMode === 'SERVICE' && nodeId.includes('=')) {
+        node.k8s = { labels: this.stringToLabels(nodeId) };
       }
 
       nodes.push(node);
@@ -276,10 +279,16 @@ export class TopologyAggregator {
           target: dst,
           metrics: {
             flowCount: attr.flowCount,
+            activeFlows: attr.flowCount,
             packetCount: attr.packetCount,
             byteCount: attr.byteCount,
-            protocols: Array.from(attr.protocols),
           },
+          protocols: Array.from(attr.protocols).map(p => ({
+            name: p,
+            port: 0,
+            flowCount: attr.flowCount,
+            byteCount: attr.byteCount,
+          })),
           direction: attr.direction,
         };
 

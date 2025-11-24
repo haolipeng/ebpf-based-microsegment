@@ -171,8 +171,8 @@ describe('Graph', () => {
 
   describe('Export', () => {
     beforeEach(() => {
-      graph.addLink('A', 'traffic', 'B', { weight: 10 });
-      graph.addLink('B', 'traffic', 'C', { weight: 20 });
+      graph.addLink('A', 'traffic', 'B', 'weight:10');
+      graph.addLink('B', 'traffic', 'C', 'weight:20');
     });
 
     test('should export as JSON', () => {
@@ -180,7 +180,7 @@ describe('Graph', () => {
 
       expect(data.nodes).toHaveLength(3);
       expect(data.edges).toHaveLength(2);
-      expect(data.edges[0].attributes).toEqual({ weight: 10 });
+      expect(data.edges[0].attributes).toEqual('weight:10');
     });
 
     test('should export as D3 format', () => {
@@ -198,8 +198,8 @@ describe('Graph', () => {
       // 3 nodes + 2 edges = 5 elements
       expect(elements).toHaveLength(5);
 
-      const nodes = elements.filter(e => !e.data.source);
-      const edges = elements.filter(e => e.data.source);
+      const nodes = elements.filter((e: { data: { source?: string } }) => !e.data.source);
+      const edges = elements.filter((e: { data: { source?: string } }) => e.data.source);
 
       expect(nodes).toHaveLength(3);
       expect(edges).toHaveLength(2);

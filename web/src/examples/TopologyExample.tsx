@@ -70,7 +70,7 @@ export default function TopologyExample() {
   // Use topology graph hook
   const {
     data,
-    findConnectedNodes,
+    findConnectedNodes: _findConnectedNodes,
     findTrafficHubs,
     findConnectedComponents,
     getNodeDetail,
@@ -86,7 +86,7 @@ export default function TopologyExample() {
   });
 
   // Use node focus hook
-  const { selectedNode, selectNode, focusedNeighbors } = useNodeFocus();
+  const { selectedNode, selectNode, focusedNeighbors: _focusedNeighbors } = useNodeFocus();
 
   // Calculate stats
   const stats = useTopologyStats(data);
