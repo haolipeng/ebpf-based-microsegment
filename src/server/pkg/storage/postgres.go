@@ -30,7 +30,11 @@ func NewPostgresDB(dsn string, maxOpenConns, maxIdleConns int, connMaxLifetime t
 	return db, nil
 }
 
-// InitSchema creates the database schema if it doesn't exist
+// InitSchema creates the database schema if it doesn't exist.
+//
+// Deprecated: Use MigrateUp instead. This function creates a minimal schema
+// and does not support incremental migrations or version tracking.
+// It is kept for backward compatibility with existing tests.
 func InitSchema(db *sql.DB) error {
 	schema := `
 	-- Flows table (simplified, no TimescaleDB for MVP)

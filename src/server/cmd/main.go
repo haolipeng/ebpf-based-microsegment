@@ -58,9 +58,9 @@ func main() {
 	}
 	defer db.Close()
 
-	// Initialize schema
-	if err := storage.InitSchema(db); err != nil {
-		logrus.Fatalf("Failed to initialize schema: %v", err)
+	// Run database migrations
+	if err := storage.MigrateUp(db); err != nil {
+		logrus.Fatalf("Failed to run database migrations: %v", err)
 	}
 
 	// Create storage layers
