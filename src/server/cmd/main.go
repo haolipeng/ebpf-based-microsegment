@@ -26,6 +26,7 @@ import (
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/api/handlers"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/api/middleware"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/aggregator"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/topology"
 	ws "github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/websocket"
 )
 
@@ -78,12 +79,20 @@ func main() {
 	flowAggregator := aggregator.NewFlowAggregator(db)
 	logrus.Info("Flow aggregator initialized")
 
+	// Create topology manager and builder for network visualization
+	topologyManager := topology.NewManager()
+	topologyBuilder := topology.NewBuilder(topologyManager)
+	// Start background cleanup routine for stale topology entries
+	stopCleanup := make(chan struct{})
+	topologyBuilder.StartCleanupRoutine(5*time.Minute, stopCleanup)
+	logrus.Info("Topology manager initialized")
+
 	// Start gRPC server
-	grpcServer := startGRPCServer(cfg, flowStorage, policyStorage, agentStorage, wsHub)
+	grpcServer := startGRPCServer(cfg, flowStorage, policyStorage, agentStorage, wsHub, topologyBuilder)
 	defer grpcServer.GracefulStop()
 
 	// Start HTTP API server
-	httpServer := startHTTPServer(cfg, flowStorage, policyStorage, agentStorage, alertStorage, wsHub, flowAggregator)
+	httpServer := startHTTPServer(cfg, flowStorage, policyStorage, agentStorage, alertStorage, wsHub, flowAggregator, topologyManager)
 
 	// Wait for shutdown signal
 	shutdown := make(chan os.Signal, 1)
@@ -91,6 +100,9 @@ func main() {
 	<-shutdown
 
 	logrus.Info("Shutting down server...")
+
+	// Stop topology cleanup routine
+	close(stopCleanup)
 
 	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -119,7 +131,7 @@ func setupLogging(cfg config.LogConfig) {
 	}
 }
 
-func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, wsHub *ws.Hub) *grpc.Server {
+func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, wsHub *ws.Hub, topologyBuilder *topology.Builder) *grpc.Server {
 	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.GRPC.Host, cfg.GRPC.Port))
 	if err != nil {
 		logrus.Fatalf("Failed to listen on gRPC port: %v", err)
@@ -131,8 +143,12 @@ func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 	policyPubSub := pubsub.NewPolicyPubSub()
 	logrus.Info("Policy pub/sub mechanism initialized for incremental updates")
 
-	// Register gRPC services with WebSocket hub for real-time streaming
-	flowpb.RegisterFlowServiceServer(grpcServer, grpcserv.NewFlowServiceServer(flowStorage, wsHub))
+	// Create flow service with topology builder for real-time topology updates
+	flowService := grpcserv.NewFlowServiceServer(flowStorage, wsHub)
+	flowService.SetTopologyBuilder(topologyBuilder)
+
+	// Register gRPC services
+	flowpb.RegisterFlowServiceServer(grpcServer, flowService)
 	policypb.RegisterPolicyServiceServer(grpcServer, grpcserv.NewPolicyServiceServer(policyStorage, policyPubSub))
 	agentpb.RegisterAgentServiceServer(grpcServer, grpcserv.NewAgentServiceServer(agentStorage))
 
@@ -146,7 +162,7 @@ func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 	return grpcServer
 }
 
-func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, alertStorage *storage.AlertStorage, wsHub *ws.Hub, flowAggregator *aggregator.FlowAggregator) *http.Server {
+func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, alertStorage *storage.AlertStorage, wsHub *ws.Hub, flowAggregator *aggregator.FlowAggregator, topologyManager *topology.Manager) *http.Server {
 	router := gin.Default()
 
 	// Global middleware
@@ -199,6 +215,10 @@ func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 		// Security alert management - use dedicated handler
 		alertHandler := handlers.NewAlertHandler(alertStorage)
 		alertHandler.RegisterRoutes(api)
+
+		// Network topology visualization
+		topologyHandler := handlers.NewTopologyHandler(topologyManager)
+		topologyHandler.RegisterRoutes(api)
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

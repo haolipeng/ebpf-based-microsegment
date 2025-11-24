@@ -10,6 +10,7 @@ import (
 	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
 	"github.com/haolipeng/ebpf-based-microsegment/pkg/netutil"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
+	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/topology"
 	ws "github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/websocket"
 	"github.com/sirupsen/logrus"
 )
@@ -17,8 +18,9 @@ import (
 // FlowServiceServer implements flowpb.FlowServiceServer
 type FlowServiceServer struct {
 	flowpb.UnimplementedFlowServiceServer
-	flowStorage *storage.FlowStorage
-	wsHub       *ws.Hub
+	flowStorage     *storage.FlowStorage
+	wsHub           *ws.Hub
+	topologyBuilder *topology.Builder
 }
 
 // NewFlowServiceServer creates a new FlowServiceServer
@@ -27,6 +29,11 @@ func NewFlowServiceServer(flowStorage *storage.FlowStorage, wsHub *ws.Hub) *Flow
 		flowStorage: flowStorage,
 		wsHub:       wsHub,
 	}
+}
+
+// SetTopologyBuilder sets the topology builder for real-time topology updates.
+func (s *FlowServiceServer) SetTopologyBuilder(builder *topology.Builder) {
+	s.topologyBuilder = builder
 }
 
 // ReportFlowEvents handles streaming flow events from agents
@@ -69,6 +76,11 @@ func (s *FlowServiceServer) ReportFlowEvents(stream flowpb.FlowService_ReportFlo
 				AcceptedCount:  0,
 				RejectedCount:  uint32(acceptedCount + rejectedCount),
 			})
+		}
+
+		// Update topology with flow events (real-time topology building)
+		if s.topologyBuilder != nil {
+			s.topologyBuilder.ProcessFlowEvents(events)
 		}
 
 		// Broadcast flows to WebSocket clients (real-time streaming)
