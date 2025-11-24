@@ -33,7 +33,7 @@ func TestNewFlowHandler(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
+	flowStorage := storage.NewFlowStorage(db)
 	handler := NewFlowHandler(flowStorage)
 
 	assert.NotNil(t, handler)
@@ -46,7 +46,7 @@ func TestListFlows_Success(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
+	flowStorage := storage.NewFlowStorage(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock COUNT query
@@ -100,7 +100,7 @@ func TestListFlows_WithPagination(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
+	flowStorage := storage.NewFlowStorage(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock COUNT query - 100 total flows
@@ -143,7 +143,7 @@ func TestListFlows_WithFilters(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
+	flowStorage := storage.NewFlowStorage(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock COUNT query
@@ -186,7 +186,7 @@ func TestListFlows_StorageError(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
+	flowStorage := storage.NewFlowStorage(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock query error
@@ -214,7 +214,7 @@ func TestGetFlow_Success(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
+	flowStorage := storage.NewFlowStorage(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock COUNT query
@@ -259,7 +259,7 @@ func TestGetFlow_NotFound(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
+	flowStorage := storage.NewFlowStorage(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock COUNT query
@@ -299,7 +299,7 @@ func TestGetFlowSummary_Success(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
+	flowStorage := storage.NewFlowStorage(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock summary query
@@ -346,7 +346,7 @@ func TestGetFlowSummary_StorageError(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
+	flowStorage := storage.NewFlowStorage(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock query error
@@ -374,7 +374,7 @@ func TestGetFlowDependencies_Success(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
+	flowStorage := storage.NewFlowStorage(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock dependencies query
@@ -415,7 +415,7 @@ func TestGetFlowDependencies_StorageError(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
+	flowStorage := storage.NewFlowStorage(db)
 	router := setupTestRouter(flowStorage)
 
 	// Mock query error

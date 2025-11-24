@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -26,11 +25,10 @@ const (
 	// Server endpoints - adjust based on your deployment
 	serverGRPCAddr = "localhost:9090"
 	serverHTTPAddr = "http://localhost:8080"
-	serverWSAddr   = "ws://localhost:8080"
 )
 
 // TestE2E_FlowLifecycle tests the complete flow lifecycle:
-// Agent registration -> Flow reporting -> HTTP API query -> WebSocket streaming
+// Agent registration -> Flow reporting -> HTTP API query
 func TestE2E_FlowLifecycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping E2E test in short mode")
@@ -155,60 +153,6 @@ func TestE2E_FlowLifecycle(t *testing.T) {
 		t.Logf("✓ HTTP query returned expected flows")
 	} else {
 		t.Logf("⚠ HTTP query returned fewer flows (async delay expected)")
-	}
-
-	// Step 5: Test WebSocket streaming
-	wsURL := fmt.Sprintf("%s/api/v1/flows/stream", serverWSAddr)
-	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Logf("WebSocket connection failed (server may not support WebSocket on this endpoint): %v", err)
-		return // Skip WebSocket test if not available
-	}
-	defer wsConn.Close()
-
-	// Send a filter to only receive flows from our test agent
-	filter := map[string]interface{}{
-		"agent_id": agentID,
-	}
-	filterJSON, _ := json.Marshal(filter)
-	err = wsConn.WriteMessage(websocket.TextMessage, filterJSON)
-	require.NoError(t, err, "Should send filter")
-
-	// Report one more flow to trigger WebSocket update
-	flowStream2, err := flowClient.ReportFlowEvents(ctx)
-	require.NoError(t, err)
-	newFlow := &flowpb.FlowEvent{
-		SrcIp:        netutil.StringToUint32("192.168.100.12"),
-		DstIp:        netutil.StringToUint32("192.168.200.22"),
-		SrcPort:      8082,
-		DstPort:      443,
-		Protocol:     commonpb.Protocol(6),
-		EventType:    commonpb.FlowEventType(0),
-		Direction:    commonpb.FlowDirection(1),
-		PacketCount:  300,
-		ByteCount:    45000,
-		TimestampNs:  uint64(time.Now().UnixNano()),
-		PolicyId:     1,
-		PolicyAction: commonpb.PolicyAction(1),
-		State:        commonpb.FlowState(2),
-		AgentId:      agentID,
-	}
-	err = flowStream2.Send(newFlow)
-	require.NoError(t, err)
-	flowStream2.CloseAndRecv()
-
-	// Try to receive WebSocket message (with timeout)
-	wsConn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	_, message, err := wsConn.ReadMessage()
-	if err == nil {
-		var wsFlow flowpb.Flow
-		err = json.Unmarshal(message, &wsFlow)
-		if err == nil {
-			t.Logf("Received flow via WebSocket: agent_id=%s, src=%s, dst=%s",
-				wsFlow.AgentId, wsFlow.SrcIp, wsFlow.DstIp)
-		}
-	} else {
-		t.Logf("Did not receive WebSocket message (may be filtered or timing): %v", err)
 	}
 
 	t.Log("✅ E2E Flow Lifecycle Test Completed Successfully")

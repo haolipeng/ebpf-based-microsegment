@@ -8,10 +8,8 @@ import (
 
 	commonpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/common"
 	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
-	"github.com/haolipeng/ebpf-based-microsegment/pkg/netutil"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/storage"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/topology"
-	ws "github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/websocket"
 	"github.com/sirupsen/logrus"
 )
 
@@ -19,15 +17,13 @@ import (
 type FlowServiceServer struct {
 	flowpb.UnimplementedFlowServiceServer
 	flowStorage     *storage.FlowStorage
-	wsHub           *ws.Hub
 	topologyBuilder *topology.Builder
 }
 
 // NewFlowServiceServer creates a new FlowServiceServer
-func NewFlowServiceServer(flowStorage *storage.FlowStorage, wsHub *ws.Hub) *FlowServiceServer {
+func NewFlowServiceServer(flowStorage *storage.FlowStorage) *FlowServiceServer {
 	return &FlowServiceServer{
 		flowStorage: flowStorage,
-		wsHub:       wsHub,
 	}
 }
 
@@ -81,15 +77,6 @@ func (s *FlowServiceServer) ReportFlowEvents(stream flowpb.FlowService_ReportFlo
 		// Update topology with flow events (real-time topology building)
 		if s.topologyBuilder != nil {
 			s.topologyBuilder.ProcessFlowEvents(events)
-		}
-
-		// Broadcast flows to WebSocket clients (real-time streaming)
-		// Convert each FlowEvent to Flow and broadcast
-		for _, event := range events {
-			flow := s.eventToFlow(event)
-			if s.wsHub != nil {
-				s.wsHub.Broadcast(flow)
-			}
 		}
 	}
 
@@ -146,30 +133,4 @@ func (s *FlowServiceServer) GetFlowSummary(ctx context.Context, req *flowpb.Flow
 		TotalPackets: uint64(summary.TotalPackets),
 		TotalBytes:   uint64(summary.TotalBytes),
 	}, nil
-}
-
-// eventToFlow converts a FlowEvent (from agent) to Flow (for storage/WebSocket)
-func (s *FlowServiceServer) eventToFlow(event *flowpb.FlowEvent) *flowpb.Flow {
-	// Convert IP addresses from uint32 to string
-	srcIP := netutil.Uint32ToString(event.SrcIp)
-	dstIP := netutil.Uint32ToString(event.DstIp)
-
-	return &flowpb.Flow{
-		// Note: id will be 0 (database will assign proper ID on insert)
-		AgentId:      event.AgentId,
-		SrcIp:        srcIP,
-		DstIp:        dstIP,
-		SrcPort:      event.SrcPort,
-		DstPort:      event.DstPort,
-		Protocol:     event.Protocol,
-		Direction:    event.Direction,
-		PacketCount:  event.PacketCount,
-		ByteCount:    event.ByteCount,
-		StartTime:    int64(event.TimestampNs), // Convert uint64 to int64
-		PolicyId:     event.PolicyId,
-		PolicyAction: event.PolicyAction,
-		State:        event.State,
-		SourceLabels: event.SourceLabels,
-		DestLabels:   event.DestLabels,
-	}
 }

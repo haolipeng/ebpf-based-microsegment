@@ -93,12 +93,11 @@ func TestNewFlowServiceServer(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
-	server := NewFlowServiceServer(flowStorage, nil)
+	flowStorage := storage.NewFlowStorage(db)
+	server := NewFlowServiceServer(flowStorage)
 
 	assert.NotNil(t, server)
 	assert.NotNil(t, server.flowStorage)
-	assert.Nil(t, server.wsHub)
 }
 
 // TestReportFlowEvents_SingleEvent tests receiving a single flow event
@@ -106,8 +105,8 @@ func TestReportFlowEvents_SingleEvent(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
-	server := NewFlowServiceServer(flowStorage, nil)
+	flowStorage := storage.NewFlowStorage(db)
+	server := NewFlowServiceServer(flowStorage)
 
 	event := &flowpb.FlowEvent{
 		TimestampNs:  uint64(time.Now().UnixNano()),
@@ -159,8 +158,8 @@ func TestReportFlowEvents_MultipleEvents(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
-	server := NewFlowServiceServer(flowStorage, nil)
+	flowStorage := storage.NewFlowStorage(db)
+	server := NewFlowServiceServer(flowStorage)
 
 	events := []*flowpb.FlowEvent{
 		{
@@ -221,8 +220,8 @@ func TestReportFlowEvents_RejectsInvalidEvent(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
-	server := NewFlowServiceServer(flowStorage, nil)
+	flowStorage := storage.NewFlowStorage(db)
+	server := NewFlowServiceServer(flowStorage)
 
 	events := []*flowpb.FlowEvent{
 		{
@@ -272,8 +271,8 @@ func TestReportFlowEvents_StorageError(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
-	server := NewFlowServiceServer(flowStorage, nil)
+	flowStorage := storage.NewFlowStorage(db)
+	server := NewFlowServiceServer(flowStorage)
 
 	event := &flowpb.FlowEvent{
 		TimestampNs: uint64(time.Now().UnixNano()),
@@ -305,8 +304,8 @@ func TestReportFlowEvents_EmptyStream(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
-	server := NewFlowServiceServer(flowStorage, nil)
+	flowStorage := storage.NewFlowStorage(db)
+	server := NewFlowServiceServer(flowStorage)
 
 	mockStream := &mockReportFlowEventsStream{
 		events: []*flowpb.FlowEvent{}, // Empty
@@ -329,8 +328,8 @@ func TestQueryFlows_Success(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
-	server := NewFlowServiceServer(flowStorage, nil)
+	flowStorage := storage.NewFlowStorage(db)
+	server := NewFlowServiceServer(flowStorage)
 
 	query := &flowpb.FlowQuery{
 		TimeRange: &commonpb.TimeRange{
@@ -376,8 +375,8 @@ func TestQueryFlows_WithPagination(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
-	server := NewFlowServiceServer(flowStorage, nil)
+	flowStorage := storage.NewFlowStorage(db)
+	server := NewFlowServiceServer(flowStorage)
 
 	query := &flowpb.FlowQuery{
 		Limit:  10,
@@ -411,8 +410,8 @@ func TestQueryFlows_StorageError(t *testing.T) {
 	db, mock := setupMockDB(t)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
-	server := NewFlowServiceServer(flowStorage, nil)
+	flowStorage := storage.NewFlowStorage(db)
+	server := NewFlowServiceServer(flowStorage)
 
 	query := &flowpb.FlowQuery{
 		Limit: 10,
@@ -434,8 +433,8 @@ func TestGetFlowSummary_ReturnsBasicStats(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	flowStorage := storage.NewFlowStorageLegacy(db)
-	server := NewFlowServiceServer(flowStorage, nil)
+	flowStorage := storage.NewFlowStorage(db)
+	server := NewFlowServiceServer(flowStorage)
 
 	req := &flowpb.FlowSummaryRequest{
 		TimeRange: &commonpb.TimeRange{
@@ -504,48 +503,3 @@ func TestIntToIP(t *testing.T) {
 	}
 }
 
-// TestEventToFlow tests event conversion
-func TestEventToFlow(t *testing.T) {
-	db, _, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close()
-
-	flowStorage := storage.NewFlowStorageLegacy(db)
-	server := NewFlowServiceServer(flowStorage, nil)
-
-	event := &flowpb.FlowEvent{
-		TimestampNs:  uint64(1234567890123456789),
-		SrcIp:        0xC0A80101, // 192.168.1.1
-		DstIp:        0xC0A80102, // 192.168.1.2
-		SrcPort:      12345,
-		DstPort:      80,
-		Protocol:     6,
-		Direction:    1,
-		PacketCount:  100,
-		ByteCount:    10240,
-		PolicyId:     5,
-		PolicyAction: 1,
-		State:        2,
-		AgentId:      "test-agent",
-		SourceLabels: map[string]string{"app": "web"},
-		DestLabels:   map[string]string{"app": "db"},
-	}
-
-	flow := server.eventToFlow(event)
-
-	assert.Equal(t, "test-agent", flow.AgentId)
-	assert.Equal(t, "192.168.1.1", flow.SrcIp)
-	assert.Equal(t, "192.168.1.2", flow.DstIp)
-	assert.Equal(t, uint32(12345), flow.SrcPort)
-	assert.Equal(t, uint32(80), flow.DstPort)
-	assert.Equal(t, commonpb.Protocol(6), flow.Protocol)
-	assert.Equal(t, commonpb.FlowDirection(1), flow.Direction)
-	assert.Equal(t, uint64(100), flow.PacketCount)
-	assert.Equal(t, uint64(10240), flow.ByteCount)
-	assert.Equal(t, int64(1234567890123456789), flow.StartTime)
-	assert.Equal(t, uint32(5), flow.PolicyId)
-	assert.Equal(t, commonpb.PolicyAction(1), flow.PolicyAction)
-	assert.Equal(t, commonpb.FlowState(2), flow.State)
-	assert.Equal(t, event.SourceLabels, flow.SourceLabels)
-	assert.Equal(t, event.DestLabels, flow.DestLabels)
-}

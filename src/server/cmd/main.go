@@ -27,7 +27,6 @@ import (
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/api/middleware"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/aggregator"
 	"github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/topology"
-	ws "github.com/haolipeng/ebpf-based-microsegment/src/server/pkg/websocket"
 )
 
 func main() {
@@ -70,11 +69,6 @@ func main() {
 	agentStorage := storage.NewAgentStorage(db)
 	alertStorage := storage.NewAlertStorage(db)
 
-	// Create and start WebSocket hub for real-time flow streaming
-	wsHub := ws.NewHub()
-	go wsHub.Run()
-	logrus.Info("WebSocket hub started")
-
 	// Create aggregator for flow analysis
 	flowAggregator := aggregator.NewFlowAggregator(db)
 	logrus.Info("Flow aggregator initialized")
@@ -88,11 +82,11 @@ func main() {
 	logrus.Info("Topology manager initialized")
 
 	// Start gRPC server
-	grpcServer := startGRPCServer(cfg, flowStorage, policyStorage, agentStorage, wsHub, topologyBuilder)
+	grpcServer := startGRPCServer(cfg, flowStorage, policyStorage, agentStorage, topologyBuilder)
 	defer grpcServer.GracefulStop()
 
 	// Start HTTP API server
-	httpServer := startHTTPServer(cfg, flowStorage, policyStorage, agentStorage, alertStorage, wsHub, flowAggregator, topologyManager)
+	httpServer := startHTTPServer(cfg, flowStorage, policyStorage, agentStorage, alertStorage, flowAggregator, topologyManager)
 
 	// Wait for shutdown signal
 	shutdown := make(chan os.Signal, 1)
@@ -131,7 +125,7 @@ func setupLogging(cfg config.LogConfig) {
 	}
 }
 
-func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, wsHub *ws.Hub, topologyBuilder *topology.Builder) *grpc.Server {
+func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, topologyBuilder *topology.Builder) *grpc.Server {
 	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.GRPC.Host, cfg.GRPC.Port))
 	if err != nil {
 		logrus.Fatalf("Failed to listen on gRPC port: %v", err)
@@ -144,7 +138,7 @@ func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 	logrus.Info("Policy pub/sub mechanism initialized for incremental updates")
 
 	// Create flow service with topology builder for real-time topology updates
-	flowService := grpcserv.NewFlowServiceServer(flowStorage, wsHub)
+	flowService := grpcserv.NewFlowServiceServer(flowStorage)
 	flowService.SetTopologyBuilder(topologyBuilder)
 
 	// Register gRPC services
@@ -162,7 +156,7 @@ func startGRPCServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 	return grpcServer
 }
 
-func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, alertStorage *storage.AlertStorage, wsHub *ws.Hub, flowAggregator *aggregator.FlowAggregator, topologyManager *topology.Manager) *http.Server {
+func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, policyStorage *storage.PolicyStorage, agentStorage *storage.AgentStorage, alertStorage *storage.AlertStorage, flowAggregator *aggregator.FlowAggregator, topologyManager *topology.Manager) *http.Server {
 	router := gin.Default()
 
 	// Global middleware
@@ -199,10 +193,6 @@ func startHTTPServer(cfg *config.Config, flowStorage *storage.FlowStorage, polic
 		// Flow API - use dedicated handler
 		flowHandler := handlers.NewFlowHandler(flowStorage)
 		flowHandler.RegisterRoutes(api)
-
-		// WebSocket real-time flow streaming
-		flowStreamHandler := handlers.NewFlowStreamHandler(wsHub)
-		flowStreamHandler.RegisterRoutes(api)
 
 		// Aggregator for flow analysis and dependencies
 		aggregatorHandler := handlers.NewAggregatorHandler(flowAggregator)
