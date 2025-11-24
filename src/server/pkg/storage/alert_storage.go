@@ -4,23 +4,26 @@ import (
 	"context"
 	"database/sql"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"net"
-	"strings"
+	"time"
+
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
 
 	alertpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/alert"
 	flowpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/flow"
 )
 
-// AlertStorage handles security alert data persistence
+// AlertStorage handles security alert data persistence using Bun
 type AlertStorage struct {
-	db *sql.DB
+	db *bun.DB
 }
 
 // NewAlertStorage creates a new AlertStorage
 func NewAlertStorage(db *sql.DB) *AlertStorage {
-	return &AlertStorage{db: db}
+	bunDB := bun.NewDB(db, pgdialect.New())
+	return &AlertStorage{db: bunDB}
 }
 
 // AlertQueryOptions contains query parameters for alerts
@@ -54,149 +57,105 @@ type TimelineBucket struct {
 	Count     int64
 }
 
+// AlertRow represents a row in the security_alerts table
+type AlertRow struct {
+	bun.BaseModel `bun:"table:security_alerts,alias:sa"`
+
+	ID          int64             `bun:"id,pk,autoincrement"`
+	AlertID     string            `bun:"alert_id,unique,notnull"`
+	Level       int32             `bun:"level,notnull"`
+	Type        int32             `bun:"type,notnull"`
+	PID         *uint32           `bun:"pid"`
+	PPID        *uint32           `bun:"ppid"`
+	UID         *uint32           `bun:"uid"`
+	GID         *uint32           `bun:"gid"`
+	Comm        *string           `bun:"comm"`
+	ExePath     *string           `bun:"exe_path"`
+	ContainerID *string           `bun:"container_id"`
+	FlowID      *int64            `bun:"flow_id"`
+	SrcIP       *string           `bun:"src_ip"`
+	DstIP       *string           `bun:"dst_ip"`
+	DstPort     *uint32           `bun:"dst_port"`
+	Protocol    *string           `bun:"protocol"`
+	Reason      string            `bun:"reason,type:text,notnull"`
+	Metadata    map[string]string `bun:"metadata,type:jsonb"`
+	Timestamp   int64             `bun:"timestamp,notnull"`
+	CreatedAt   time.Time         `bun:"created_at,default:current_timestamp"`
+	AgentID     *string           `bun:"agent_id"`
+}
+
 // QueryAlerts retrieves security alerts with pagination and filtering
 func (s *AlertStorage) QueryAlerts(ctx context.Context, opts *AlertQueryOptions) ([]*alertpb.SecurityAlert, int64, error) {
-	// Build WHERE clause
-	whereClauses := []string{"1=1"}
-	args := []interface{}{}
-	argIdx := 1
+	query := s.db.NewSelect().
+		Model((*AlertRow)(nil))
 
 	if opts.Level != nil {
-		whereClauses = append(whereClauses, fmt.Sprintf("level = $%d", argIdx))
-		args = append(args, *opts.Level)
-		argIdx++
+		query = query.Where("level = ?", *opts.Level)
 	}
-
 	if opts.Type != nil {
-		whereClauses = append(whereClauses, fmt.Sprintf("type = $%d", argIdx))
-		args = append(args, *opts.Type)
-		argIdx++
+		query = query.Where("type = ?", *opts.Type)
 	}
-
 	if opts.ProcessPath != nil {
-		whereClauses = append(whereClauses, fmt.Sprintf("exe_path LIKE $%d", argIdx))
-		args = append(args, *opts.ProcessPath+"%")
-		argIdx++
+		query = query.Where("exe_path LIKE ?", *opts.ProcessPath+"%")
 	}
-
 	if opts.StartTime != nil {
-		whereClauses = append(whereClauses, fmt.Sprintf("timestamp >= $%d", argIdx))
-		args = append(args, *opts.StartTime)
-		argIdx++
+		query = query.Where("timestamp >= ?", *opts.StartTime)
 	}
-
 	if opts.EndTime != nil {
-		whereClauses = append(whereClauses, fmt.Sprintf("timestamp <= $%d", argIdx))
-		args = append(args, *opts.EndTime)
-		argIdx++
+		query = query.Where("timestamp <= ?", *opts.EndTime)
 	}
 
-	whereClause := strings.Join(whereClauses, " AND ")
-
-	// Get total count
-	var totalCount int64
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM security_alerts WHERE %s", whereClause)
-	err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&totalCount)
+	totalCount, err := query.Count(ctx)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get alert count: %w", err)
 	}
 
-	// Query alerts with pagination
 	offset := (opts.Page - 1) * opts.PageSize
-	args = append(args, opts.PageSize, offset)
-
-	query := fmt.Sprintf(`
-		SELECT id, alert_id, level, type, pid, ppid, uid, gid, comm, exe_path, container_id,
-		       flow_id, src_ip, dst_ip, dst_port, protocol, reason, metadata,
-		       timestamp, created_at, agent_id
-		FROM security_alerts
-		WHERE %s
-		ORDER BY timestamp DESC
-		LIMIT $%d OFFSET $%d
-	`, whereClause, argIdx, argIdx+1)
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	var rows []AlertRow
+	err = s.db.NewSelect().
+		Model(&rows).
+		Where("1=1").
+		Apply(func(q *bun.SelectQuery) *bun.SelectQuery {
+			if opts.Level != nil {
+				q = q.Where("level = ?", *opts.Level)
+			}
+			if opts.Type != nil {
+				q = q.Where("type = ?", *opts.Type)
+			}
+			if opts.ProcessPath != nil {
+				q = q.Where("exe_path LIKE ?", *opts.ProcessPath+"%")
+			}
+			if opts.StartTime != nil {
+				q = q.Where("timestamp >= ?", *opts.StartTime)
+			}
+			if opts.EndTime != nil {
+				q = q.Where("timestamp <= ?", *opts.EndTime)
+			}
+			return q
+		}).
+		Order("timestamp DESC").
+		Limit(opts.PageSize).
+		Offset(offset).
+		Scan(ctx)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to query alerts: %w", err)
 	}
-	defer rows.Close()
 
-	alerts := []*alertpb.SecurityAlert{}
-	for rows.Next() {
-		var alert SecurityAlert
-		var metadataJSON []byte
-
-		err := rows.Scan(
-			&alert.ID,
-			&alert.AlertID,
-			&alert.Level,
-			&alert.Type,
-			&alert.PID,
-			&alert.PPID,
-			&alert.UID,
-			&alert.GID,
-			&alert.Comm,
-			&alert.ExePath,
-			&alert.ContainerID,
-			&alert.FlowID,
-			&alert.SrcIP,
-			&alert.DstIP,
-			&alert.DstPort,
-			&alert.Protocol,
-			&alert.Reason,
-			&metadataJSON,
-			&alert.Timestamp,
-			&alert.CreatedAt,
-			&alert.AgentID,
-		)
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to scan alert: %w", err)
-		}
-
-		// Convert to protobuf
-		pbAlert := s.alertModelToProto(&alert, metadataJSON)
-		alerts = append(alerts, pbAlert)
+	alerts := make([]*alertpb.SecurityAlert, 0, len(rows))
+	for _, row := range rows {
+		alerts = append(alerts, s.alertRowToProto(&row))
 	}
 
-	return alerts, totalCount, nil
+	return alerts, int64(totalCount), nil
 }
 
 // GetAlertByID retrieves a single alert by ID
 func (s *AlertStorage) GetAlertByID(ctx context.Context, alertID string) (*alertpb.SecurityAlert, error) {
-	var alert SecurityAlert
-	var metadataJSON []byte
-
-	query := `
-		SELECT id, alert_id, level, type, pid, ppid, uid, gid, comm, exe_path, container_id,
-		       flow_id, src_ip, dst_ip, dst_port, protocol, reason, metadata,
-		       timestamp, created_at, agent_id
-		FROM security_alerts
-		WHERE alert_id = $1
-	`
-
-	err := s.db.QueryRowContext(ctx, query, alertID).Scan(
-		&alert.ID,
-		&alert.AlertID,
-		&alert.Level,
-		&alert.Type,
-		&alert.PID,
-		&alert.PPID,
-		&alert.UID,
-		&alert.GID,
-		&alert.Comm,
-		&alert.ExePath,
-		&alert.ContainerID,
-		&alert.FlowID,
-		&alert.SrcIP,
-		&alert.DstIP,
-		&alert.DstPort,
-		&alert.Protocol,
-		&alert.Reason,
-		&metadataJSON,
-		&alert.Timestamp,
-		&alert.CreatedAt,
-		&alert.AgentID,
-	)
+	var row AlertRow
+	err := s.db.NewSelect().
+		Model(&row).
+		Where("alert_id = ?", alertID).
+		Scan(ctx)
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("alert not found: %s", alertID)
@@ -205,66 +164,61 @@ func (s *AlertStorage) GetAlertByID(ctx context.Context, alertID string) (*alert
 		return nil, fmt.Errorf("failed to get alert: %w", err)
 	}
 
-	return s.alertModelToProto(&alert, metadataJSON), nil
+	return s.alertRowToProto(&row), nil
 }
 
 // CreateAlert creates a new security alert
 func (s *AlertStorage) CreateAlert(ctx context.Context, alert *alertpb.SecurityAlert) error {
-	metadataJSON, _ := json.Marshal(alert.Metadata)
+	row := &AlertRow{
+		AlertID:   alert.AlertId,
+		Level:     int32(alert.Level),
+		Type:      int32(alert.Type),
+		Reason:    alert.Reason,
+		Metadata:  alert.Metadata,
+		Timestamp: alert.Timestamp,
+	}
 
-	// Extract process info
-	var pid, ppid, uid, gid *uint32
-	var comm, exePath, containerID *string
+	if alert.AgentId != "" {
+		row.AgentID = &alert.AgentId
+	}
+
 	if alert.ProcessInfo != nil {
-		pid = &alert.ProcessInfo.Pid
-		ppid = &alert.ProcessInfo.Ppid
-		uid = &alert.ProcessInfo.Uid
-		gid = &alert.ProcessInfo.Gid
+		row.PID = &alert.ProcessInfo.Pid
+		row.PPID = &alert.ProcessInfo.Ppid
+		row.UID = &alert.ProcessInfo.Uid
+		row.GID = &alert.ProcessInfo.Gid
 		if alert.ProcessInfo.Comm != "" {
-			comm = &alert.ProcessInfo.Comm
+			row.Comm = &alert.ProcessInfo.Comm
 		}
 		if alert.ProcessInfo.ExePath != "" {
-			exePath = &alert.ProcessInfo.ExePath
+			row.ExePath = &alert.ProcessInfo.ExePath
 		}
 		if alert.ProcessInfo.ContainerId != "" {
-			containerID = &alert.ProcessInfo.ContainerId
+			row.ContainerID = &alert.ProcessInfo.ContainerId
 		}
 	}
 
-	// Extract flow info
-	var flowID *int64
-	var srcIP, dstIP *string
-	var dstPort *uint32
-	var protocol *string
 	if alert.FlowEvent != nil {
 		if alert.FlowEvent.SrcIp != 0 {
 			ipStr := uint32ToIPString(alert.FlowEvent.SrcIp)
-			srcIP = &ipStr
+			row.SrcIP = &ipStr
 		}
 		if alert.FlowEvent.DstIp != 0 {
 			ipStr := uint32ToIPString(alert.FlowEvent.DstIp)
-			dstIP = &ipStr
+			row.DstIP = &ipStr
 		}
 		if alert.FlowEvent.DstPort != 0 {
-			dstPort = &alert.FlowEvent.DstPort
+			row.DstPort = &alert.FlowEvent.DstPort
 		}
-		// Convert protocol enum to string
 		protocolStr := alert.FlowEvent.Protocol.String()
 		if protocolStr != "" && protocolStr != "PROTOCOL_UNKNOWN" {
-			protocol = &protocolStr
+			row.Protocol = &protocolStr
 		}
 	}
 
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO security_alerts (
-			alert_id, level, type, pid, ppid, uid, gid, comm, exe_path, container_id,
-			flow_id, src_ip, dst_ip, dst_port, protocol, reason, metadata,
-			timestamp, agent_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-	`, alert.AlertId, alert.Level, alert.Type, pid, ppid, uid, gid, comm, exePath, containerID,
-		flowID, srcIP, dstIP, dstPort, protocol, alert.Reason, metadataJSON,
-		alert.Timestamp, alert.AgentId)
-
+	_, err := s.db.NewInsert().
+		Model(row).
+		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create alert: %w", err)
 	}
@@ -281,185 +235,155 @@ func (s *AlertStorage) GetAlertStats(ctx context.Context, startTime, endTime int
 		Timeline:     []TimelineBucket{},
 	}
 
-	// Get counts by level
-	levelRows, err := s.db.QueryContext(ctx, `
-		SELECT level, COUNT(*) as count
-		FROM security_alerts
-		WHERE timestamp >= $1 AND timestamp <= $2
-		GROUP BY level
-		ORDER BY level
-	`, startTime, endTime)
+	var levelRows []struct {
+		Level int32 `bun:"level"`
+		Count int64 `bun:"count"`
+	}
+	err := s.db.NewSelect().
+		Model((*AlertRow)(nil)).
+		ColumnExpr("level, COUNT(*) as count").
+		Where("timestamp >= ? AND timestamp <= ?", startTime, endTime).
+		Group("level").
+		Order("level").
+		Scan(ctx, &levelRows)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get alert stats by level: %w", err)
 	}
-	defer levelRows.Close()
 
-	for levelRows.Next() {
-		var level int32
-		var count int64
-		levelRows.Scan(&level, &count)
-		levelName := alertpb.AlertLevel(level).String()
-		stats.ByLevel[levelName] = count
+	for _, row := range levelRows {
+		levelName := alertpb.AlertLevel(row.Level).String()
+		stats.ByLevel[levelName] = row.Count
 	}
 
-	// Get counts by type
-	typeRows, err := s.db.QueryContext(ctx, `
-		SELECT type, COUNT(*) as count
-		FROM security_alerts
-		WHERE timestamp >= $1 AND timestamp <= $2
-		GROUP BY type
-		ORDER BY type
-	`, startTime, endTime)
+	var typeRows []struct {
+		Type  int32 `bun:"type"`
+		Count int64 `bun:"count"`
+	}
+	err = s.db.NewSelect().
+		Model((*AlertRow)(nil)).
+		ColumnExpr("type, COUNT(*) as count").
+		Where("timestamp >= ? AND timestamp <= ?", startTime, endTime).
+		Group("type").
+		Order("type").
+		Scan(ctx, &typeRows)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get alert stats by type: %w", err)
 	}
-	defer typeRows.Close()
 
-	for typeRows.Next() {
-		var alertType int32
-		var count int64
-		typeRows.Scan(&alertType, &count)
-		typeName := alertpb.AlertType(alertType).String()
-		stats.ByType[typeName] = count
+	for _, row := range typeRows {
+		typeName := alertpb.AlertType(row.Type).String()
+		stats.ByType[typeName] = row.Count
 	}
 
-	// Get top processes by alert count
-	processRows, err := s.db.QueryContext(ctx, `
-		SELECT exe_path, COUNT(*) as count
-		FROM security_alerts
-		WHERE timestamp >= $1 AND timestamp <= $2
-		  AND exe_path IS NOT NULL AND exe_path != ''
-		GROUP BY exe_path
-		ORDER BY count DESC
-		LIMIT 10
-	`, startTime, endTime)
+	var processRows []struct {
+		ExePath string `bun:"exe_path"`
+		Count   int64  `bun:"count"`
+	}
+	err = s.db.NewSelect().
+		Model((*AlertRow)(nil)).
+		ColumnExpr("exe_path, COUNT(*) as count").
+		Where("timestamp >= ? AND timestamp <= ?", startTime, endTime).
+		Where("exe_path IS NOT NULL AND exe_path != ''").
+		Group("exe_path").
+		Order("count DESC").
+		Limit(10).
+		Scan(ctx, &processRows)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get top processes: %w", err)
 	}
-	defer processRows.Close()
 
-	for processRows.Next() {
-		var exePath string
-		var count int64
-		processRows.Scan(&exePath, &count)
+	for _, row := range processRows {
 		stats.TopProcesses = append(stats.TopProcesses, ProcessAlertCount{
-			ExePath: exePath,
-			Count:   count,
+			ExePath: row.ExePath,
+			Count:   row.Count,
 		})
 	}
 
-	// Get timeline data (hourly or daily buckets based on time window)
-	var bucketInterval string
+	var truncFunc string
 	switch timeWindow {
-	case "24h":
-		bucketInterval = "1 hour"
-	case "7d":
-		bucketInterval = "1 day"
-	case "30d":
-		bucketInterval = "1 day"
+	case "7d", "30d":
+		truncFunc = "day"
 	default:
-		bucketInterval = "1 hour"
+		truncFunc = "hour"
 	}
 
-	timelineQuery := fmt.Sprintf(`
-		SELECT
-			EXTRACT(EPOCH FROM date_trunc('%s', to_timestamp(timestamp / 1000000000))) * 1000000000 AS bucket,
-			COUNT(*) as count
-		FROM security_alerts
-		WHERE timestamp >= $1 AND timestamp <= $2
-		GROUP BY bucket
-		ORDER BY bucket
-	`, strings.TrimSuffix(bucketInterval, " hour"))
-
-	if strings.Contains(bucketInterval, "day") {
-		timelineQuery = fmt.Sprintf(`
-			SELECT
-				EXTRACT(EPOCH FROM date_trunc('day', to_timestamp(timestamp / 1000000000))) * 1000000000 AS bucket,
-				COUNT(*) as count
-			FROM security_alerts
-			WHERE timestamp >= $1 AND timestamp <= $2
-			GROUP BY bucket
-			ORDER BY bucket
-		`)
+	var timelineRows []struct {
+		Bucket int64 `bun:"bucket"`
+		Count  int64 `bun:"count"`
 	}
-
-	timelineRows, err := s.db.QueryContext(ctx, timelineQuery, startTime, endTime)
+	err = s.db.NewSelect().
+		Model((*AlertRow)(nil)).
+		ColumnExpr("EXTRACT(EPOCH FROM date_trunc(?, to_timestamp(timestamp / 1000000000))) * 1000000000 AS bucket", truncFunc).
+		ColumnExpr("COUNT(*) as count").
+		Where("timestamp >= ? AND timestamp <= ?", startTime, endTime).
+		Group("bucket").
+		Order("bucket").
+		Scan(ctx, &timelineRows)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get timeline data: %w", err)
 	}
-	defer timelineRows.Close()
 
-	for timelineRows.Next() {
-		var bucket, count int64
-		timelineRows.Scan(&bucket, &count)
+	for _, row := range timelineRows {
 		stats.Timeline = append(stats.Timeline, TimelineBucket{
-			Timestamp: bucket,
-			Count:     count,
+			Timestamp: row.Bucket,
+			Count:     row.Count,
 		})
 	}
 
 	return stats, nil
 }
 
-// alertModelToProto converts database model to protobuf message
-func (s *AlertStorage) alertModelToProto(alert *SecurityAlert, metadataJSON []byte) *alertpb.SecurityAlert {
+// alertRowToProto converts database row to protobuf message
+func (s *AlertStorage) alertRowToProto(row *AlertRow) *alertpb.SecurityAlert {
 	pbAlert := &alertpb.SecurityAlert{
-		AlertId:   alert.AlertID,
-		Level:     alertpb.AlertLevel(alert.Level),
-		Type:      alertpb.AlertType(alert.Type),
-		Reason:    alert.Reason,
-		Timestamp: alert.Timestamp,
-		Metadata:  make(map[string]string),
+		AlertId:   row.AlertID,
+		Level:     alertpb.AlertLevel(row.Level),
+		Type:      alertpb.AlertType(row.Type),
+		Reason:    row.Reason,
+		Timestamp: row.Timestamp,
+		Metadata:  row.Metadata,
 	}
 
-	if alert.AgentID != nil {
-		pbAlert.AgentId = *alert.AgentID
+	if row.AgentID != nil {
+		pbAlert.AgentId = *row.AgentID
 	}
 
-	// Unmarshal metadata
-	if len(metadataJSON) > 0 {
-		json.Unmarshal(metadataJSON, &pbAlert.Metadata)
-	}
-
-	// Build ProcessInfo if any process fields are present
-	if alert.PID != nil || alert.Comm != nil || alert.ExePath != nil {
+	if row.PID != nil || row.Comm != nil || row.ExePath != nil {
 		pbAlert.ProcessInfo = &flowpb.ProcessInfo{}
-		if alert.PID != nil {
-			pbAlert.ProcessInfo.Pid = uint32(*alert.PID)
+		if row.PID != nil {
+			pbAlert.ProcessInfo.Pid = *row.PID
 		}
-		if alert.PPID != nil {
-			pbAlert.ProcessInfo.Ppid = uint32(*alert.PPID)
+		if row.PPID != nil {
+			pbAlert.ProcessInfo.Ppid = *row.PPID
 		}
-		if alert.UID != nil {
-			pbAlert.ProcessInfo.Uid = uint32(*alert.UID)
+		if row.UID != nil {
+			pbAlert.ProcessInfo.Uid = *row.UID
 		}
-		if alert.GID != nil {
-			pbAlert.ProcessInfo.Gid = uint32(*alert.GID)
+		if row.GID != nil {
+			pbAlert.ProcessInfo.Gid = *row.GID
 		}
-		if alert.Comm != nil {
-			pbAlert.ProcessInfo.Comm = *alert.Comm
+		if row.Comm != nil {
+			pbAlert.ProcessInfo.Comm = *row.Comm
 		}
-		if alert.ExePath != nil {
-			pbAlert.ProcessInfo.ExePath = *alert.ExePath
+		if row.ExePath != nil {
+			pbAlert.ProcessInfo.ExePath = *row.ExePath
 		}
-		if alert.ContainerID != nil {
-			pbAlert.ProcessInfo.ContainerId = *alert.ContainerID
+		if row.ContainerID != nil {
+			pbAlert.ProcessInfo.ContainerId = *row.ContainerID
 		}
 	}
 
-	// Build FlowEvent if any flow fields are present
-	if alert.SrcIP != nil || alert.DstIP != nil {
+	if row.SrcIP != nil || row.DstIP != nil {
 		pbAlert.FlowEvent = &flowpb.FlowEvent{}
-		if alert.SrcIP != nil {
-			pbAlert.FlowEvent.SrcIp = ipStringToUint32(*alert.SrcIP)
+		if row.SrcIP != nil {
+			pbAlert.FlowEvent.SrcIp = ipStringToUint32(*row.SrcIP)
 		}
-		if alert.DstIP != nil {
-			pbAlert.FlowEvent.DstIp = ipStringToUint32(*alert.DstIP)
+		if row.DstIP != nil {
+			pbAlert.FlowEvent.DstIp = ipStringToUint32(*row.DstIP)
 		}
-		if alert.DstPort != nil {
-			pbAlert.FlowEvent.DstPort = *alert.DstPort
+		if row.DstPort != nil {
+			pbAlert.FlowEvent.DstPort = *row.DstPort
 		}
-		// Note: Protocol stored as string in DB, would need conversion back to enum
 	}
 
 	return pbAlert

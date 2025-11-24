@@ -3,181 +3,24 @@ package storage
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
+	"time"
 
-	"github.com/lib/pq"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+
 	agentpb "github.com/haolipeng/ebpf-based-microsegment/api/proto/agent"
 )
 
-// AgentStorage handles agent data persistence
+// AgentStorage handles agent data persistence using Bun
 type AgentStorage struct {
-	db *sql.DB
+	db *bun.DB
 }
 
 // NewAgentStorage creates a new AgentStorage
 func NewAgentStorage(db *sql.DB) *AgentStorage {
-	return &AgentStorage{db: db}
-}
-
-// RegisterAgent registers or updates an agent
-func (s *AgentStorage) RegisterAgent(ctx context.Context, req *agentpb.RegisterRequest) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO agents (agent_id, hostname, version, interface, ip_addresses, os, kernel_version, start_time, last_heartbeat, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8/1000000000.0), CURRENT_TIMESTAMP, 'active')
-		ON CONFLICT (agent_id) DO UPDATE SET
-			hostname = EXCLUDED.hostname,
-			version = EXCLUDED.version,
-			interface = EXCLUDED.interface,
-			ip_addresses = EXCLUDED.ip_addresses,
-			os = EXCLUDED.os,
-			kernel_version = EXCLUDED.kernel_version,
-			start_time = EXCLUDED.start_time,
-			last_heartbeat = CURRENT_TIMESTAMP,
-			status = 'active',
-			updated_at = CURRENT_TIMESTAMP
-	`, req.AgentId, req.Hostname, req.Version, req.Interface,
-		pq.Array(req.IpAddresses), req.Os, req.KernelVersion, req.StartTime)
-
-	if err != nil {
-		return fmt.Errorf("failed to register agent: %w", err)
-	}
-
-	return nil
-}
-
-// UpdateHeartbeat updates agent last heartbeat timestamp
-func (s *AgentStorage) UpdateHeartbeat(ctx context.Context, agentID string, metrics *agentpb.AgentMetrics) error {
-	// Update agent heartbeat
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE agents
-		SET last_heartbeat = CURRENT_TIMESTAMP, status = 'active', updated_at = CURRENT_TIMESTAMP
-		WHERE agent_id = $1
-	`, agentID)
-	if err != nil {
-		return fmt.Errorf("failed to update heartbeat: %w", err)
-	}
-
-	// Update metrics
-	if metrics != nil {
-		_, err = s.db.ExecContext(ctx, `
-			INSERT INTO agent_metrics (agent_id, cpu_usage, memory_usage, packets_processed, active_sessions, flows_reported, active_policies)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-			ON CONFLICT (agent_id) DO UPDATE SET
-				cpu_usage = EXCLUDED.cpu_usage,
-				memory_usage = EXCLUDED.memory_usage,
-				packets_processed = EXCLUDED.packets_processed,
-				active_sessions = EXCLUDED.active_sessions,
-				flows_reported = EXCLUDED.flows_reported,
-				active_policies = EXCLUDED.active_policies,
-				updated_at = CURRENT_TIMESTAMP
-		`, agentID, metrics.CpuUsage, metrics.MemoryUsage, metrics.PacketsProcessed,
-			metrics.ActiveSessions, metrics.FlowsReported, metrics.ActivePolicies)
-		if err != nil {
-			return fmt.Errorf("failed to update agent metrics: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// GetAllAgents retrieves all registered agents
-func (s *AgentStorage) GetAllAgents(ctx context.Context) ([]*Agent, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT a.agent_id, a.hostname, a.version, a.interface, a.ip_addresses, a.os, a.kernel_version,
-		       FLOOR(EXTRACT(EPOCH FROM a.start_time)*1000000000)::bigint as start_time,
-		       FLOOR(EXTRACT(EPOCH FROM a.last_heartbeat)*1000000000)::bigint as last_heartbeat,
-		       a.status,
-		       COALESCE(m.cpu_usage, 0), COALESCE(m.memory_usage, 0),
-		       COALESCE(m.packets_processed, 0), COALESCE(m.active_sessions, 0),
-		       COALESCE(m.flows_reported, 0), COALESCE(m.active_policies, 0)
-		FROM agents a
-		LEFT JOIN agent_metrics m ON a.agent_id = m.agent_id
-		ORDER BY a.last_heartbeat DESC
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query agents: %w", err)
-	}
-	defer rows.Close()
-
-	agents := []*Agent{}
-	for rows.Next() {
-		var agent Agent
-		var ipAddresses pq.StringArray
-
-		err := rows.Scan(
-			&agent.AgentID,
-			&agent.Hostname,
-			&agent.Version,
-			&agent.Interface,
-			&ipAddresses,
-			&agent.OS,
-			&agent.KernelVersion,
-			&agent.StartTime,
-			&agent.LastHeartbeat,
-			&agent.Status,
-			&agent.CPUUsage,
-			&agent.MemoryUsage,
-			&agent.PacketsProcessed,
-			&agent.ActiveSessions,
-			&agent.FlowsReported,
-			&agent.ActivePolicies,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan agent: %w", err)
-		}
-
-		agent.IPAddresses = []string(ipAddresses)
-		agents = append(agents, &agent)
-	}
-
-	return agents, nil
-}
-
-// GetAgentByID retrieves a single agent by ID
-func (s *AgentStorage) GetAgentByID(ctx context.Context, agentID string) (*Agent, error) {
-	var agent Agent
-	var ipAddresses pq.StringArray
-
-	err := s.db.QueryRowContext(ctx, `
-		SELECT a.agent_id, a.hostname, a.version, a.interface, a.ip_addresses, a.os, a.kernel_version,
-		       FLOOR(EXTRACT(EPOCH FROM a.start_time)*1000000000)::bigint as start_time,
-		       FLOOR(EXTRACT(EPOCH FROM a.last_heartbeat)*1000000000)::bigint as last_heartbeat,
-		       a.status,
-		       COALESCE(m.cpu_usage, 0), COALESCE(m.memory_usage, 0),
-		       COALESCE(m.packets_processed, 0), COALESCE(m.active_sessions, 0),
-		       COALESCE(m.flows_reported, 0), COALESCE(m.active_policies, 0)
-		FROM agents a
-		LEFT JOIN agent_metrics m ON a.agent_id = m.agent_id
-		WHERE a.agent_id = $1
-	`, agentID).Scan(
-		&agent.AgentID,
-		&agent.Hostname,
-		&agent.Version,
-		&agent.Interface,
-		&ipAddresses,
-		&agent.OS,
-		&agent.KernelVersion,
-		&agent.StartTime,
-		&agent.LastHeartbeat,
-		&agent.Status,
-		&agent.CPUUsage,
-		&agent.MemoryUsage,
-		&agent.PacketsProcessed,
-		&agent.ActiveSessions,
-		&agent.FlowsReported,
-		&agent.ActivePolicies,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("agent not found")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to query agent: %w", err)
-	}
-
-	agent.IPAddresses = []string(ipAddresses)
-	return &agent, nil
+	bunDB := bun.NewDB(db, pgdialect.New())
+	return &AgentStorage{db: bunDB}
 }
 
 // Agent represents an agent with metrics
@@ -200,78 +43,331 @@ type Agent struct {
 	ActivePolicies   uint32
 }
 
-// UpdateStatusReport persists a detailed status report from an agent
-func (s *AgentStorage) UpdateStatusReport(ctx context.Context, report *agentpb.StatusReport) error {
-	// Convert metadata map to JSON
-	var metadataJSON []byte
-	var err error
-	if report.Metadata != nil && len(report.Metadata) > 0 {
-		metadataJSON, err = json.Marshal(report.Metadata)
+// AgentRow represents a row in the agents table
+type AgentRow struct {
+	bun.BaseModel `bun:"table:agents,alias:a"`
+
+	ID            int64      `bun:"id,pk,autoincrement"`
+	AgentID       string     `bun:"agent_id,unique,notnull"`
+	Hostname      string     `bun:"hostname"`
+	Version       string     `bun:"version"`
+	Interface     string     `bun:"interface"`
+	IPAddresses   []string   `bun:"ip_addresses,array"`
+	OS            string     `bun:"os"`
+	KernelVersion string     `bun:"kernel_version"`
+	StartTime     time.Time  `bun:"start_time"`
+	LastHeartbeat time.Time  `bun:"last_heartbeat"`
+	Status        string     `bun:"status"`
+	OfflineAt     *time.Time `bun:"offline_at"`
+	OfflineReason *string    `bun:"offline_reason"`
+	CreatedAt     time.Time  `bun:"created_at,default:current_timestamp"`
+	UpdatedAt     time.Time  `bun:"updated_at,default:current_timestamp"`
+}
+
+// AgentMetricsRow represents a row in the agent_metrics table
+type AgentMetricsRow struct {
+	bun.BaseModel `bun:"table:agent_metrics,alias:m"`
+
+	ID               int64             `bun:"id,pk,autoincrement"`
+	AgentID          string            `bun:"agent_id,unique,notnull"`
+	CPUUsage         float32           `bun:"cpu_usage"`
+	MemoryUsage      uint64            `bun:"memory_usage"`
+	PacketsProcessed uint64            `bun:"packets_processed"`
+	ActiveSessions   uint32            `bun:"active_sessions"`
+	FlowsReported    uint64            `bun:"flows_reported"`
+	ActivePolicies   uint32            `bun:"active_policies"`
+	PolicyCount      uint32            `bun:"policy_count"`
+	PolicyVersion    uint64            `bun:"policy_version"`
+	WorkloadCount    uint32            `bun:"workload_count"`
+	AgentStatus      string            `bun:"agent_status"`
+	Uptime           uint64            `bun:"uptime"`
+	Errors           []string          `bun:"errors,array"`
+	Metadata         map[string]string `bun:"metadata,type:jsonb"`
+	LastStatusReport *time.Time        `bun:"last_status_report"`
+	UpdatedAt        time.Time         `bun:"updated_at,default:current_timestamp"`
+}
+
+// AgentWithMetrics combines agent and metrics data
+type AgentWithMetrics struct {
+	bun.BaseModel `bun:"table:agents,alias:a"`
+
+	AgentID       string    `bun:"agent_id"`
+	Hostname      string    `bun:"hostname"`
+	Version       string    `bun:"version"`
+	Interface     string    `bun:"interface"`
+	IPAddresses   []string  `bun:"ip_addresses,array"`
+	OS            string    `bun:"os"`
+	KernelVersion string    `bun:"kernel_version"`
+	StartTime     time.Time `bun:"start_time"`
+	LastHeartbeat time.Time `bun:"last_heartbeat"`
+	Status        string    `bun:"status"`
+
+	CPUUsage         float32 `bun:"cpu_usage"`
+	MemoryUsage      uint64  `bun:"memory_usage"`
+	PacketsProcessed uint64  `bun:"packets_processed"`
+	ActiveSessions   uint32  `bun:"active_sessions"`
+	FlowsReported    uint64  `bun:"flows_reported"`
+	ActivePolicies   uint32  `bun:"active_policies"`
+}
+
+// RegisterAgent registers or updates an agent
+func (s *AgentStorage) RegisterAgent(ctx context.Context, req *agentpb.RegisterRequest) error {
+	agent := &AgentRow{
+		AgentID:       req.AgentId,
+		Hostname:      req.Hostname,
+		Version:       req.Version,
+		Interface:     req.Interface,
+		IPAddresses:   req.IpAddresses,
+		OS:            req.Os,
+		KernelVersion: req.KernelVersion,
+		StartTime:     time.Unix(0, req.StartTime),
+		LastHeartbeat: time.Now(),
+		Status:        "active",
+	}
+
+	_, err := s.db.NewInsert().
+		Model(agent).
+		On("CONFLICT (agent_id) DO UPDATE").
+		Set("hostname = EXCLUDED.hostname").
+		Set("version = EXCLUDED.version").
+		Set("interface = EXCLUDED.interface").
+		Set("ip_addresses = EXCLUDED.ip_addresses").
+		Set("os = EXCLUDED.os").
+		Set("kernel_version = EXCLUDED.kernel_version").
+		Set("start_time = EXCLUDED.start_time").
+		Set("last_heartbeat = CURRENT_TIMESTAMP").
+		Set("status = 'active'").
+		Set("updated_at = CURRENT_TIMESTAMP").
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to register agent: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateHeartbeat updates agent last heartbeat timestamp
+func (s *AgentStorage) UpdateHeartbeat(ctx context.Context, agentID string, metrics *agentpb.AgentMetrics) error {
+	_, err := s.db.NewUpdate().
+		Model((*AgentRow)(nil)).
+		Set("last_heartbeat = CURRENT_TIMESTAMP").
+		Set("status = 'active'").
+		Set("updated_at = CURRENT_TIMESTAMP").
+		Where("agent_id = ?", agentID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to update heartbeat: %w", err)
+	}
+
+	if metrics != nil {
+		metricsRow := &AgentMetricsRow{
+			AgentID:          agentID,
+			CPUUsage:         metrics.CpuUsage,
+			MemoryUsage:      metrics.MemoryUsage,
+			PacketsProcessed: metrics.PacketsProcessed,
+			ActiveSessions:   metrics.ActiveSessions,
+			FlowsReported:    metrics.FlowsReported,
+			ActivePolicies:   metrics.ActivePolicies,
+		}
+
+		_, err = s.db.NewInsert().
+			Model(metricsRow).
+			On("CONFLICT (agent_id) DO UPDATE").
+			Set("cpu_usage = EXCLUDED.cpu_usage").
+			Set("memory_usage = EXCLUDED.memory_usage").
+			Set("packets_processed = EXCLUDED.packets_processed").
+			Set("active_sessions = EXCLUDED.active_sessions").
+			Set("flows_reported = EXCLUDED.flows_reported").
+			Set("active_policies = EXCLUDED.active_policies").
+			Set("updated_at = CURRENT_TIMESTAMP").
+			Exec(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to marshal metadata: %w", err)
+			return fmt.Errorf("failed to update agent metrics: %w", err)
 		}
 	}
 
-	// Convert agent status enum to string
+	return nil
+}
+
+// GetAllAgents retrieves all registered agents with metrics
+func (s *AgentStorage) GetAllAgents(ctx context.Context) ([]*Agent, error) {
+	var rows []AgentWithMetrics
+
+	err := s.db.NewSelect().
+		ColumnExpr("a.agent_id, a.hostname, a.version, a.interface, a.ip_addresses").
+		ColumnExpr("a.os, a.kernel_version, a.start_time, a.last_heartbeat, a.status").
+		ColumnExpr("COALESCE(m.cpu_usage, 0) as cpu_usage").
+		ColumnExpr("COALESCE(m.memory_usage, 0) as memory_usage").
+		ColumnExpr("COALESCE(m.packets_processed, 0) as packets_processed").
+		ColumnExpr("COALESCE(m.active_sessions, 0) as active_sessions").
+		ColumnExpr("COALESCE(m.flows_reported, 0) as flows_reported").
+		ColumnExpr("COALESCE(m.active_policies, 0) as active_policies").
+		Table("agents").
+		TableExpr("LEFT JOIN agent_metrics AS m ON a.agent_id = m.agent_id").
+		Order("a.last_heartbeat DESC").
+		Scan(ctx, &rows)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query agents: %w", err)
+	}
+
+	agents := make([]*Agent, 0, len(rows))
+	for _, row := range rows {
+		agents = append(agents, &Agent{
+			AgentID:          row.AgentID,
+			Hostname:         row.Hostname,
+			Version:          row.Version,
+			Interface:        row.Interface,
+			IPAddresses:      row.IPAddresses,
+			OS:               row.OS,
+			KernelVersion:    row.KernelVersion,
+			StartTime:        row.StartTime.UnixNano(),
+			LastHeartbeat:    row.LastHeartbeat.UnixNano(),
+			Status:           row.Status,
+			CPUUsage:         row.CPUUsage,
+			MemoryUsage:      row.MemoryUsage,
+			PacketsProcessed: row.PacketsProcessed,
+			ActiveSessions:   row.ActiveSessions,
+			FlowsReported:    row.FlowsReported,
+			ActivePolicies:   row.ActivePolicies,
+		})
+	}
+
+	return agents, nil
+}
+
+// GetAgentByID retrieves a single agent by ID
+func (s *AgentStorage) GetAgentByID(ctx context.Context, agentID string) (*Agent, error) {
+	var row AgentWithMetrics
+
+	err := s.db.NewSelect().
+		ColumnExpr("a.agent_id, a.hostname, a.version, a.interface, a.ip_addresses").
+		ColumnExpr("a.os, a.kernel_version, a.start_time, a.last_heartbeat, a.status").
+		ColumnExpr("COALESCE(m.cpu_usage, 0) as cpu_usage").
+		ColumnExpr("COALESCE(m.memory_usage, 0) as memory_usage").
+		ColumnExpr("COALESCE(m.packets_processed, 0) as packets_processed").
+		ColumnExpr("COALESCE(m.active_sessions, 0) as active_sessions").
+		ColumnExpr("COALESCE(m.flows_reported, 0) as flows_reported").
+		ColumnExpr("COALESCE(m.active_policies, 0) as active_policies").
+		Table("agents").
+		TableExpr("LEFT JOIN agent_metrics AS m ON a.agent_id = m.agent_id").
+		Where("a.agent_id = ?", agentID).
+		Scan(ctx, &row)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("agent not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query agent: %w", err)
+	}
+
+	return &Agent{
+		AgentID:          row.AgentID,
+		Hostname:         row.Hostname,
+		Version:          row.Version,
+		Interface:        row.Interface,
+		IPAddresses:      row.IPAddresses,
+		OS:               row.OS,
+		KernelVersion:    row.KernelVersion,
+		StartTime:        row.StartTime.UnixNano(),
+		LastHeartbeat:    row.LastHeartbeat.UnixNano(),
+		Status:           row.Status,
+		CPUUsage:         row.CPUUsage,
+		MemoryUsage:      row.MemoryUsage,
+		PacketsProcessed: row.PacketsProcessed,
+		ActiveSessions:   row.ActiveSessions,
+		FlowsReported:    row.FlowsReported,
+		ActivePolicies:   row.ActivePolicies,
+	}, nil
+}
+
+// UpdateStatusReport persists a detailed status report from an agent
+func (s *AgentStorage) UpdateStatusReport(ctx context.Context, report *agentpb.StatusReport) error {
 	agentStatus := agentStatusToString(report.Status)
 
-	// Update agent_metrics with status report data
-	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO agent_metrics (
-			agent_id, cpu_usage, memory_usage, packets_processed, active_sessions,
-			flows_reported, active_policies, policy_count, policy_version,
-			workload_count, agent_status, uptime, errors, metadata, last_status_report
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
-		ON CONFLICT (agent_id) DO UPDATE SET
-			cpu_usage = EXCLUDED.cpu_usage,
-			memory_usage = EXCLUDED.memory_usage,
-			packets_processed = EXCLUDED.packets_processed,
-			active_sessions = EXCLUDED.active_sessions,
-			flows_reported = EXCLUDED.flows_reported,
-			active_policies = EXCLUDED.active_policies,
-			policy_count = EXCLUDED.policy_count,
-			policy_version = EXCLUDED.policy_version,
-			workload_count = EXCLUDED.workload_count,
-			agent_status = EXCLUDED.agent_status,
-			uptime = EXCLUDED.uptime,
-			errors = EXCLUDED.errors,
-			metadata = EXCLUDED.metadata,
-			last_status_report = CURRENT_TIMESTAMP,
-			updated_at = CURRENT_TIMESTAMP
-	`,
-		report.AgentId,
-		getMetricValue(report.Metrics, func(m *agentpb.AgentMetrics) float32 { return m.CpuUsage }),
-		getMetricValueUint64(report.Metrics, func(m *agentpb.AgentMetrics) uint64 { return m.MemoryUsage }),
-		getMetricValueUint64(report.Metrics, func(m *agentpb.AgentMetrics) uint64 { return m.PacketsProcessed }),
-		getMetricValueUint32(report.Metrics, func(m *agentpb.AgentMetrics) uint32 { return m.ActiveSessions }),
-		getMetricValueUint64(report.Metrics, func(m *agentpb.AgentMetrics) uint64 { return m.FlowsReported }),
-		getMetricValueUint32(report.Metrics, func(m *agentpb.AgentMetrics) uint32 { return m.ActivePolicies }),
-		report.PolicyCount,
-		report.PolicyVersion,
-		report.WorkloadCount,
-		agentStatus,
-		report.Uptime,
-		pq.Array(report.Errors),
-		metadataJSON,
-	)
+	metricsRow := &AgentMetricsRow{
+		AgentID:       report.AgentId,
+		PolicyCount:   report.PolicyCount,
+		PolicyVersion: report.PolicyVersion,
+		WorkloadCount: report.WorkloadCount,
+		AgentStatus:   agentStatus,
+		Uptime:        report.Uptime,
+		Errors:        report.Errors,
+		Metadata:      report.Metadata,
+	}
+
+	if report.Metrics != nil {
+		metricsRow.CPUUsage = report.Metrics.CpuUsage
+		metricsRow.MemoryUsage = report.Metrics.MemoryUsage
+		metricsRow.PacketsProcessed = report.Metrics.PacketsProcessed
+		metricsRow.ActiveSessions = report.Metrics.ActiveSessions
+		metricsRow.FlowsReported = report.Metrics.FlowsReported
+		metricsRow.ActivePolicies = report.Metrics.ActivePolicies
+	}
+
+	_, err := s.db.NewInsert().
+		Model(metricsRow).
+		On("CONFLICT (agent_id) DO UPDATE").
+		Set("cpu_usage = EXCLUDED.cpu_usage").
+		Set("memory_usage = EXCLUDED.memory_usage").
+		Set("packets_processed = EXCLUDED.packets_processed").
+		Set("active_sessions = EXCLUDED.active_sessions").
+		Set("flows_reported = EXCLUDED.flows_reported").
+		Set("active_policies = EXCLUDED.active_policies").
+		Set("policy_count = EXCLUDED.policy_count").
+		Set("policy_version = EXCLUDED.policy_version").
+		Set("workload_count = EXCLUDED.workload_count").
+		Set("agent_status = EXCLUDED.agent_status").
+		Set("uptime = EXCLUDED.uptime").
+		Set("errors = EXCLUDED.errors").
+		Set("metadata = EXCLUDED.metadata").
+		Set("last_status_report = CURRENT_TIMESTAMP").
+		Set("updated_at = CURRENT_TIMESTAMP").
+		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to update status report: %w", err)
 	}
 
-	// Also update agents table status
-	_, err = s.db.ExecContext(ctx, `
-		UPDATE agents
-		SET status = CASE
-			WHEN $2 = 'error' THEN 'unhealthy'
-			WHEN $2 = 'degraded' THEN 'unhealthy'
-			ELSE 'active'
-		END,
-		updated_at = CURRENT_TIMESTAMP
-		WHERE agent_id = $1
-	`, report.AgentId, agentStatus)
+	newStatus := "active"
+	if agentStatus == "error" || agentStatus == "degraded" {
+		newStatus = "unhealthy"
+	}
+
+	_, err = s.db.NewUpdate().
+		Model((*AgentRow)(nil)).
+		Set("status = ?", newStatus).
+		Set("updated_at = CURRENT_TIMESTAMP").
+		Where("agent_id = ?", report.AgentId).
+		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to update agent status: %w", err)
+	}
+
+	return nil
+}
+
+// MarkAgentOffline marks an agent as inactive/offline with reason
+func (s *AgentStorage) MarkAgentOffline(ctx context.Context, agentID, reason string) error {
+	result, err := s.db.NewUpdate().
+		Model((*AgentRow)(nil)).
+		Set("status = 'inactive'").
+		Set("offline_at = CURRENT_TIMESTAMP").
+		Set("offline_reason = ?", reason).
+		Set("updated_at = CURRENT_TIMESTAMP").
+		Where("agent_id = ?", agentID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to mark agent offline: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("agent not found: %s", agentID)
 	}
 
 	return nil
@@ -293,52 +389,4 @@ func agentStatusToString(status agentpb.AgentStatus) string {
 	default:
 		return "unknown"
 	}
-}
-
-// Helper functions to safely extract metric values
-func getMetricValue(m *agentpb.AgentMetrics, f func(*agentpb.AgentMetrics) float32) float32 {
-	if m == nil {
-		return 0
-	}
-	return f(m)
-}
-
-func getMetricValueUint64(m *agentpb.AgentMetrics, f func(*agentpb.AgentMetrics) uint64) uint64 {
-	if m == nil {
-		return 0
-	}
-	return f(m)
-}
-
-func getMetricValueUint32(m *agentpb.AgentMetrics, f func(*agentpb.AgentMetrics) uint32) uint32 {
-	if m == nil {
-		return 0
-	}
-	return f(m)
-}
-
-// MarkAgentOffline marks an agent as inactive/offline with reason
-func (s *AgentStorage) MarkAgentOffline(ctx context.Context, agentID, reason string) error {
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE agents
-		SET status = 'inactive',
-		    offline_at = CURRENT_TIMESTAMP,
-		    offline_reason = $2,
-		    updated_at = CURRENT_TIMESTAMP
-		WHERE agent_id = $1
-	`, agentID, reason)
-	if err != nil {
-		return fmt.Errorf("failed to mark agent offline: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("agent not found: %s", agentID)
-	}
-
-	return nil
 }
