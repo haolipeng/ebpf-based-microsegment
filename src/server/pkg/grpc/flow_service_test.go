@@ -130,17 +130,15 @@ func TestReportFlowEvents_SingleEvent(t *testing.T) {
 		events: []*flowpb.FlowEvent{event},
 	}
 
-	// Expect database operations for saving the event
-	mock.ExpectBegin()
-	mock.ExpectPrepare("INSERT INTO flows")
-	mock.ExpectExec("INSERT INTO flows").
-		WithArgs(event.TimestampNs, "192.168.1.1", "192.168.1.2",
-			event.SrcPort, event.DstPort, event.Protocol,
-			event.Direction, event.PacketCount, event.ByteCount,
-			event.PolicyId, event.PolicyAction, event.State,
-			event.AgentId, sqlmock.AnyArg(), sqlmock.AnyArg()).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectCommit()
+	// Expect database operations for saving the event (bun uses INSERT ... RETURNING)
+	returnRows := sqlmock.NewRows([]string{
+		"id", "start_time", "end_time", "last_seen", "created_at",
+		"src_pid", "src_ppid", "src_uid", "src_gid", "src_comm",
+		"src_exe_path", "src_cmdline", "src_container_id", "dst_pid", "dst_comm",
+	}).AddRow(1, nil, nil, nil, time.Now(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	mock.ExpectQuery("INSERT INTO \"flows\"").
+		WillReturnRows(returnRows)
 
 	err := server.ReportFlowEvents(mockStream)
 	assert.NoError(t, err)
@@ -195,14 +193,19 @@ func TestReportFlowEvents_MultipleEvents(t *testing.T) {
 		events: events,
 	}
 
-	// Expect database operations for batch saving
-	mock.ExpectBegin()
-	mock.ExpectPrepare("INSERT INTO flows")
-	for range events {
-		mock.ExpectExec("INSERT INTO flows").
-			WillReturnResult(sqlmock.NewResult(1, 1))
+	// Expect database operations for batch saving (bun uses INSERT ... RETURNING)
+	returnRows := sqlmock.NewRows([]string{
+		"id", "policy_id", "policy_action", "state", "start_time", "end_time",
+		"last_seen", "created_at", "src_pid", "src_ppid", "src_uid", "src_gid",
+		"src_comm", "src_exe_path", "src_cmdline", "src_container_id", "dst_pid", "dst_comm",
+	})
+	for i := range events {
+		returnRows.AddRow(int64(i+1), nil, nil, nil, nil, nil, nil, time.Now(),
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	}
-	mock.ExpectCommit()
+
+	mock.ExpectQuery("INSERT INTO \"flows\"").
+		WillReturnRows(returnRows)
 
 	err := server.ReportFlowEvents(mockStream)
 	assert.NoError(t, err)
@@ -249,11 +252,17 @@ func TestReportFlowEvents_RejectsInvalidEvent(t *testing.T) {
 	}
 
 	// Only 2 events should be saved (1 rejected due to missing agent_id)
-	mock.ExpectBegin()
-	mock.ExpectPrepare("INSERT INTO flows")
-	mock.ExpectExec("INSERT INTO flows").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("INSERT INTO flows").WillReturnResult(sqlmock.NewResult(2, 1))
-	mock.ExpectCommit()
+	// bun uses INSERT ... RETURNING for batch inserts
+	returnRows := sqlmock.NewRows([]string{
+		"id", "policy_id", "policy_action", "state", "start_time", "end_time",
+		"last_seen", "created_at", "src_pid", "src_ppid", "src_uid", "src_gid",
+		"src_comm", "src_exe_path", "src_cmdline", "src_container_id", "dst_pid", "dst_comm",
+	}).
+		AddRow(int64(1), nil, nil, nil, nil, nil, nil, time.Now(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		AddRow(int64(2), nil, nil, nil, nil, nil, nil, time.Now(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	mock.ExpectQuery("INSERT INTO \"flows\"").
+		WillReturnRows(returnRows)
 
 	err := server.ReportFlowEvents(mockStream)
 	assert.NoError(t, err)
@@ -285,9 +294,8 @@ func TestReportFlowEvents_StorageError(t *testing.T) {
 		events: []*flowpb.FlowEvent{event},
 	}
 
-	// Storage returns an error
-	mock.ExpectBegin()
-	mock.ExpectPrepare("INSERT INTO flows").
+	// Storage returns an error (bun uses INSERT ... RETURNING which is a Query)
+	mock.ExpectQuery("INSERT INTO \"flows\"").
 		WillReturnError(sql.ErrConnDone)
 
 	err := server.ReportFlowEvents(mockStream)
@@ -296,7 +304,8 @@ func TestReportFlowEvents_StorageError(t *testing.T) {
 	assert.False(t, mockStream.response.Success)
 	assert.Equal(t, uint32(1), mockStream.response.RejectedCount)
 
-	// We don't check expectations here because the transaction failed early
+	err = mock.ExpectationsWereMet()
+	assert.NoError(t, err)
 }
 
 // TestReportFlowEvents_EmptyStream tests handling empty stream
@@ -464,6 +473,84 @@ func TestGetFlowSummary_ReturnsBasicStats(t *testing.T) {
 	assert.Equal(t, uint64(100), resp.TotalFlows)
 	assert.Equal(t, uint64(5000), resp.TotalPackets)
 	assert.Equal(t, uint64(1024000), resp.TotalBytes)
+}
+
+// TestReportFlowEvents_BatchProcessing tests that events are processed in batches
+// to prevent memory exhaustion when receiving large volumes of events.
+func TestReportFlowEvents_BatchProcessing(t *testing.T) {
+	db, mock := setupMockDB(t)
+	defer db.Close()
+
+	flowStorage := storage.NewFlowStorage(db)
+	server := NewFlowServiceServer(flowStorage)
+
+	// Create events exceeding the batch size (maxFlowBatchSize = 1000)
+	// We'll create 2500 events to trigger 3 batches (1000 + 1000 + 500)
+	numEvents := 2500
+	events := make([]*flowpb.FlowEvent, numEvents)
+	for i := 0; i < numEvents; i++ {
+		events[i] = &flowpb.FlowEvent{
+			TimestampNs: uint64(time.Now().UnixNano()),
+			SrcIp:       uint32(0xC0A80001 + i), // 192.168.0.1 + i
+			DstIp:       0xC0A80102,             // 192.168.1.2
+			SrcPort:     uint32(10000 + i),
+			DstPort:     80,
+			Protocol:    6,
+			AgentId:     "agent-batch-test",
+		}
+	}
+
+	mockStream := &mockReportFlowEventsStream{
+		events: events,
+	}
+
+	// Expect 3 batch inserts (1000 + 1000 + 500)
+	// First batch (1000 events)
+	returnRows1 := sqlmock.NewRows([]string{
+		"id", "policy_id", "policy_action", "state", "start_time", "end_time",
+		"last_seen", "created_at", "src_pid", "src_ppid", "src_uid", "src_gid",
+		"src_comm", "src_exe_path", "src_cmdline", "src_container_id", "dst_pid", "dst_comm",
+	})
+	for i := 0; i < 1000; i++ {
+		returnRows1.AddRow(int64(i+1), nil, nil, nil, nil, nil, nil, time.Now(),
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	}
+	mock.ExpectQuery("INSERT INTO \"flows\"").WillReturnRows(returnRows1)
+
+	// Second batch (1000 events)
+	returnRows2 := sqlmock.NewRows([]string{
+		"id", "policy_id", "policy_action", "state", "start_time", "end_time",
+		"last_seen", "created_at", "src_pid", "src_ppid", "src_uid", "src_gid",
+		"src_comm", "src_exe_path", "src_cmdline", "src_container_id", "dst_pid", "dst_comm",
+	})
+	for i := 0; i < 1000; i++ {
+		returnRows2.AddRow(int64(1001+i), nil, nil, nil, nil, nil, nil, time.Now(),
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	}
+	mock.ExpectQuery("INSERT INTO \"flows\"").WillReturnRows(returnRows2)
+
+	// Third batch (500 remaining events)
+	returnRows3 := sqlmock.NewRows([]string{
+		"id", "policy_id", "policy_action", "state", "start_time", "end_time",
+		"last_seen", "created_at", "src_pid", "src_ppid", "src_uid", "src_gid",
+		"src_comm", "src_exe_path", "src_cmdline", "src_container_id", "dst_pid", "dst_comm",
+	})
+	for i := 0; i < 500; i++ {
+		returnRows3.AddRow(int64(2001+i), nil, nil, nil, nil, nil, nil, time.Now(),
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	}
+	mock.ExpectQuery("INSERT INTO \"flows\"").WillReturnRows(returnRows3)
+
+	err := server.ReportFlowEvents(mockStream)
+	assert.NoError(t, err)
+	assert.NotNil(t, mockStream.response)
+	assert.True(t, mockStream.response.Success)
+	assert.Equal(t, uint32(numEvents), mockStream.response.AcceptedCount)
+	assert.Equal(t, uint32(0), mockStream.response.RejectedCount)
+
+	// Verify all 3 batches were executed
+	err = mock.ExpectationsWereMet()
+	assert.NoError(t, err)
 }
 
 // TestIntToIP tests IP conversion utility

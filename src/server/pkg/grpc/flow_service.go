@@ -13,6 +13,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	// maxFlowBatchSize is the maximum number of flow events to accumulate
+	// before flushing to database. This prevents memory exhaustion when
+	// agents send large volumes of events.
+	maxFlowBatchSize = 1000
+)
+
 // FlowServiceServer implements flowpb.FlowServiceServer
 type FlowServiceServer struct {
 	flowpb.UnimplementedFlowServiceServer
@@ -32,18 +39,50 @@ func (s *FlowServiceServer) SetTopologyBuilder(builder *topology.Builder) {
 	s.topologyBuilder = builder
 }
 
-// ReportFlowEvents handles streaming flow events from agents
+// ReportFlowEvents handles streaming flow events from agents.
+// It processes events in batches to prevent memory exhaustion when
+// agents send large volumes of events.
 func (s *FlowServiceServer) ReportFlowEvents(stream flowpb.FlowService_ReportFlowEventsServer) error {
 	ctx := stream.Context()
-	events := []*flowpb.FlowEvent{}
-	acceptedCount := 0
-	rejectedCount := 0
 
-	// Receive all events from stream
+	// Pre-allocate slice with batch capacity to reduce allocations
+	events := make([]*flowpb.FlowEvent, 0, maxFlowBatchSize)
+	totalAccepted := uint32(0)
+	totalRejected := uint32(0)
+	batchCount := 0
+
+	// flushBatch saves current batch to database and updates topology
+	flushBatch := func() error {
+		if len(events) == 0 {
+			return nil
+		}
+
+		batchCount++
+		batchSize := len(events)
+
+		// Save batch to database
+		if err := s.flowStorage.BatchSaveFlowEvents(ctx, events); err != nil {
+			logrus.Errorf("Failed to save flow events batch #%d: %v", batchCount, err)
+			return fmt.Errorf("failed to save flow events: %w", err)
+		}
+
+		// Update topology with flow events (real-time topology building)
+		if s.topologyBuilder != nil {
+			s.topologyBuilder.ProcessFlowEvents(events)
+		}
+
+		logrus.Debugf("Flushed flow events batch #%d (%d events)", batchCount, batchSize)
+
+		// Clear slice while retaining capacity to reduce allocations
+		events = events[:0]
+		return nil
+	}
+
+	// Receive events from stream with batch processing
 	for {
 		event, err := stream.Recv()
 		if err == io.EOF {
-			// Stream finished, process batch
+			// Stream finished, flush remaining events
 			break
 		}
 		if err != nil {
@@ -54,40 +93,44 @@ func (s *FlowServiceServer) ReportFlowEvents(stream flowpb.FlowService_ReportFlo
 		// Basic validation
 		if event.AgentId == "" {
 			logrus.Warnf("Rejected flow event: missing agent_id")
-			rejectedCount++
+			totalRejected++
 			continue
 		}
 
 		events = append(events, event)
-		acceptedCount++
-	}
+		totalAccepted++
 
-	// Save batch to database
-	if len(events) > 0 {
-		if err := s.flowStorage.BatchSaveFlowEvents(ctx, events); err != nil {
-			logrus.Errorf("Failed to save flow events: %v", err)
-			return stream.SendAndClose(&commonpb.ReportResponse{
-				Success:        false,
-				Message:        fmt.Sprintf("Failed to save events: %v", err),
-				AcceptedCount:  0,
-				RejectedCount:  uint32(acceptedCount + rejectedCount),
-			})
-		}
-
-		// Update topology with flow events (real-time topology building)
-		if s.topologyBuilder != nil {
-			s.topologyBuilder.ProcessFlowEvents(events)
+		// Flush batch when reaching max size to prevent memory exhaustion
+		if len(events) >= maxFlowBatchSize {
+			if err := flushBatch(); err != nil {
+				return stream.SendAndClose(&commonpb.ReportResponse{
+					Success:       false,
+					Message:       fmt.Sprintf("Failed to save events: %v", err),
+					AcceptedCount: 0,
+					RejectedCount: totalAccepted + totalRejected,
+				})
+			}
 		}
 	}
 
-	logrus.Infof("Received %d flow events (%d accepted, %d rejected)",
-		acceptedCount+rejectedCount, acceptedCount, rejectedCount)
+	// Flush any remaining events
+	if err := flushBatch(); err != nil {
+		return stream.SendAndClose(&commonpb.ReportResponse{
+			Success:       false,
+			Message:       fmt.Sprintf("Failed to save events: %v", err),
+			AcceptedCount: 0,
+			RejectedCount: totalAccepted + totalRejected,
+		})
+	}
+
+	logrus.Infof("Completed flow event stream: %d accepted, %d rejected, %d batches",
+		totalAccepted, totalRejected, batchCount)
 
 	return stream.SendAndClose(&commonpb.ReportResponse{
-		Success:        true,
-		Message:        "Flow events received successfully",
-		AcceptedCount:  uint32(acceptedCount),
-		RejectedCount:  uint32(rejectedCount),
+		Success:       true,
+		Message:       "Flow events received successfully",
+		AcceptedCount: totalAccepted,
+		RejectedCount: totalRejected,
 	})
 }
 
