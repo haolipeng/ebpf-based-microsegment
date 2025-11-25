@@ -188,19 +188,19 @@ func (m *ProcessMonitor) GetMetrics() MonitorMetrics {
 func (m *ProcessMonitor) collectLoop() {
 	defer m.wg.Done()
 
-	log.Println("[Process Monitor] Starting event collection loop...")
+	log.Info("[Process Monitor] Starting event collection loop...")
 
 	for {
 		select {
 		case <-m.ctx.Done():
-			log.Println("[Process Monitor] Collection loop stopped")
+			log.Info("[Process Monitor] Collection loop stopped")
 			return
 		default:
 			// Read event from ring buffer (blocking with timeout)
 			record, err := m.ringBuf.Read()
 			if err != nil {
 				if err == ringbuf.ErrClosed {
-					log.Println("[Process Monitor] Ring buffer closed")
+					log.Info("[Process Monitor] Ring buffer closed")
 					return
 				}
 				// Log error and continue
@@ -211,14 +211,14 @@ func (m *ProcessMonitor) collectLoop() {
 			// Parse process event
 			event, err := m.parseProcessEvent(record.RawSample)
 			if err != nil {
-				log.Printf("[Process Monitor] Error parsing process event: %v", err)
+				log.Warnf("[Process Monitor] Error parsing process event: %v", err)
 				m.incrementDropped()
 				continue
 			}
 
 			// Process event
 			if err := m.processEvent(event); err != nil {
-				log.Printf("[Process Monitor] Error processing process event: %v", err)
+				log.Warnf("[Process Monitor] Error processing process event: %v", err)
 				m.incrementDropped()
 				continue
 			}
@@ -235,17 +235,17 @@ func (m *ProcessMonitor) cleanupLoop() {
 	ticker := time.NewTicker(m.config.CleanupInterval)
 	defer ticker.Stop()
 
-	log.Printf("[Process Monitor] Starting cleanup loop (interval=%v)", m.config.CleanupInterval)
+	log.Infof("[Process Monitor] Starting cleanup loop (interval=%v)", m.config.CleanupInterval)
 
 	for {
 		select {
 		case <-m.ctx.Done():
-			log.Println("[Process Monitor] Cleanup loop stopped")
+			log.Info("[Process Monitor] Cleanup loop stopped")
 			return
 		case <-ticker.C:
 			removed := m.cache.CleanExpired()
 			if removed > 0 {
-				log.Printf("[Process Monitor] Cleaned up %d expired cache entries", removed)
+				log.Debugf("[Process Monitor] Cleaned up %d expired cache entries", removed)
 			}
 		}
 	}
@@ -292,8 +292,8 @@ func (m *ProcessMonitor) processEvent(event *ProcessEvent) error {
 		path, err := m.resolvePath(info.PID)
 		if err != nil {
 			m.incrementPathErrors()
-			// Don't fail the entire event processing, just log the error
-			log.Printf("[Process Monitor] Failed to resolve path for PID %d: %v", info.PID, err)
+			// Don't fail the entire event processing, just log at debug level
+			log.Debugf("[Process Monitor] Failed to resolve path for PID %d: %v", info.PID, err)
 		} else {
 			info.Path = path
 			info.PathResolved = true
@@ -303,7 +303,8 @@ func (m *ProcessMonitor) processEvent(event *ProcessEvent) error {
 	// Add to cache
 	m.cache.Set(info)
 
-	log.Printf("[Process Monitor] Cached process: PID=%d, Comm=%s, Path=%s, Container=%s",
+	// Use debug level to avoid log flooding
+	log.Debugf("[Process Monitor] Cached process: PID=%d, Comm=%s, Path=%s, Container=%s",
 		info.PID, info.Comm, info.Path, info.ContainerID)
 
 	return nil
