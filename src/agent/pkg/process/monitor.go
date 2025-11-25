@@ -5,13 +5,13 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
 	"unsafe"
 
 	"github.com/cilium/ebpf/ringbuf"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -23,6 +23,12 @@ const (
 
 	// Default cleanup interval: 30 seconds
 	DefaultCleanupInterval = 30 * time.Second
+
+	// StopTimeout is the maximum time to wait for graceful shutdown
+	StopTimeout = 5 * time.Second
+
+	// RecordChannelSize is the buffer size for the record channel
+	RecordChannelSize = 100
 )
 
 // ProcessMonitor monitors process events from eBPF and maintains a process cache
@@ -87,7 +93,7 @@ func NewProcessMonitor(ringBuf *ringbuf.Reader, config MonitorConfig) *ProcessMo
 
 // Start begins monitoring process events
 func (m *ProcessMonitor) Start() error {
-	log.Println("[Process Monitor] Starting process monitor...")
+	log.Info("[Process Monitor] Starting process monitor...")
 
 	// Start event collection loop
 	m.wg.Add(1)
@@ -97,24 +103,44 @@ func (m *ProcessMonitor) Start() error {
 	m.wg.Add(1)
 	go m.cleanupLoop()
 
-	log.Printf("[Process Monitor] Process monitor started (capacity=%d, TTL=%v)",
-		m.config.CacheCapacity, m.config.CacheTTL)
+	log.WithFields(log.Fields{
+		"capacity": m.config.CacheCapacity,
+		"ttl":      m.config.CacheTTL,
+	}).Info("[Process Monitor] Process monitor started")
 	return nil
 }
 
 // Stop gracefully stops the process monitor
+// It closes the ring buffer first to unblock readers, then cancels the context
 func (m *ProcessMonitor) Stop() error {
-	log.Println("[Process Monitor] Stopping process monitor...")
-	m.cancel()
-	m.wg.Wait()
+	log.Info("[Process Monitor] Stopping process monitor...")
 
+	// Close ring buffer FIRST to unblock any readers
+	// This is critical: ringBuf.Read() is blocking, so we must close it
+	// before canceling context, otherwise collectLoop won't exit
 	if m.ringBuf != nil {
 		if err := m.ringBuf.Close(); err != nil {
-			log.Printf("[Process Monitor] Error closing ring buffer: %v", err)
+			log.WithError(err).Warn("[Process Monitor] Error closing ring buffer")
 		}
 	}
 
-	log.Println("[Process Monitor] Process monitor stopped successfully")
+	// Cancel context to signal all goroutines to stop
+	m.cancel()
+
+	// Wait for goroutines with timeout protection
+	done := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Info("[Process Monitor] Process monitor stopped successfully")
+	case <-time.After(StopTimeout):
+		log.Warn("[Process Monitor] Timeout waiting for goroutines to stop")
+	}
+
 	return nil
 }
 
