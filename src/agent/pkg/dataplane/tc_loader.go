@@ -73,6 +73,7 @@ func (l *TCLoader) Load() error {
 		// 再附加 egress (如果失败,清理 ingress)
 		if err := l.attachTCXEgress(); err != nil {
 			l.detachTCXIngress() // 清理已附加的 ingress
+			l.objs.Close()       // 关闭 eBPF 对象,防止资源泄漏
 			return err
 		}
 		return nil
@@ -84,6 +85,7 @@ func (l *TCLoader) Load() error {
 		// 再附加 egress (如果失败,清理 ingress)
 		if err := l.attachLegacyTCEgress(); err != nil {
 			l.detachLegacyTCIngress() // 清理已附加的 ingress
+			l.objs.Close()            // 关闭 eBPF 对象,防止资源泄漏
 			return err
 		}
 		return nil
