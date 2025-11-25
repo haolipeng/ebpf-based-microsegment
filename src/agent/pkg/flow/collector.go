@@ -10,6 +10,11 @@ import (
 	"github.com/cilium/ebpf/ringbuf"
 )
 
+const (
+	// StopTimeout is the maximum time to wait for graceful shutdown
+	StopTimeout = 5 * time.Second
+)
+
 // WorkloadManager interface for workload label lookup
 type WorkloadManager interface {
 	// GetLabelsByIP returns labels for a workload identified by IP address
@@ -183,20 +188,39 @@ func (c *Collector) Start() error {
 }
 
 // Stop gracefully stops the flow collector
+// It closes the ring buffer first to unblock readers, then cancels the context
 func (c *Collector) Stop() error {
 	log.Println("[Flow Collector] Stopping flow collector...")
-	c.cancel()
-	c.wg.Wait()
 
-	// Flush remaining active flows
-	if err := c.flushActiveFlows(); err != nil {
-		log.Printf("[Flow Collector] Error flushing active flows: %v", err)
-	}
-
+	// Step 1: Close ring buffer FIRST to unblock any readers
+	// This is critical: ringBuf.Read() is blocking, so we must close it
+	// before canceling context, otherwise collectLoop won't exit
 	if c.ringBuf != nil {
 		if err := c.ringBuf.Close(); err != nil {
 			log.Printf("[Flow Collector] Error closing ring buffer: %v", err)
 		}
+	}
+
+	// Step 2: Cancel context to signal all goroutines to stop
+	c.cancel()
+
+	// Step 3: Wait for goroutines with timeout protection
+	done := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("[Flow Collector] All goroutines stopped")
+	case <-time.After(StopTimeout):
+		log.Println("[Flow Collector] Timeout waiting for goroutines to stop")
+	}
+
+	// Step 4: Flush remaining active flows after goroutines stopped
+	if err := c.flushActiveFlows(); err != nil {
+		log.Printf("[Flow Collector] Error flushing active flows: %v", err)
 	}
 
 	log.Println("[Flow Collector] Flow collector stopped successfully")

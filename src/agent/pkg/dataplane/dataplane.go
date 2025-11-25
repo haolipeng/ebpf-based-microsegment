@@ -2,8 +2,11 @@
 package dataplane
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/ringbuf"
@@ -53,6 +56,9 @@ const (
 	StatsParseErrors uint32 = 23 // STATS_PARSE_ERRORS
 	StatsRingbufFull uint32 = 24 // STATS_RINGBUF_FULL
 	StatsMax         uint32 = 25 // STATS_MAX - 总的统计项数量
+
+	// StopTimeout is the maximum time to wait for graceful shutdown
+	StopTimeout = 5 * time.Second
 )
 
 // DataPlane 管理 eBPF 数据平面
@@ -61,6 +67,11 @@ type DataPlane struct {
 	manager        *Manager                // 数据平面管理器 (底层)
 	rbReader       *ringbuf.Reader         // Ring buffer reader
 	timeoutManager *session.TimeoutManager // Session timeout manager (optional)
+
+	// Context for graceful shutdown of MonitorFlowEvents
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 // Statistics 保存数据包处理统计信息
@@ -132,9 +143,14 @@ func NewWithConfig(iface string, config *ModeConfig) (*DataPlane, error) {
 		return nil, fmt.Errorf("creating ring buffer reader: %w", err)
 	}
 
+	// 5. Create context for goroutine lifecycle management
+	ctx, cancel := context.WithCancel(context.Background())
+
 	dp := &DataPlane{
 		manager:  manager,
 		rbReader: rbReader,
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 
 	log.Info("✓ Data plane initialized")
@@ -142,24 +158,48 @@ func NewWithConfig(iface string, config *ModeConfig) (*DataPlane, error) {
 }
 
 // Close 清理数据平面资源
+// It closes the ring buffer first to unblock MonitorFlowEvents, then cancels the context
 func (dp *DataPlane) Close() error {
+	log.Info("[DataPlane] Closing data plane...")
 	var errs []error
 
-	// Stop timeout manager first
+	// Step 1: Stop timeout manager first (has its own graceful shutdown)
 	if dp.timeoutManager != nil {
 		if err := dp.timeoutManager.Stop(); err != nil {
 			errs = append(errs, fmt.Errorf("stopping timeout manager: %w", err))
 		}
 	}
 
-	// 关闭 Ring Buffer Reader
+	// Step 2: Close ring buffer FIRST to unblock MonitorFlowEvents
+	// This is critical: rbReader.Read() is blocking, so we must close it
+	// before canceling context, otherwise MonitorFlowEvents won't exit
 	if dp.rbReader != nil {
 		if err := dp.rbReader.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("closing ring buffer reader: %w", err))
 		}
 	}
 
-	// 卸载数据平面
+	// Step 3: Cancel context to signal MonitorFlowEvents to stop
+	if dp.cancel != nil {
+		dp.cancel()
+	}
+
+	// Step 4: Wait for MonitorFlowEvents goroutine with timeout protection
+	done := make(chan struct{})
+	go func() {
+		dp.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Info("[DataPlane] Flow monitoring goroutine stopped")
+	case <-time.After(StopTimeout):
+		log.Warn("[DataPlane] Timeout waiting for flow monitoring goroutine to stop")
+		errs = append(errs, fmt.Errorf("timeout waiting for MonitorFlowEvents to stop"))
+	}
+
+	// Step 5: Unload data plane (cleanup eBPF resources)
 	if dp.manager != nil {
 		if err := dp.manager.Unload(); err != nil {
 			errs = append(errs, fmt.Errorf("unloading dataplane: %w", err))
@@ -167,10 +207,11 @@ func (dp *DataPlane) Close() error {
 	}
 
 	if len(errs) > 0 {
+		log.Errorf("[DataPlane] Data plane closed with errors: %v", errors.Join(errs...))
 		return errors.Join(errs...)
 	}
 
-	log.Info("Data plane closed successfully")
+	log.Info("[DataPlane] Data plane closed successfully")
 	return nil
 }
 
@@ -236,66 +277,78 @@ func (dp *DataPlane) readAndSumPerCPUStat(statsMap *ebpf.Map, key uint32) uint64
 	return sum
 }
 
-// MonitorFlowEvents 持续读取和处理 ring buffer 中的流事件
+// MonitorFlowEvents continuously reads and processes flow events from ring buffer
+// This method should be called as a goroutine: go dp.MonitorFlowEvents()
+// Use Close() to gracefully stop monitoring
 func (dp *DataPlane) MonitorFlowEvents() {
-	log.Info("Starting flow event monitoring")
+	dp.wg.Add(1)
+	defer dp.wg.Done()
+
+	log.Info("[DataPlane] Starting flow event monitoring loop...")
 
 	for {
-		record, err := dp.rbReader.Read()
-		if err != nil {
-			if errors.Is(err, ringbuf.ErrClosed) {
-				log.Info("Ring buffer closed")
-				return
-			}
-			log.Errorf("Reading from ring buffer: %v", err)
-			continue
-		}
-
-		// Parse flow event using the dedicated parser
-		event, err := flow.ParseFlowEvent(record.RawSample)
-		if err != nil {
-			log.Warnf("Failed to parse flow event: %v", err)
-			continue
-		}
-
-		// Convert to Flow structure (handles IPv4/IPv6 conversion)
-		flowData := event.ToFlow()
-
-		// Handle different event types
-		switch event.EventType {
-		case flow.FlowEventNew:
-			log.Infof("[FLOW NEW] %s:%d -> %s:%d proto=%s dir=%s action=%s packets=%d bytes=%d",
-				flowData.SourceIP, event.SrcPort,
-				flowData.DestIP, event.DstPort,
-				event.Protocol, event.Direction, event.PolicyAction,
-				event.PacketCount, event.ByteCount)
-
-		case flow.FlowEventClosed:
-			log.Infof("[FLOW CLOSED] %s:%d -> %s:%d proto=%s dir=%s packets=%d bytes=%d",
-				flowData.SourceIP, event.SrcPort,
-				flowData.DestIP, event.DstPort,
-				event.Protocol, event.Direction,
-				event.PacketCount, event.ByteCount)
-
-		case flow.FlowEventTimeout:
-			log.Infof("[FLOW TIMEOUT] %s:%d -> %s:%d proto=%s dir=%s packets=%d bytes=%d",
-				flowData.SourceIP, event.SrcPort,
-				flowData.DestIP, event.DstPort,
-				event.Protocol, event.Direction,
-				event.PacketCount, event.ByteCount)
-
-		case flow.FlowEventUpdate:
-			log.Debugf("[FLOW UPDATE] %s:%d -> %s:%d proto=%s packets=%d bytes=%d",
-				flowData.SourceIP, event.SrcPort,
-				flowData.DestIP, event.DstPort,
-				event.Protocol,
-				event.PacketCount, event.ByteCount)
-
+		select {
+		case <-dp.ctx.Done():
+			log.Info("[DataPlane] Flow event monitoring stopped")
+			return
 		default:
-			log.Warnf("[FLOW UNKNOWN] Unknown event type %d for %s:%d -> %s:%d",
-				event.EventType,
-				flowData.SourceIP, event.SrcPort,
-				flowData.DestIP, event.DstPort)
+			// Read event from ring buffer (blocking)
+			record, err := dp.rbReader.Read()
+			if err != nil {
+				if errors.Is(err, ringbuf.ErrClosed) {
+					log.Info("[DataPlane] Ring buffer closed")
+					return
+				}
+				log.Errorf("[DataPlane] Reading from ring buffer: %v", err)
+				continue
+			}
+
+			// Parse flow event using the dedicated parser
+			event, err := flow.ParseFlowEvent(record.RawSample)
+			if err != nil {
+				log.Warnf("[DataPlane] Failed to parse flow event: %v", err)
+				continue
+			}
+
+			// Convert to Flow structure (handles IPv4/IPv6 conversion)
+			flowData := event.ToFlow()
+
+			// Handle different event types
+			switch event.EventType {
+			case flow.FlowEventNew:
+				log.Infof("[FLOW NEW] %s:%d -> %s:%d proto=%s dir=%s action=%s packets=%d bytes=%d",
+					flowData.SourceIP, event.SrcPort,
+					flowData.DestIP, event.DstPort,
+					event.Protocol, event.Direction, event.PolicyAction,
+					event.PacketCount, event.ByteCount)
+
+			case flow.FlowEventClosed:
+				log.Infof("[FLOW CLOSED] %s:%d -> %s:%d proto=%s dir=%s packets=%d bytes=%d",
+					flowData.SourceIP, event.SrcPort,
+					flowData.DestIP, event.DstPort,
+					event.Protocol, event.Direction,
+					event.PacketCount, event.ByteCount)
+
+			case flow.FlowEventTimeout:
+				log.Infof("[FLOW TIMEOUT] %s:%d -> %s:%d proto=%s dir=%s packets=%d bytes=%d",
+					flowData.SourceIP, event.SrcPort,
+					flowData.DestIP, event.DstPort,
+					event.Protocol, event.Direction,
+					event.PacketCount, event.ByteCount)
+
+			case flow.FlowEventUpdate:
+				log.Debugf("[FLOW UPDATE] %s:%d -> %s:%d proto=%s packets=%d bytes=%d",
+					flowData.SourceIP, event.SrcPort,
+					flowData.DestIP, event.DstPort,
+					event.Protocol,
+					event.PacketCount, event.ByteCount)
+
+			default:
+				log.Warnf("[FLOW UNKNOWN] Unknown event type %d for %s:%d -> %s:%d",
+					event.EventType,
+					flowData.SourceIP, event.SrcPort,
+					flowData.DestIP, event.DstPort)
+			}
 		}
 	}
 }
