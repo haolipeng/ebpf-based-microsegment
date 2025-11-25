@@ -32,9 +32,11 @@ func NewPolicyCompiler(storage Storage, groupMgr *groups.GroupManager) *PolicyCo
 // CompilePolicyRule 编译单个策略规则为 IP 规则列表
 // 它执行以下操作：
 // 1. 解析 from_group 和 to_group 的成员
-// 2. 生成笛卡尔积（N×M IP 规则）
-// 3. 为每个规则分配唯一 ID
-// 4. 存储溯源信息
+// 2. 预检查防止组合爆炸
+// 3. 大端口范围自动转换为通配符策略
+// 4. 生成笛卡尔积（N×M IP 规则）
+// 5. 为每个规则分配唯一 ID
+// 6. 存储溯源信息
 func (pc *PolicyCompiler) CompilePolicyRule(ruleID uint32) (*CompilationResult, error) {
 	startTime := time.Now()
 
@@ -72,55 +74,90 @@ func (pc *PolicyCompiler) CompilePolicyRule(ruleID uint32) (*CompilationResult, 
 		ToGroupSize:   len(toMembers),
 	}
 
-	// 生成编译后的策略
+	// ===== 预检查：防止组合爆炸 =====
+	workloadPairs := len(fromMembers) * len(toMembers)
+	if workloadPairs > MaxWorkloadPairsPerRule {
+		return nil, fmt.Errorf(
+			"workload pairs (%d×%d=%d) exceeds limit %d; reduce group sizes or split the rule",
+			len(fromMembers), len(toMembers), workloadPairs, MaxWorkloadPairsPerRule,
+		)
+	}
+
+	// 计算预期的策略数量（用于预检查）
+	totalPortCount := sourceRule.TotalPortCount()
+	expectedPolicies := uint32(workloadPairs) * totalPortCount
+	if expectedPolicies > MaxCompiledPoliciesPerRule {
+		// 检查是否有大端口范围可以转换为通配符
+		if sourceRule.HasLargePortRange(MaxPortRangeForExpansion) {
+			log.Infof("Rule %d has large port ranges, will use wildcard policies for optimization", ruleID)
+		} else {
+			return nil, fmt.Errorf(
+				"expected compiled policies (%d) exceeds limit %d; use larger port ranges (will be converted to wildcards) or reduce group sizes",
+				expectedPolicies, MaxCompiledPoliciesPerRule,
+			)
+		}
+	}
+
+	// ===== 生成编译后的策略 =====
 	compiledPolicies := []*CompiledPolicy{}
+	skippedWorkloads := 0
 
 	// 笛卡尔积：from_group 每个成员 × to_group 每个成员 × 端口
 	for _, fromMember := range fromMembers {
 		for _, toMember := range toMembers {
+			// 获取workload的IP地址（使用第一个IP）
+			srcIP := ""
+			if len(fromMember.IPs) > 0 {
+				srcIP = fromMember.IPs[0].String()
+			}
+			dstIP := ""
+			if len(toMember.IPs) > 0 {
+				dstIP = toMember.IPs[0].String()
+			}
+
+			// 跳过没有IP地址的workload
+			if srcIP == "" || dstIP == "" {
+				skippedWorkloads++
+				continue
+			}
+
 			// 为每个端口范围生成规则
 			for _, portRange := range sourceRule.Ports {
-				// 遍历端口范围
-				for port := portRange.Start; port <= portRange.End; port++ {
-					// 获取workload的IP地址（使用第一个IP）
-					srcIP := ""
-					if len(fromMember.IPs) > 0 {
-						srcIP = fromMember.IPs[0].String()
-					}
-					dstIP := ""
-					if len(toMember.IPs) > 0 {
-						dstIP = toMember.IPs[0].String()
-					}
-
-					// 跳过没有IP地址的workload
-					if srcIP == "" || dstIP == "" {
-						continue
-					}
-
-					cp := &CompiledPolicy{
-						Policy: Policy{
-							RuleID:   pc.allocateCompiledRuleID(),
-							SrcIP:    srcIP,
-							DstIP:    dstIP,
-							SrcPort:  0, // 0 表示任意源端口
-							DstPort:  port,
-							Protocol: portRange.Protocol,
-							Action:   sourceRule.Action,
-							Priority: uint16(sourceRule.Priority),
-						},
-						SourceRuleID:    ruleID,
-						FromGroup:       sourceRule.FromGroup,
-						ToGroup:         sourceRule.ToGroup,
-						FromWorkloadID:  fromMember.ID,
-						ToWorkloadID:    toMember.ID,
-						CompilationTime: time.Now(),
-						CompilerVersion: CompilerVersionV1,
-					}
-
+				// 检查是否为大端口范围，需要转换为通配符策略
+				if portRange.IsLargeRange(MaxPortRangeForExpansion) {
+					// 大端口范围：生成单条通配符策略（DstPort=0 表示任意端口）
+					cp := pc.createCompiledPolicy(
+						srcIP, dstIP,
+						0,    // SrcPort: 任意
+						0,    // DstPort: 任意（通配符）
+						portRange.Protocol,
+						sourceRule,
+						ruleID,
+						fromMember.ID, toMember.ID,
+					)
 					compiledPolicies = append(compiledPolicies, cp)
+
+					log.Debugf("Rule %d: converted large port range %s to wildcard policy for %s->%s",
+						ruleID, portRange.String(), srcIP, dstIP)
+				} else {
+					// 小端口范围或单端口：展开为具体端口规则
+					policies := pc.expandPortRange(
+						srcIP, dstIP,
+						&portRange,
+						sourceRule,
+						ruleID,
+						fromMember.ID, toMember.ID,
+					)
+					compiledPolicies = append(compiledPolicies, policies...)
 				}
 			}
 		}
+	}
+
+	// 记录跳过的工作负载
+	if skippedWorkloads > 0 {
+		result.AddWarning("Skipped %d workload pairs due to missing IP addresses", skippedWorkloads)
+		log.Warnf("Rule %d: skipped %d workload pairs (no IP)", ruleID, skippedWorkloads)
 	}
 
 	result.CompiledPolicies = compiledPolicies
@@ -156,6 +193,89 @@ func (pc *PolicyCompiler) CompilePolicyRule(ruleID uint32) (*CompilationResult, 
 	}
 
 	return result, nil
+}
+
+// createCompiledPolicy 创建单个编译后的策略
+func (pc *PolicyCompiler) createCompiledPolicy(
+	srcIP, dstIP string,
+	srcPort, dstPort uint16,
+	protocol string,
+	sourceRule *PolicyRule,
+	ruleID uint32,
+	fromWorkloadID, toWorkloadID string,
+) *CompiledPolicy {
+	return &CompiledPolicy{
+		Policy: Policy{
+			RuleID:   pc.allocateCompiledRuleID(),
+			SrcIP:    srcIP,
+			DstIP:    dstIP,
+			SrcPort:  srcPort,
+			DstPort:  dstPort,
+			Protocol: protocol,
+			Action:   sourceRule.Action,
+			Priority: uint16(sourceRule.Priority),
+		},
+		SourceRuleID:    ruleID,
+		FromGroup:       sourceRule.FromGroup,
+		ToGroup:         sourceRule.ToGroup,
+		FromWorkloadID:  fromWorkloadID,
+		ToWorkloadID:    toWorkloadID,
+		CompilationTime: time.Now(),
+		CompilerVersion: CompilerVersionV1,
+	}
+}
+
+// expandPortRange 展开端口范围为具体端口规则
+// 仅用于小端口范围（不超过 MaxPortRangeForExpansion）
+func (pc *PolicyCompiler) expandPortRange(
+	srcIP, dstIP string,
+	portRange *PortRange,
+	sourceRule *PolicyRule,
+	ruleID uint32,
+	fromWorkloadID, toWorkloadID string,
+) []*CompiledPolicy {
+	var policies []*CompiledPolicy
+
+	// 通配符端口（0-0）：生成单条规则
+	if portRange.IsWildcard() {
+		cp := pc.createCompiledPolicy(
+			srcIP, dstIP,
+			0, 0, // 任意端口
+			portRange.Protocol,
+			sourceRule,
+			ruleID,
+			fromWorkloadID, toWorkloadID,
+		)
+		return append(policies, cp)
+	}
+
+	// 单端口
+	if portRange.End == 0 || portRange.Start == portRange.End {
+		cp := pc.createCompiledPolicy(
+			srcIP, dstIP,
+			0, portRange.Start,
+			portRange.Protocol,
+			sourceRule,
+			ruleID,
+			fromWorkloadID, toWorkloadID,
+		)
+		return append(policies, cp)
+	}
+
+	// 端口范围：展开每个端口
+	for port := portRange.Start; port <= portRange.End; port++ {
+		cp := pc.createCompiledPolicy(
+			srcIP, dstIP,
+			0, port,
+			portRange.Protocol,
+			sourceRule,
+			ruleID,
+			fromWorkloadID, toWorkloadID,
+		)
+		policies = append(policies, cp)
+	}
+
+	return policies
 }
 
 // CompileAllPolicies 编译所有启用的策略规则

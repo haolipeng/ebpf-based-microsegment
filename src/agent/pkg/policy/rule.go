@@ -218,3 +218,61 @@ func (p *PortRange) ContainsPort(port uint16) bool {
 	// Range
 	return port >= p.Start && port <= p.End
 }
+
+// Size returns the number of ports in this range
+// Returns 1 for wildcard (0-0), single port, or calculated range size
+func (p *PortRange) Size() uint32 {
+	// Wildcard port (0-0 means any)
+	if p.Start == 0 && p.End == 0 {
+		return 1
+	}
+
+	// Single port
+	if p.End == 0 || p.Start == p.End {
+		return 1
+	}
+
+	// Range
+	return uint32(p.End-p.Start) + 1
+}
+
+// IsLargeRange checks if this port range exceeds the given threshold
+// Used to determine if the range should be converted to wildcard policy
+func (p *PortRange) IsLargeRange(threshold uint32) bool {
+	return p.Size() > threshold
+}
+
+// IsWildcard checks if this port range represents a wildcard (any port)
+func (p *PortRange) IsWildcard() bool {
+	return p.Start == 0 && p.End == 0
+}
+
+// TotalPortCount calculates the total number of ports across all ranges in a PolicyRule
+func (r *PolicyRule) TotalPortCount() uint32 {
+	var total uint32
+	for _, port := range r.Ports {
+		total += port.Size()
+	}
+	return total
+}
+
+// HasLargePortRange checks if any port range in this rule exceeds the threshold
+func (r *PolicyRule) HasLargePortRange(threshold uint32) bool {
+	for _, port := range r.Ports {
+		if port.IsLargeRange(threshold) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetLargePortRanges returns all port ranges that exceed the threshold
+func (r *PolicyRule) GetLargePortRanges(threshold uint32) []PortRange {
+	var large []PortRange
+	for _, port := range r.Ports {
+		if port.IsLargeRange(threshold) {
+			large = append(large, port)
+		}
+	}
+	return large
+}

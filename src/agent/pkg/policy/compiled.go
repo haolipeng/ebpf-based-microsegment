@@ -161,3 +161,18 @@ const (
 	// 严重警告阈值: 超过此值时强烈警告性能问题
 	CompilationCriticalThreshold = 10000
 )
+
+// 端口范围编译限制
+const (
+	// MaxPortRangeForExpansion: 端口范围超过此值时自动转换为通配符策略
+	// 例如: 端口范围 1-100 会展开为 100 条规则，超过此值则使用通配符
+	MaxPortRangeForExpansion = 50
+
+	// MaxCompiledPoliciesPerRule: 单个规则编译后策略的最大数量
+	// 超过此限制会返回错误，防止内存耗尽
+	MaxCompiledPoliciesPerRule = 10000
+
+	// MaxWorkloadPairsPerRule: 单个规则的最大工作负载对数量 (fromGroup × toGroup)
+	// 用于预检查，防止组合爆炸
+	MaxWorkloadPairsPerRule = 1000
+)
