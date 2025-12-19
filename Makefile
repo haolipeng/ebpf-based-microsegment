@@ -1,5 +1,6 @@
 # Makefile for eBPF Microsegmentation Project
-.PHONY: all clean bpf agent server test install help proto generate-proto install-proto-tools clean-proto
+.PHONY: all clean bpf agent server test install help proto generate-proto install-proto-tools clean-proto \
+       test-bpf test-netns test-e2e test-quick test-all test-bench test-ci
 
 # Variables
 BIN_DIR := bin
@@ -101,6 +102,43 @@ test-integration: agent ## Run integration tests
 	@echo "$(YELLOW)Running integration tests...$(NC)"
 	sudo ./tests/integration_test.sh
 	@echo "$(GREEN)✓ Integration tests completed$(NC)"
+
+# Three-layer testing framework targets
+
+test-bpf: bpf ## Level 1: BPF_PROG_TEST_RUN tests (fastest, <1s per test)
+	@echo "$(YELLOW)Running BPF_PROG_TEST_RUN tests...$(NC)"
+	@echo "  These tests use kernel's BPF_PROG_TEST_RUN syscall"
+	@echo "  Requires: root privileges, compiled eBPF objects"
+	cd $(SRC_AGENT) && sudo $(GO) test -v -count=1 ./pkg/dataplane/bpftest/testcases/...
+	@echo "$(GREEN)✓ BPF tests completed$(NC)"
+
+test-netns: bpf agent ## Level 2: Network namespace tests (moderate, <5s per test)
+	@echo "$(YELLOW)Running network namespace tests...$(NC)"
+	@echo "  These tests use veth pairs in isolated namespaces"
+	cd $(SRC_AGENT) && sudo $(GO) test -v -count=1 -tags=netns ./test/integration/...
+	@echo "$(GREEN)✓ Netns tests completed$(NC)"
+
+test-e2e: agent server ## Level 3: Container E2E tests (comprehensive, <30s per suite)
+	@echo "$(YELLOW)Running E2E container tests...$(NC)"
+	@echo "  These tests use Docker containers for full isolation testing"
+	cd $(SRC_AGENT) && sudo $(GO) test -v -count=1 -timeout 10m ./test/e2e/...
+	@echo "$(GREEN)✓ E2E tests completed$(NC)"
+
+test-quick: test-bpf ## Quick smoke test (only Level 1)
+	@echo "$(GREEN)✓ Quick tests completed$(NC)"
+
+test-all: test-bpf test-netns test-e2e ## Run all test levels
+	@echo "$(GREEN)✓ All tests completed$(NC)"
+
+test-bench: bpf ## Run performance benchmarks
+	@echo "$(YELLOW)Running performance benchmarks...$(NC)"
+	@echo "  Hot path target: <1μs"
+	@echo "  Cold path target: <20μs"
+	cd $(SRC_AGENT) && sudo $(GO) test -v -bench=. -benchmem -run=^$$ ./pkg/dataplane/bpftest/testcases/...
+	@echo "$(GREEN)✓ Benchmarks completed$(NC)"
+
+test-ci: test-bpf ## CI/CD suitable tests (Level 1 only for fast feedback)
+	@echo "$(GREEN)✓ CI tests completed$(NC)"
 
 clean: clean-proto ## Clean build artifacts
 	@echo "$(YELLOW)Cleaning...$(NC)"
