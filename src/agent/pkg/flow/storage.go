@@ -1,3 +1,6 @@
+// input: flow records (CRUD operations)
+// output: persisted flow data (SQLite), query results
+// pos: flow persistence layer (SQLite storage) - if file updated, must sync with this header comment and pkg/flow/CLAUDE.md
 package flow
 
 import (

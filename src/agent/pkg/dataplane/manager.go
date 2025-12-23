@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: network interface name, mode config (TC/XDP mode selection)
+// output: eBPF program loader instance, eBPF maps (policy_map, session_map, stats_map)
+// pos: data plane lifecycle manager - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package dataplane
 
 import (

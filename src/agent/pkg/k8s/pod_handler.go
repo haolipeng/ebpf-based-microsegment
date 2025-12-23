@@ -1,3 +1,7 @@
+
+// input: Pod add/update/delete events
+// output: Workload creation/update/deletion
+// pos: K8s Pod event handler - if file updated, must sync with this header comment and pkg/k8s/CLAUDE.md
 package k8s
 
 import (

@@ -1,3 +1,6 @@
+// input: eBPF Ring Buffer flow events
+// output: collected flow events, workload-annotated flows
+// pos: flow event collector from Ring Buffer - if file updated, must sync with this header comment and pkg/flow/CLAUDE.md
 package flow
 
 import (

@@ -1,3 +1,7 @@
+
+// input: runtime config API requests (GET/PUT)
+// output: agent configuration JSON
+// pos: runtime config API handlers - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package handlers
 
 import (

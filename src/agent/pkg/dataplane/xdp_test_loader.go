@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: network interface name, test XDP program
+// output: XDP native support detection result
+// pos: XDP test mode loader using BPF_PROG_TEST_RUN - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package dataplane
 
 import (

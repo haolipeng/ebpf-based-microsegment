@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: N/A (type definition)
+// output: conntrack data structures
+// pos: conntrack type definitions - if file updated, must sync with this header comment and pkg/conntrack/CLAUDE.md
 package conntrack
 
 import (

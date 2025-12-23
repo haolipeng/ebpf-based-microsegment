@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: fragment config (mode: Strict/Normal/Permissive, max entries, timeout)
+// output: fragment handling policy, fragment state tracking
+// pos: IP fragment handling logic and configuration - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package dataplane
 
 import (

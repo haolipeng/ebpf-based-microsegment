@@ -1,6 +1,10 @@
 // Package api provides the RESTful HTTP API server for managing
 // the eBPF microsegmentation system. It exposes endpoints for policy
 // management, statistics queries, health checks, and system configuration.
+
+// input: HTTP port, router config
+// output: HTTP API server instance
+// pos:  - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package api
 
 import (

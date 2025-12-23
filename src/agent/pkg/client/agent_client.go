@@ -1,3 +1,7 @@
+
+// input: agent gRPC server address
+// output: gRPC agent client connection
+// pos: agent gRPC client - if file updated, must sync with this header comment and pkg/client/CLAUDE.md
 package client
 
 import (

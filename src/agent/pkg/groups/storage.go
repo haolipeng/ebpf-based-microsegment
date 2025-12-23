@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: group records (CRUD operations)
+// output: persisted group data (SQLite), query results
+// pos: group persistence layer (SQLite storage) - if file updated, must sync with this header comment and pkg/groups/CLAUDE.md
 package groups
 
 import (

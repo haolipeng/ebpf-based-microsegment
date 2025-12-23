@@ -2,6 +2,10 @@
 //
 // This file implements PacketBuilder for constructing test packets with
 // proper headers and checksums for BPF_PROG_TEST_RUN testing.
+
+// input: packet specifications (IP addresses, ports, protocol, flags)
+// output: raw packet bytes with correct headers and checksums
+// pos: eBPF test packet builder for unit testing - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package bpftest
 
 import (

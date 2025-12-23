@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: fragment timeout config
+// output: expired fragment cleanup operations
+// pos: fragment state cleanup manager - if file updated, must sync with this header comment and pkg/fragment/CLAUDE.md
 package fragment
 
 import (

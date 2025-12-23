@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: N/A (test utility)
+// output: traffic generation helpers
+// pos: traffic generation utilities - if file updated, must sync with this header comment and pkg/testutil/CLAUDE.md
 package testutil
 
 import (

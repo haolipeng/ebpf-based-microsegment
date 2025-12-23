@@ -1,3 +1,7 @@
+
+// input: K8s API permissions
+// output: RBAC validation results
+// pos: K8s RBAC validator - if file updated, must sync with this header comment and pkg/k8s/CLAUDE.md
 package k8s
 
 import (

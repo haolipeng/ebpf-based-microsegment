@@ -1,3 +1,7 @@
+
+// input: process info, PID/container mappings
+// output: cached process metadata
+// pos: process info cache - if file updated, must sync with this header comment and pkg/process/CLAUDE.md
 package process
 
 import (

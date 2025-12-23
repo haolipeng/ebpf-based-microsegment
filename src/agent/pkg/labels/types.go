@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: N/A (type definition)
+// output: label data structures (LabelDimension, LabelConstraints)
+// pos: label type definitions - if file updated, must sync with this header comment and pkg/labels/CLAUDE.md
 package labels
 
 // LabelDimension represents a recommended label dimension in the Illumio-inspired model

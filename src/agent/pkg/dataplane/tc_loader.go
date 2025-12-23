@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: TC mode (TCX/Legacy), network interface index, eBPF program
+// output: TC ingress/egress filters, attached eBPF links
+// pos: TC (Traffic Control) eBPF program loader - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package dataplane
 
 import (

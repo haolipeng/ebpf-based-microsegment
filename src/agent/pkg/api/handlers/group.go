@@ -1,3 +1,7 @@
+
+// input: group API requests (GET/POST/PUT/DELETE)
+// output: group JSON responses
+// pos: group API handlers - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package handlers
 
 import (

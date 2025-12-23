@@ -1,4 +1,8 @@
 // Package flow provides network flow data collection and management
+
+// input: N/A (type definition)
+// output: flow data structures (Flow, FlowEvent, FlowKey)
+// pos: flow type definitions - if file updated, must sync with this header comment and pkg/flow/CLAUDE.md
 package flow
 
 import (

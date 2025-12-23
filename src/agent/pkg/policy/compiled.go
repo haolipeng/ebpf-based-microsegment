@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: compiled policy ID, expanded IP rules
+// output: compiled policy representation (ready for eBPF map insertion)
+// pos: compiled policy data structures - if file updated, must sync with this header comment and pkg/policy/CLAUDE.md
 package policy
 
 import (

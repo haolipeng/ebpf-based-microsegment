@@ -1,3 +1,7 @@
+
+// input: health check requests
+// output: health status JSON (data plane, maps)
+// pos: health check API handlers - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package handlers
 
 import (

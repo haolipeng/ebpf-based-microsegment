@@ -1,3 +1,6 @@
+// input: flow lifecycle events (create, update, close, timeout)
+// output: flow state transitions, graceful shutdown handling
+// pos: flow lifecycle manager - if file updated, must sync with this header comment and pkg/flow/CLAUDE.md
 package flow
 
 import (

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: label key-value pairs, validation rules
+// output: validated labels, validation errors
+// pos: label validator (K8s-style format checking) - if file updated, must sync with this header comment and pkg/labels/CLAUDE.md
 package labels
 
 import (

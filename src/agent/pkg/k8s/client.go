@@ -1,3 +1,7 @@
+
+// input: kubeconfig, in-cluster config
+// output: Kubernetes client instance
+// pos: Kubernetes client wrapper - if file updated, must sync with this header comment and pkg/k8s/CLAUDE.md
 package k8s
 
 import (

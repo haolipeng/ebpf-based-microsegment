@@ -3,6 +3,10 @@
 // Package testutil provides utilities for testing eBPF microsegmentation.
 // It includes network namespace management, virtual interface creation,
 // and traffic generation tools for end-to-end testing.
+
+// input: N/A (test utility)
+// output: network testing helpers
+// pos: network testing utilities - if file updated, must sync with this header comment and pkg/testutil/CLAUDE.md
 package testutil
 
 import (

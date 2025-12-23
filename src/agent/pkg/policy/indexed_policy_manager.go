@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: policy rules, lookup queries (by ID, source IP, dest IP, workload)
+// output: multi-dimensional indexed policy storage, query results
+// pos: indexed policy manager with multi-key lookups - if file updated, must sync with this header comment and pkg/policy/CLAUDE.md
 package policy
 
 import (

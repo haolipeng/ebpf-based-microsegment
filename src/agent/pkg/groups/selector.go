@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: label selectors (matchLabels, matchExpressions), workload labels
+// output: selector evaluation result (match/no match)
+// pos: label selector logic (K8s-style) - if file updated, must sync with this header comment and pkg/groups/CLAUDE.md
 package groups
 
 import (

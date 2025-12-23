@@ -1,3 +1,7 @@
+
+// input: N/A (model definition)
+// output: legacy policy API models
+// pos: legacy policy API models - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package models
 
 // PolicyRequest represents a policy creation/update request

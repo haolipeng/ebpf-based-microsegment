@@ -1,3 +1,7 @@
+
+// input: N/A (model definition)
+// output: health status response models
+// pos: health API models - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package models
 
 // HealthResponse represents the health check response

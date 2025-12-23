@@ -1,3 +1,7 @@
+
+// input: API server config (address, timeouts)
+// output: validated API config
+// pos: API server configuration - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package api
 
 import "time"

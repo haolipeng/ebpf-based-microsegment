@@ -1,3 +1,7 @@
+
+// input: N/A (model definition)
+// output: workload API request/response models
+// pos: workload API models - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package models
 
 // WorkloadRequest represents a workload creation/update request

@@ -1,3 +1,7 @@
+
+// input: eBPF Ring Buffer process events
+// output: process creation/exit events
+// pos: process monitor from eBPF events - if file updated, must sync with this header comment and pkg/process/CLAUDE.md
 package process
 
 import (

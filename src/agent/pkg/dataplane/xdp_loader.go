@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: XDP mode (Native/Generic), network interface index, eBPF program
+// output: XDP link, attached eBPF program handle
+// pos: XDP (eXpress Data Path) eBPF program loader - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package dataplane
 
 import (

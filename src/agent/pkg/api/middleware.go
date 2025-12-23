@@ -1,3 +1,7 @@
+
+// input: HTTP requests
+// output: logged/CORS-enabled/error-handled requests
+// pos: HTTP middleware (logging, CORS, error handling) - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package api
 
 import (

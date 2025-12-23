@@ -1,3 +1,7 @@
+
+// input: policy rule API requests (GET/POST/PUT/DELETE)
+// output: policy rule JSON responses
+// pos: policy rule API handlers - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package handlers
 
 import (

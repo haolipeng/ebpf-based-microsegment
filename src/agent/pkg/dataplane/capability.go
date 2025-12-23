@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: kernel version info, eBPF program type probes
+// output: system capabilities (XDP support, TC support, NAT support, fragment support)
+// pos: system capability detection for eBPF features - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package dataplane
 
 import (

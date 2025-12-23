@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: N/A (type definition)
+// output: fragment data structures
+// pos: fragment type definitions - if file updated, must sync with this header comment and pkg/fragment/CLAUDE.md
 package fragment
 
 import "time"

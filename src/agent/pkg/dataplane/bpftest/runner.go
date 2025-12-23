@@ -18,6 +18,10 @@
 //	    Ingress: true,
 //	    Ifindex: 1,
 //	})
+
+// input: eBPF program object, test packet, __sk_buff context
+// output: eBPF program execution result (TC_ACT_OK/TC_ACT_SHOT), modified packet
+// pos: eBPF test runner using BPF_PROG_TEST_RUN syscall - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package bpftest
 
 import (

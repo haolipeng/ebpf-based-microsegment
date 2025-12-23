@@ -73,6 +73,36 @@ type bpfFragValue struct {
 	Reserved     [7]uint8
 }
 
+type bpfIdentityPolicyKey struct {
+	_           structs.HostLayout
+	SrcIdentity uint32
+	DstIdentity uint32
+	DstPort     uint16
+	Protocol    uint8
+	Pad         uint8
+}
+
+type bpfIdentityPolicyValue struct {
+	_          structs.HostLayout
+	Action     uint8
+	LogEnabled uint8
+	Priority   uint16
+	RuleId     uint32
+	HitCount   uint64
+}
+
+type bpfIpcacheKey struct {
+	_         structs.HostLayout
+	Prefixlen uint32
+	Ip        [16]uint8
+}
+
+type bpfIpcacheValue struct {
+	_        structs.HostLayout
+	Identity uint32
+	Pad      [4]uint8
+}
+
 type bpfNatConfig struct {
 	_               structs.HostLayout
 	MatchMode       uint8
@@ -220,6 +250,8 @@ type bpfMapSpecs struct {
 	FragConfigMap     *ebpf.MapSpec `ebpf:"frag_config_map"`
 	FragStateMap      *ebpf.MapSpec `ebpf:"frag_state_map"`
 	FragStatsMap      *ebpf.MapSpec `ebpf:"frag_stats_map"`
+	IdentityPolicyMap *ebpf.MapSpec `ebpf:"identity_policy_map"`
+	IpcacheMap        *ebpf.MapSpec `ebpf:"ipcache_map"`
 	NatConfigMap      *ebpf.MapSpec `ebpf:"nat_config_map"`
 	NatStatsMap       *ebpf.MapSpec `ebpf:"nat_stats_map"`
 	PolicyMap         *ebpf.MapSpec `ebpf:"policy_map"`
@@ -263,6 +295,8 @@ type bpfMaps struct {
 	FragConfigMap     *ebpf.Map `ebpf:"frag_config_map"`
 	FragStateMap      *ebpf.Map `ebpf:"frag_state_map"`
 	FragStatsMap      *ebpf.Map `ebpf:"frag_stats_map"`
+	IdentityPolicyMap *ebpf.Map `ebpf:"identity_policy_map"`
+	IpcacheMap        *ebpf.Map `ebpf:"ipcache_map"`
 	NatConfigMap      *ebpf.Map `ebpf:"nat_config_map"`
 	NatStatsMap       *ebpf.Map `ebpf:"nat_stats_map"`
 	PolicyMap         *ebpf.Map `ebpf:"policy_map"`
@@ -282,6 +316,8 @@ func (m *bpfMaps) Close() error {
 		m.FragConfigMap,
 		m.FragStateMap,
 		m.FragStatsMap,
+		m.IdentityPolicyMap,
+		m.IpcacheMap,
 		m.NatConfigMap,
 		m.NatStatsMap,
 		m.PolicyMap,

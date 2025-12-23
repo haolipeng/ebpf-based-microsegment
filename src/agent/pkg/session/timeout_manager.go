@@ -1,3 +1,7 @@
+
+// input: session timeout config, session_map
+// output: session timeout operations, cleanup events
+// pos: session timeout manager - if file updated, must sync with this header comment and pkg/session/CLAUDE.md
 package session
 
 import (

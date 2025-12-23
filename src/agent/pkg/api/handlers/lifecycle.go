@@ -1,3 +1,7 @@
+
+// input: lifecycle control requests (reload, shutdown)
+// output: lifecycle operation results JSON
+// pos: lifecycle control API handlers - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package handlers
 
 import (

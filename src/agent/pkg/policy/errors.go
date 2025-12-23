@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: N/A (error definition)
+// output: policy-related error types
+// pos: policy error definitions - if file updated, must sync with this header comment and pkg/policy/CLAUDE.md
 package policy
 
 import "fmt"

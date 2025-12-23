@@ -1,3 +1,6 @@
+// input: N/A (interface alias)
+// output: reporter type alias to avoid circular dependency
+// pos: reporter interface definition - if file updated, must sync with this header comment and pkg/reporter/CLAUDE.md
 package reporter
 
 import (

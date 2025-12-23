@@ -1,3 +1,7 @@
+
+// input: N/A (model definition)
+// output: API error response models
+// pos: API error models - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package models
 
 // ErrorResponse represents an API error response

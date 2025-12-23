@@ -1,3 +1,7 @@
+
+// input: N/A (model definition)
+// output: group API request/response models
+// pos: group API models - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package models
 
 // GroupRequest represents a group creation/update request

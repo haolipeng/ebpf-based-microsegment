@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: N/A (test data)
+// output: benchmark test cases
+// pos: benchmark test data generator - if file updated, must sync with this header comment and pkg/benchmark/CLAUDE.md
 package benchmark
 
 import (

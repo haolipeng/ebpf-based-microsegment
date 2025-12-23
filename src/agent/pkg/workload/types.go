@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: N/A (type definition)
+// output: workload data structures (Workload, WorkloadRuntime)
+// pos: workload type definitions - if file updated, must sync with this header comment and pkg/workload/CLAUDE.md
 package workload
 
 import (

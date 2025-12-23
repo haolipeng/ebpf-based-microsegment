@@ -1,3 +1,7 @@
+
+// input: N/A (model definition)
+// output: statistics API response models
+// pos: statistics API models - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package models
 
 // StatisticsResponse represents all data plane statistics

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: group definitions, label selectors, workload manager
+// output: resolved group members (workload IDs and IPs), member cache
+// pos: group manager with member resolution and caching - if file updated, must sync with this header comment and pkg/groups/CLAUDE.md
 package groups
 
 import (

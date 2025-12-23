@@ -1,3 +1,7 @@
+
+// input: N/A (model definition)
+// output: policy rule API request/response models
+// pos: policy rule API models - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package models
 
 // PortRangeRequest represents a port range in API requests

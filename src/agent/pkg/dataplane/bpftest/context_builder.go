@@ -2,6 +2,10 @@
 //
 // This file implements the SKBuffContextBuilder for constructing __sk_buff
 // context structures used in BPF_PROG_TEST_RUN.
+
+// input: __sk_buff context fields (ifindex, ingress/egress, mark, protocol)
+// output: serialized __sk_buff context for BPF_PROG_TEST_RUN
+// pos: eBPF test context builder for SK_BUFF - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package bpftest
 
 import (

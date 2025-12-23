@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: workload CRUD operations, workload storage
+// output: validated workload operations, IP-to-labels lookups
+// pos: workload manager with validation and IP indexing - if file updated, must sync with this header comment and pkg/workload/CLAUDE.md
 package workload
 
 import (

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: Docker API requests
+// output: container metadata (labels, IPs, names)
+// pos: Docker runtime adapter - if file updated, must sync with this header comment and pkg/runtime/CLAUDE.md
 package runtime
 
 import (

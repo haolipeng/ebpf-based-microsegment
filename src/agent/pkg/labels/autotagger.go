@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: workload metadata (runtime, K8s), auto-tag rules
+// output: auto-generated labels based on rules
+// pos: label auto-tagger - if file updated, must sync with this header comment and pkg/labels/CLAUDE.md
 package labels
 
 import (

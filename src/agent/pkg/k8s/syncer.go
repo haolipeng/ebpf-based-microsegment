@@ -1,3 +1,7 @@
+
+// input: K8s Pod events
+// output: synchronized workload data
+// pos: K8s Pod syncer - if file updated, must sync with this header comment and pkg/k8s/CLAUDE.md
 package k8s
 
 import (

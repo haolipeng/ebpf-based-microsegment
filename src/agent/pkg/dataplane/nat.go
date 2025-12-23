@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: NAT config (match mode, cache enable, BPF helper enable)
+// output: NAT detection capabilities, conntrack cache updates
+// pos: NAT detection and conntrack integration - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package dataplane
 
 import (

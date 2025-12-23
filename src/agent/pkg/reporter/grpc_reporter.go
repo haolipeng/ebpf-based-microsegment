@@ -1,3 +1,6 @@
+// input: flow/alert events, server address
+// output: gRPC stream to Server (FlowService.ReportFlow)
+// pos: gRPC flow and alert event reporter - if file updated, must sync with this header comment and pkg/reporter/CLAUDE.md
 package reporter
 
 import (

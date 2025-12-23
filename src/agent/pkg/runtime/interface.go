@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: N/A (interface definition)
+// output: container runtime interface
+// pos: container runtime interface definition - if file updated, must sync with this header comment and pkg/runtime/CLAUDE.md
 package runtime
 
 // RuntimeDetector defines the interface for detecting and extracting labels from container runtimes

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: rule specifications (source/dest selectors, protocols, actions, directions)
+// output: validated policy rule objects
+// pos: policy rule definitions and validation - if file updated, must sync with this header comment and pkg/policy/CLAUDE.md
 package policy
 
 import (

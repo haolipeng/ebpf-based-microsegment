@@ -1,3 +1,7 @@
+
+// input: API handler dependencies
+// output: configured Gin router with all routes
+// pos: API router setup - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package api
 
 import (

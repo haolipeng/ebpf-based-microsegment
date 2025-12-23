@@ -1,3 +1,7 @@
+
+// input: Kubernetes Pod objects
+// output: Workload objects
+// pos: K8s Pod to Workload converter - if file updated, must sync with this header comment and pkg/k8s/CLAUDE.md
 package k8s
 
 import (

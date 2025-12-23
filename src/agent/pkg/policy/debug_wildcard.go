@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
 // +build ignore
 
+// input: eBPF wildcard_policy_map dump
+// output: formatted wildcard policy debugging output
+// pos: wildcard policy debugging utility - if file updated, must sync with this header comment and pkg/policy/CLAUDE.md
 package main
 
 import (

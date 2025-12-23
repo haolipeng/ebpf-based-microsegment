@@ -1,3 +1,7 @@
+
+// input: agent config (listen address, modes, features)
+// output: validated AgentConfig
+// pos: agent configuration - if file updated, must sync with this header comment and pkg/config/CLAUDE.md
 package config
 
 import (

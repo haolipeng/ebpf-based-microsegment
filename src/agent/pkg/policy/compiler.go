@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: high-level policy rules (groups, labels, CIDR, port ranges)
+// output: compiled policies (N×M IP-based rules, eBPF map entries)
+// pos: policy compiler (group expansion, CIDR expansion) - if file updated, must sync with this header comment and pkg/policy/CLAUDE.md
 package policy
 
 import (

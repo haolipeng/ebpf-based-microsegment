@@ -1,3 +1,7 @@
+
+// input: N/A (type definition)
+// output: session data structures (SessionKey, SessionState)
+// pos: session type definitions - if file updated, must sync with this header comment and pkg/session/CLAUDE.md
 package session
 
 import "time"

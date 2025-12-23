@@ -1,3 +1,7 @@
+
+// input: N/A (model definition)
+// output: flow API response models
+// pos: flow API models - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package models
 
 import (

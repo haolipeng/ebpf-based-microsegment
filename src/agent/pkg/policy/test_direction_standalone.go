@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
 // +build ignore
 
+// input: policy rules with different directions (ingress/egress/bidirectional)
+// output: direction handling test results
+// pos: policy direction testing utility - if file updated, must sync with this header comment and pkg/policy/CLAUDE.md
 // 独立测试程序,验证 Direction 字段功能
 package main
 

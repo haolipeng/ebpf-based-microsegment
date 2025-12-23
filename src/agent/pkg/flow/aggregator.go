@@ -1,3 +1,6 @@
+// input: flow events (same 5-tuple)
+// output: aggregated flow statistics (packet count, byte count, duration)
+// pos: flow event aggregator - if file updated, must sync with this header comment and pkg/flow/CLAUDE.md
 package flow
 
 import (

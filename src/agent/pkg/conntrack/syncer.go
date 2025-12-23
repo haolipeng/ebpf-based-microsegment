@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: netlink conntrack events
+// output: eBPF conntrack_cache_map updates
+// pos: conntrack state synchronizer - if file updated, must sync with this header comment and pkg/conntrack/CLAUDE.md
 package conntrack
 
 import (

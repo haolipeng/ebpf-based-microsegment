@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: eBPF map objects, pin directory path (/sys/fs/bpf/microsegment)
+// output: pinned map handles, persistent map storage
+// pos: eBPF map pinning/unpinning for cross-program sharing - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package dataplane
 
 import (

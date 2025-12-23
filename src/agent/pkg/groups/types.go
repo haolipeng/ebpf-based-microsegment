@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: N/A (type definition)
+// output: group data structures (Group, Selector, SelectorOperator)
+// pos: group type definitions - if file updated, must sync with this header comment and pkg/groups/CLAUDE.md
 package groups
 
 import (

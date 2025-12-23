@@ -1,3 +1,7 @@
+
+// input: flow query parameters (time range, filters)
+// output: flow statistics JSON responses
+// pos: flow query API handlers - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package handlers
 
 import (

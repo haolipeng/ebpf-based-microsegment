@@ -1,3 +1,7 @@
+
+// input: legacy policy API requests
+// output: legacy policy JSON responses
+// pos: legacy policy API handlers - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package handlers
 
 import (

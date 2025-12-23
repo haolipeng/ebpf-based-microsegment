@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: kernel conntrack entries
+// output: eBPF conntrack cache entries
+// pos: netlink conntrack to eBPF format converter - if file updated, must sync with this header comment and pkg/conntrack/CLAUDE.md
 package conntrack
 
 import (

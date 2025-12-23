@@ -1,3 +1,7 @@
+
+// input: K8s API server, resource types
+// output: SharedInformerFactory
+// pos: K8s informer factory - if file updated, must sync with this header comment and pkg/k8s/CLAUDE.md
 package k8s
 
 import (

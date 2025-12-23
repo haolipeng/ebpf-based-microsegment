@@ -1,3 +1,7 @@
+
+// input: workload API requests (GET/POST/PUT/DELETE)
+// output: workload JSON responses
+// pos: workload API handlers - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package handlers
 
 import (

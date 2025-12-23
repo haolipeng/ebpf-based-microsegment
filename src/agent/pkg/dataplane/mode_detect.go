@@ -1,3 +1,6 @@
+// input: kernel version, eBPF feature probes, network interface capabilities
+// output: detected data plane mode (TCX/Legacy TC/Native XDP/Generic XDP)
+// pos: data plane capability detection and mode selection - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package dataplane
 
 import (

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: policy rules, compiled policies (CRUD operations)
+// output: persisted policy data (SQLite), query results
+// pos: policy persistence layer (SQLite storage) - if file updated, must sync with this header comment and pkg/policy/CLAUDE.md
 package policy
 
 import (

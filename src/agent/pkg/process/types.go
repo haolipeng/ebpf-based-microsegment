@@ -1,3 +1,7 @@
+
+// input: N/A (type definition)
+// output: process data structures
+// pos: process type definitions - if file updated, must sync with this header comment and pkg/process/CLAUDE.md
 package process
 
 import "time"

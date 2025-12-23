@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: eBPF Ring Buffer events (flow events, process events), session state
+// output: flow statistics, session tracking, packet counters
+// pos: legacy data plane core (deprecated, use manager.go) - if file updated, must sync with this header comment and pkg/dataplane/CLAUDE.md
 package dataplane
 
 import (

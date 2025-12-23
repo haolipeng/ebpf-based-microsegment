@@ -1,3 +1,7 @@
+
+// input: namespace filter config
+// output: namespace filter predicates
+// pos: K8s namespace filter - if file updated, must sync with this header comment and pkg/k8s/CLAUDE.md
 package k8s
 
 import (

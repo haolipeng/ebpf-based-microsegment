@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: workload records (CRUD operations), query filters
+// output: persisted workload data (SQLite), IP-to-labels mapping
+// pos: workload persistence layer (SQLite storage) - if file updated, must sync with this header comment and pkg/workload/CLAUDE.md
 package workload
 
 import (

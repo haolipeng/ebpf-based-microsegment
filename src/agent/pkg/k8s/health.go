@@ -1,3 +1,7 @@
+
+// input: K8s API server health
+// output: health check results
+// pos: K8s health checker - if file updated, must sync with this header comment and pkg/k8s/CLAUDE.md
 package k8s
 
 import (

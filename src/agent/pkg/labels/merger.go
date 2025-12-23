@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+
+// input: multiple label sources (user, auto-tagged)
+// output: merged label map with priority resolution
+// pos: label merger with conflict resolution - if file updated, must sync with this header comment and pkg/labels/CLAUDE.md
 package labels
 
 import (

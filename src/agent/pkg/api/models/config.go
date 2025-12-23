@@ -1,3 +1,7 @@
+
+// input: N/A (model definition)
+// output: config API request/response models
+// pos: config API models - if file updated, must sync with this header comment and pkg/api/CLAUDE.md
 package models
 
 // ConfigResponse represents the current system configuration
