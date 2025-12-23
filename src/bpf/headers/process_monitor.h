@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+//
+// input: none (type and map definitions only)
+// output: process_cache_entry, process_event structs, process_info_map
+// pos: bpf/headers - process monitoring data structures and maps
+//
 /* Process monitoring data structures for eBPF tracepoint
  *
  * This header defines data structures for process monitoring via eBPF tracepoint.

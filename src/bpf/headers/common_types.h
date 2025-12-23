@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+//
+// input: none (type definitions only)
+// output: flow_key, session_value, policy_key, policy_value, flow_event structs
+// pos: bpf/headers - core data types shared by all eBPF programs and userspace
+//
 /* Common types shared between eBPF and user-space programs */
 
 #ifndef __COMMON_TYPES_H__
@@ -191,6 +196,10 @@ enum stats_key {
     // Error statistics
     STATS_PARSE_ERRORS,
     STATS_RINGBUF_FULL,
+    // Identity-based policy statistics
+    STATS_IDENTITY_ALLOWED,     // Packets allowed by identity policy
+    STATS_IDENTITY_DENIED,      // Packets denied by identity policy
+    STATS_IDENTITY_LOOKUPS,     // Total IPCache lookups performed
     STATS_MAX,
 };
 
@@ -260,6 +269,10 @@ struct flow_event {
     __u8  policy_action;  // enum policy_action
     __u8  state;          // enum flow_state
     __u16 reserved;       // Reserved for future use
+
+    // Identity context (8 bytes)
+    __u32 src_identity;   // Source security identity (0 = unknown)
+    __u32 dst_identity;   // Destination security identity (0 = unknown)
 
     // Process context (92 bytes)
     // These fields are populated by looking up process_info_map using socket inode or PID

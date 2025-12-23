@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+//
+// input: network packets via TC hook (skb), eBPF maps (policy, session, stats)
+// output: TC_ACT_OK (allow) or TC_ACT_SHOT (drop), flow events via ring buffer
+// pos: bpf - main TC packet filter, supports ingress/egress with full policy matching
+//
 /* TC eBPF program for microsegmentation with session tracking */
 
 #include "vmlinux.h"
@@ -40,6 +45,13 @@
 // Set to 0 to use legacy linear scan (simpler, works for < 50 policies)
 #ifndef USE_INDEXED_LOOKUP
 #define USE_INDEXED_LOOKUP 1
+#endif
+
+// Enable identity-based policy matching
+// Set to 1 to enable identity-first policy lookup (priority over IP policies)
+// Set to 0 to disable and use IP-only policies
+#ifndef ENABLE_IDENTITY_POLICY
+#define ENABLE_IDENTITY_POLICY 1
 #endif
 
 #include "headers/common_types.h"
@@ -146,6 +158,12 @@ static __always_inline void update_stats(__u32 key) {
 // Include indexed policy matching (optional, controlled by USE_INDEXED_LOOKUP)
 #if USE_INDEXED_LOOKUP
 #include "headers/indexed_policy_match_v3.h"
+#endif
+
+// Include identity-based policy matching (optional, controlled by ENABLE_IDENTITY_POLICY)
+#if ENABLE_IDENTITY_POLICY
+#include "headers/ipcache.h"
+#include "headers/identity_policy.h"
 #endif
 
 // Include flow processing logic (packet parsing)
@@ -359,6 +377,11 @@ static __always_inline int push_flow_event(
     event->policy_action = policy_action;
     event->state = state;
     event->reserved = 0;
+
+    // Identity context (will be populated when identity policy matches)
+    // TODO: Pass identity from caller when identity-based policy matches
+    event->src_identity = 0;
+    event->dst_identity = 0;
 
     // Fill process context fields
     if (proc_info) {
@@ -726,6 +749,41 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
     struct process_match_info proc_info = {0};
     get_current_process_info(&proc_info);
     lookup_process_cache(&proc_info, &process_info_map);
+
+    // === Identity-based policy matching (priority over IP policies) ===
+#if ENABLE_IDENTITY_POLICY
+    __u32 src_identity = IDENTITY_UNKNOWN;
+    __u32 dst_identity = IDENTITY_UNKNOWN;
+
+    // Lookup source and destination identities from IPCache
+    src_identity = ipcache_lookup(original_key.src_ip, original_key.ip_version);
+    dst_identity = ipcache_lookup(original_key.dst_ip, original_key.ip_version);
+
+    // If both have valid identities, try identity-based policy first
+    if (src_identity != IDENTITY_UNKNOWN && dst_identity != IDENTITY_UNKNOWN) {
+        int identity_result = match_identity_policy(
+            src_identity,
+            dst_identity,
+            bpf_ntohs(original_key.dst_port),
+            original_key.protocol
+        );
+
+        if (identity_result > 0) {
+            // Identity policy matched
+            __u8 identity_action = (identity_result == 1) ? POLICY_ACTION_ALLOW : POLICY_ACTION_DENY;
+            update_stats(identity_action == POLICY_ACTION_ALLOW ?
+                        STATS_IDENTITY_ALLOWED : STATS_IDENTITY_DENIED);
+
+#if DEBUG_MODE
+            bpf_printk("Identity policy matched: src_id=%u dst_id=%u action=%d\n",
+                       src_identity, dst_identity, identity_action);
+#endif
+            // Create session and return early
+            create_session(skb, &key, identity_action, now, skb->len, 0, direction, &proc_info);
+            return identity_action == POLICY_ACTION_ALLOW ? TC_ACT_OK : TC_ACT_SHOT;
+        }
+    }
+#endif
 
     // Use original addresses for policy matching (pre-NAT addresses)
     // This ensures policies match the actual source/destination, not NAT'd addresses

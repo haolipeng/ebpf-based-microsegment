@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+//
+// input: raw packet data (skb/xdp_md), packet headers
+// output: parsed flow_key (5-tuple), flow events via ring buffer
+// pos: bpf/headers - packet parsing and flow key extraction
+//
 /* 流处理逻辑 - 共享头文件
  *
  * 这个头文件包含数据包解析和流键提取的核心逻辑,可以被 TC 和 XDP 程序共享使用

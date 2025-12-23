@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+//
+// input: network packets via XDP hook (xdp_md), eBPF maps (policy, session)
+// output: XDP_PASS (allow) or XDP_DROP (drop), flow events via ring buffer
+// pos: bpf - high-performance XDP filter, ingress only, driver-level processing
+//
 /* XDP eBPF program for microsegmentation with session tracking
  *
  * 这个 XDP 程序在网卡驱动层处理数据包,提供最高性能的网络策略执行

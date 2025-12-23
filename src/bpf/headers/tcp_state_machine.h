@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+//
+// input: TCP header flags (SYN/ACK/FIN/RST), current session state
+// output: updated TCP state, connection status (established/closed)
+// pos: bpf/headers - TCP FSM for stateful connection tracking
+//
 /* TCP 状态机实现
  *
  * 实现标准 TCP 状态转换逻辑,用于准确追踪 TCP 连接生命周期

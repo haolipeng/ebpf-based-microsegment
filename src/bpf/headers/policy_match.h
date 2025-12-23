@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+//
+// input: flow_key, policy maps (exact + wildcard)
+// output: matched policy action (allow/deny), rule_id
+// pos: bpf/headers - policy matching logic shared by TC and XDP programs
+//
 /* 策略匹配逻辑 - 共享头文件
  *
  * 这个头文件包含策略匹配的核心逻辑,可以被 TC 和 XDP 程序共享使用

@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+//
+// input: sched_process_exec tracepoint events (task_struct)
+// output: process_info_map entries, process_events ring buffer
+// pos: bpf - process execution monitor for traffic-process correlation
+//
 /* Process monitoring via eBPF tracepoint
  *
  * This program monitors process execution events using the sched_process_exec tracepoint.
