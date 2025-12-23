@@ -1,3 +1,7 @@
+// input: none (type definitions only)
+// output: FlowDependency, AggregationQuery, TimeSeries structs
+// pos: aggregator - type definitions for aggregation operations
+
 package aggregator
 
 import (

@@ -1,3 +1,7 @@
+// input: test context, expected/actual values
+// output: assertion results with detailed error messages
+// pos: testutil - custom assertion helpers for test validation
+
 package testutil
 
 import (

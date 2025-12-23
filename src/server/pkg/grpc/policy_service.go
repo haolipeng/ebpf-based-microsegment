@@ -1,3 +1,7 @@
+// input: gRPC requests (GetPolicies, SubscribePolicies), PolicyStorage, PubSub
+// output: policy list, streaming policy updates to subscribed Agents
+// pos: grpc - gRPC service for policy distribution and subscription
+
 package grpc
 
 import (

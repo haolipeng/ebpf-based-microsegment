@@ -1,3 +1,7 @@
+// input: policy update events, agent subscription requests
+// output: broadcast policy updates to subscribed agents via channels
+// pos: pubsub - publish-subscribe mechanism for real-time policy distribution
+
 package pubsub
 
 import (

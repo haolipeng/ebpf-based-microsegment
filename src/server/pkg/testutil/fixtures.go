@@ -1,3 +1,7 @@
+// input: optional customization parameters
+// output: test data objects (Policy, Flow, Agent, Alert)
+// pos: testutil - test data factory for unit and integration tests
+
 package testutil
 
 import (

@@ -1,3 +1,7 @@
+// input: HTTP requests (GET/POST/PUT/DELETE /policies), PolicyStorage
+// output: JSON responses with policy CRUD results
+// pos: api/handlers - HTTP handler for policy management endpoints
+
 package handlers
 
 import (

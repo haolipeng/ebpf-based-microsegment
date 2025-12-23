@@ -1,3 +1,7 @@
+// input: HTTP requests (GET /topology, query params), TopologyManager
+// output: JSON responses with network topology nodes and edges
+// pos: api/handlers - HTTP handler for network topology visualization
+
 package handlers
 
 import (

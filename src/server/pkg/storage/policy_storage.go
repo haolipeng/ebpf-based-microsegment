@@ -1,3 +1,7 @@
+// input: policy objects, query parameters
+// output: policy CRUD results, paginated policy lists, version tracking
+// pos: storage - PostgreSQL storage layer for security policies
+
 package storage
 
 import (

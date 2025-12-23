@@ -1,3 +1,7 @@
+// input: none (model definitions only)
+// output: BunFlow, BunSecurityAlert, BunPolicy model structs
+// pos: storage - Bun ORM model definitions for PostgreSQL tables
+
 package storage
 
 import (

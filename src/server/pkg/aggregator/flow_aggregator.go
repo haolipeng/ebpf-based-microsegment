@@ -1,3 +1,7 @@
+// input: PostgreSQL flows table, aggregation query parameters (time range, group by label)
+// output: flow dependencies, time series data, aggregation statistics
+// pos: aggregator - core aggregation logic, called by API handlers
+
 package aggregator
 
 import (

@@ -1,3 +1,7 @@
+// input: gin context with potential panics/errors
+// output: standardized error responses, panic recovery
+// pos: api/middleware - global error handling middleware
+
 package middleware
 
 import (

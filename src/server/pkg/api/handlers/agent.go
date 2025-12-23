@@ -1,3 +1,7 @@
+// input: HTTP requests (GET /agents, GET /agents/:id), AgentStorage
+// output: JSON responses with agent list or status
+// pos: api/handlers - HTTP handler for Agent management endpoints
+
 package handlers
 
 import (

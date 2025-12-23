@@ -1,3 +1,7 @@
+// input: HTTP requests (GET /alerts, query params), AlertStorage
+// output: JSON responses with security alert list and details
+// pos: api/handlers - HTTP handler for security alert endpoints
+
 package handlers
 
 import (

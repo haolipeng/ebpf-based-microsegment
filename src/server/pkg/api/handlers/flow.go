@@ -1,3 +1,7 @@
+// input: HTTP requests (GET /flows, query params for filtering), FlowStorage
+// output: JSON responses with flow event list, pagination, statistics
+// pos: api/handlers - HTTP handler for flow event query endpoints
+
 package handlers
 
 import (

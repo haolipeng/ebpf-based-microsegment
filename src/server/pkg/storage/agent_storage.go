@@ -1,3 +1,7 @@
+// input: agent registration data, heartbeat updates
+// output: agent list queries, status updates, heartbeat timestamps
+// pos: storage - PostgreSQL storage layer for Agent lifecycle data
+
 package storage
 
 import (

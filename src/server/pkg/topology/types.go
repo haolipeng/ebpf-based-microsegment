@@ -1,5 +1,10 @@
+// input: none (type definitions only)
+// output: NodeAttr, EdgeAttr, Topology, NodeType structs
+// pos: topology - type definitions for topology nodes and edges
+//
 // Package topology provides network topology management for visualizing
 // workload communication patterns.
+
 package topology
 
 import (

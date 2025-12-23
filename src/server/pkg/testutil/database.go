@@ -1,3 +1,7 @@
+// input: test context
+// output: PostgreSQL test container, database connection, cleanup function
+// pos: testutil - testcontainers-based test database provisioning
+
 package testutil
 
 import (

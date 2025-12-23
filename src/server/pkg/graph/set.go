@@ -1,5 +1,10 @@
+// input: elements to add/remove from set
+// output: set membership queries, set operations
+// pos: graph - generic set utility for graph operations
+//
 // Package graph provides an in-memory graph database implementation.
 // This Set implementation is adapted from github.com/deckarep/golang-set (MIT License).
+
 package graph
 
 // Set is a thread-unsafe set implementation.

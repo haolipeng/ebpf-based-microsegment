@@ -1,3 +1,7 @@
+// input: YAML config file path, environment variables (MICROSEGMENT_*)
+// output: Config struct with server, database, gRPC, and logging settings
+// pos: config - configuration loading and validation for server
+
 package config
 
 import (

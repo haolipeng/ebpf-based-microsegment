@@ -1,5 +1,10 @@
+// input: node and edge operations (add/delete/update)
+// output: graph query results, adjacency lookups, connectivity analysis
+// pos: graph - in-memory directed multi-graph data structure
+//
 // Package graph provides an in-memory graph database implementation.
 // Adapted from NeuVector's controller/graph/graph.go (Apache 2.0 License).
+
 package graph
 
 import (

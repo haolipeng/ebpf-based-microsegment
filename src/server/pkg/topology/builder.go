@@ -1,3 +1,7 @@
+// input: flow events stream
+// output: topology node and edge updates
+// pos: topology - converts flow events to topology graph updates
+
 package topology
 
 import (

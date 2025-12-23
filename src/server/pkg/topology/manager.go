@@ -1,3 +1,7 @@
+// input: node/edge update requests, query parameters
+// output: topology graph state, node and edge queries, TTL cleanup
+// pos: topology - manages in-memory network topology graph state
+
 package topology
 
 import (

@@ -1,3 +1,7 @@
+// input: HTTP requests (GET /aggregated, query params), FlowAggregator
+// output: JSON responses with aggregated flow dependencies and statistics
+// pos: api/handlers - HTTP handler for aggregation and analysis endpoints
+
 package handlers
 
 import (

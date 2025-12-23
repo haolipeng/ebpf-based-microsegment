@@ -1,3 +1,7 @@
+// input: PostgreSQL DSN, connection pool settings
+// output: configured database connection pool
+// pos: storage - PostgreSQL connection factory and pool configuration
+
 package storage
 
 import (

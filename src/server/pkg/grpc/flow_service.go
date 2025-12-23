@@ -1,3 +1,7 @@
+// input: gRPC stream of FlowEvent from Agent
+// output: batch database writes, topology updates, acknowledgment response
+// pos: grpc - gRPC service for receiving and processing flow events
+
 package grpc
 
 import (

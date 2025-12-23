@@ -1,3 +1,7 @@
+// input: security alert events
+// output: alert list queries, alert creation results
+// pos: storage - PostgreSQL storage layer for security alerts
+
 package storage
 
 import (

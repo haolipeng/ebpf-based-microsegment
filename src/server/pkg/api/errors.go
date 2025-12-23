@@ -1,3 +1,7 @@
+// input: gin context, HTTP status code, error details
+// output: standardized JSON error/success responses
+// pos: api - common response formatters used by all handlers
+
 package api
 
 import (

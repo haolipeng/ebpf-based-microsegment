@@ -1,3 +1,7 @@
+// input: database connection, embedded migration files
+// output: migration execution results (up/down)
+// pos: storage - database schema migration executor using golang-migrate
+
 package storage
 
 import (

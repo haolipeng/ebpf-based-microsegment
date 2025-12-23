@@ -1,3 +1,7 @@
+// input: gRPC requests from Agent (RegisterAgent, Heartbeat)
+// output: registration response, heartbeat acknowledgment, agent status updates
+// pos: grpc - gRPC service for Agent registration and lifecycle management
+
 package grpc
 
 import (

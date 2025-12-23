@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+//
+// input: wildcard policy objects
+// output: compact slot array for eBPF Map sync, slot allocation/deallocation
+// pos: policy - compact storage manager minimizing eBPF array gaps
+
 package policy
 
 import (

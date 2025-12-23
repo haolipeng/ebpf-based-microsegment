@@ -1,3 +1,7 @@
+// input: flow events from gRPC, query parameters
+// output: batch insert results, paginated flow queries
+// pos: storage - PostgreSQL storage layer for flow events
+
 package storage
 
 import (
@@ -207,6 +211,9 @@ func (s *FlowStorage) GetFlowSummary(ctx context.Context, startTime, endTime tim
 		AvgDuration     float64 `bun:"avg_duration_ms"`
 	}
 
+	// Note: avg_duration_ms calculation requires start_time to be set.
+	// Since the current schema stores start_time as bigint (Unix timestamp),
+	// we calculate duration as 0 for now (flows table doesn't have end_time/last_seen columns).
 	err := s.db.NewSelect().
 		Model((*FlowRow)(nil)).
 		ColumnExpr(`
@@ -219,7 +226,7 @@ func (s *FlowStorage) GetFlowSummary(ctx context.Context, startTime, endTime tim
 			COALESCE(SUM(CASE WHEN policy_action = 2 THEN 1 ELSE 0 END), 0) as denied_flows,
 			COUNT(DISTINCT src_ip) as unique_source_ips,
 			COUNT(DISTINCT dst_ip) as unique_dest_ips,
-			COALESCE(AVG(EXTRACT(EPOCH FROM (COALESCE(end_time, last_seen) - start_time)) * 1000), 0) as avg_duration_ms
+			0::float8 as avg_duration_ms
 		`).
 		Where("timestamp_ns >= ? AND timestamp_ns <= ?", startTime.UnixNano(), endTime.UnixNano()).
 		Scan(ctx, &row)
