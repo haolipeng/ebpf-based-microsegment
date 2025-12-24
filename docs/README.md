@@ -6,27 +6,25 @@
 
 ### 🚀 快速开始
 - [项目 README](../README.md) - 项目简介和快速开始
-- [构建指南](BUILD_GUIDE.md) - 详细的编译和运行说明
-- [项目结构](../PROJECT_STRUCTURE.md) - 目录结构和模块说明
-- [实施总结](../IMPLEMENTATION_SUMMARY.md) - 当前进度和已完成工作
+- [构建指南](build_guide.md) - 详细的编译和运行说明
+- [实施总结](../demos/IMPLEMENTATION_SUMMARY.md) - 当前进度和已完成工作
 
 ### 📖 学习路线
-- [6周学习指南](weekly-guide/) - 从零到精通的学习路径
-  - [Week 1: 环境和基础](weekly-guide/week1-environment-and-basics.md)
-  - [Week 2: 基础框架](weekly-guide/week2-basic-framework.md)
-  - [Week 3: 用户态控制](weekly-guide/week3-userspace-control.md)
-  - [Week 4: 高级功能](weekly-guide/week4-advanced-features.md)
-  - [Week 5: 测试优化](weekly-guide/week5-testing-optimization.md)
-  - [Week 6: 生产部署](weekly-guide/week6-production-deployment.md)
+- [6周学习指南](learning/weekly-guide/) - 从零到精通的学习路径
+  - [Week 1: 环境和基础](learning/weekly-guide/week1-environment-and-basics.md)
+  - [Week 2: 基础框架](learning/weekly-guide/week2-basic-framework.md)
+  - [Week 3: 用户态控制](learning/weekly-guide/week3-userspace-control.md)
+  - [Week 4: 高级功能](learning/weekly-guide/week4-advanced-features.md)
+  - [Week 5: 测试优化](learning/weekly-guide/week5-testing-optimization.md)
+  - [Week 6: 生产部署](learning/weekly-guide/week6-production-deployment.md)
 
 ### 📋 项目规划
 - [MVP 实施计划](microsegmentation-mvp-implementation-plan.md) - 8周 MVP 开发计划
-- [前端学习计划](frontend-learning-plan-3weeks.md) - 3周前端开发计划
+- [前端学习计划](learning/frontend-learning-plan-3weeks.md) - 3周前端开发计划
 
 ### 🔧 操作指南
-- [OpenSpec 工作流](OpenSpec-Workflow-Guide.md) - 规范化开发流程
 - [项目图表指南](project-diagrams-guide.md) - 如何绘制项目图表
-- [DP 诊断工具](dp-diagnostic-tool.md) - 数据平面诊断工具使用
+- [DP 诊断工具](neuvector-analysis/dp-diagnostic-tool.md) - 数据平面诊断工具使用
 
 ### 📚 参考资料
 

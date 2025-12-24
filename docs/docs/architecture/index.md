@@ -6,11 +6,16 @@
 
 | 文档 | 描述 |
 |------|------|
-| [架构概述](overview.md) | 系统整体架构和核心组件 |
-| [数据流](data-flow.md) | 数据包处理和事件流转路径 |
-| [数据平面](data-plane.md) | eBPF 数据平面实现细节 |
-| [控制平面](control-plane.md) | 用户空间控制平面架构 |
-| [eBPF Maps](ebpf-maps.md) | 内核共享数据结构 |
+| [架构概述](../../architecture_overview.md) | 系统整体架构和核心组件（完整版） |
+
+### 补充文档
+
+以下文档可在项目根目录找到：
+
+- `architecture_overview.md` - 完整的架构概述文档
+- `build_guide.md` - 构建和编译指南
+- `DEPLOYMENT.md` - 部署指南
+- `performance.md` - 性能指标和优化
 
 ## 架构概览
 
@@ -72,5 +77,6 @@
 
 ## 相关文档
 
-- [完整架构文档](overview.md)
-- [数据流详解](data-flow.md)
+- [完整架构文档](../../architecture_overview.md)
+- [构建指南](../../build_guide.md)
+- [部署指南](../../DEPLOYMENT.md)

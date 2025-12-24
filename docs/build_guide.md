@@ -30,6 +30,16 @@ go version       # >= 1.21
 
 ## 🚀 快速开始
 
+### 0. 安装 Protobuf 工具（首次构建需要）
+
+```bash
+# 安装 protoc 编译器
+sudo apt-get install -y protobuf-compiler
+
+# 安装 Go protobuf 插件
+make install-proto-tools
+```
+
 ### 1. 下载依赖
 
 ```bash
@@ -41,17 +51,22 @@ go mod download
 go mod tidy
 ```
 
-### 2. 生成 eBPF Go 绑定
+### 2. 生成 gRPC 代码和 eBPF Go 绑定
 
 ```bash
+# 生成 Protocol Buffers 代码
+make proto
+
 # 使用 bpf2go 编译 C 代码并生成 Go 绑定
 make bpf
 ```
 
 **这一步做了什么？**
-- 将 `src/bpf/tc_microsegment.bpf.c` 编译为 eBPF 字节码（.o 文件）
-- 自动生成 Go 绑定代码（bpf_*.go）
-- 嵌入字节码到 Go 包中
+- `make proto`: 生成 gRPC 服务代码（从 `api/proto/*.proto`）
+- `make bpf`:
+  - 将 `src/bpf/tc_microsegment.bpf.c` 编译为 eBPF 字节码（.o 文件）
+  - 自动生成 Go 绑定代码（bpf_*.go）
+  - 嵌入字节码到 Go 包中
 
 **生成的文件位置：**
 ```
@@ -62,29 +77,36 @@ src/agent/pkg/dataplane/
 └── bpf_bpfel_arm64.o         # arm64 eBPF 字节码（如果生成）
 ```
 
-### 3. 编译 Agent
+### 3. 编译 Agent 和 Server
 
 ```bash
-# 编译用户态 Go 程序
+# 编译 Agent
 make agent
+
+# 编译 Server
+make server
+
+# 或一次性构建所有
+make all
 ```
 
 **输出：**
 ```
-bin/microsegment-agent         # 可执行文件
+bin/microsegment-agent         # Agent 可执行文件
+bin/microsegment-server        # Server 可执行文件
 ```
 
-### 4. 运行 Agent
+### 4. 运行服务
 
 ```bash
-# 在 loopback 接口运行（测试）
-make run
-
-# 或手动运行
+# 运行 Agent（需要 root 权限）
 sudo ./bin/microsegment-agent --interface lo --log-level debug
 
-# 在生产接口运行
-sudo ./bin/microsegment-agent --interface eth0 --log-level info
+# 运行 Server
+./bin/microsegment-server --config config/server.yaml
+
+# 或使用一键启动脚本
+./start-all.sh
 ```
 
 ## 🛠️ Makefile 命令参考
@@ -93,10 +115,32 @@ sudo ./bin/microsegment-agent --interface eth0 --log-level info
 
 | 命令 | 说明 |
 |------|------|
-| `make all` | 构建所有（bpf + agent），默认目标 |
+| `make all` | 构建所有（proto + bpf + agent + server）|
+| `make proto` | 生成 Protocol Buffers 代码 |
 | `make bpf` | 生成 eBPF Go 绑定 |
 | `make agent` | 编译 Agent 二进制文件 |
+| `make server` | 编译 Server 二进制文件 |
 | `make clean` | 清理所有构建产物 |
+
+### eBPF 特性标志
+
+| 标志 | 默认值 | 说明 |
+|------|--------|------|
+| `DEBUG_MODE` | 0 | 启用 eBPF 调试日志 |
+| `ENABLE_IP_FRAGMENT_HANDLING` | 1 | 处理 IP 分片 |
+| `ENABLE_NAT_SUPPORT` | 1 | NAT 检测支持 |
+
+**使用示例：**
+```bash
+# 启用调试模式构建
+make bpf DEBUG_MODE=1
+
+# 禁用分片处理
+make bpf ENABLE_IP_FRAGMENT_HANDLING=0
+
+# 完整构建示例
+make all DEBUG_MODE=1 ENABLE_NAT_SUPPORT=1
+```
 
 ### 依赖管理
 
@@ -139,24 +183,45 @@ git clone https://github.com/haolipeng/ebpf-based-microsegment.git
 cd ebpf-based-microsegment
 
 # 2. 安装系统依赖
-sudo apt-get install -y clang llvm libbpf-dev linux-headers-$(uname -r) golang-1.21
+sudo apt-get update
+sudo apt-get install -y clang llvm libbpf-dev linux-headers-$(uname -r) \
+    build-essential golang-1.21 protobuf-compiler git
 
-# 3. 下载 Go 依赖
+# 3. 安装 Protobuf 工具
+make install-proto-tools
+
+# 4. 下载 Go 依赖
 make deps
 
-# 4. 生成 eBPF 绑定
-make bpf
-
-# 5. 编译 Agent
-make agent
+# 5. 构建 all 组件
+make all
 
 # 6. 运行（需要 root）
-sudo ./bin/microsegment-agent --interface lo --log-level debug
+./start-all.sh
+# 或手动运行：
+# sudo ./bin/microsegment-agent --interface lo --log-level debug
+# ./bin/microsegment-server --config config/server.yaml
 ```
 
 ## 🔧 常见问题
 
-### 1. `make bpf` 失败：找不到 bpf2go
+### 1. `make proto` 失败：找不到 protoc
+
+**错误信息：**
+```
+./scripts/generate-proto.sh: line X: protoc: not found
+```
+
+**解决方案：**
+```bash
+# 安装 protoc 编译器
+sudo apt-get install -y protobuf-compiler
+
+# 验证安装
+protoc --version
+```
+
+### 2. `make bpf` 失败：找不到 bpf2go
 
 **错误信息：**
 ```
@@ -293,5 +358,5 @@ docker run --privileged --net=host microsegment-agent
 
 ---
 
-*最后更新：2025-10-30*
+*最后更新：2025-12-24*
 

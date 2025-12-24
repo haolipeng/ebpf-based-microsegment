@@ -20,13 +20,27 @@
 ./stop-all.sh
 ```
 
+## 配置前置说明
+
+在部署前，请根据实际环境修改以下配置：
+
+1. **服务器IP地址**: 将 `<SERVER_IP>` 替换为实际服务器IP（如 localhost 或实际IP）
+2. **网络接口**: 将 `<NETWORK_INTERFACE>` 替换为实际网卡名称
+   - 查看可用接口: `ip link show`
+   - 常见接口名: eth0, ens33, enp0s3
+
 ## 访问地址
 
-从宿主机 Windows 浏览器访问：
+从宿主机浏览器访问：
 
-- **Web UI 界面**: http://10.107.12.201:3000
-- **Server HTTP API**: http://10.107.12.201:8080
-- **Agent API**: http://10.107.12.201:8081
+- **Web UI 界面**: http://<SERVER_IP>:3000
+- **Server HTTP API**: http://<SERVER_IP>:8080
+- **Agent API**: http://<SERVER_IP>:8081
+
+**本地访问示例** (在同一台机器上):
+- **Web UI 界面**: http://localhost:3000
+- **Server HTTP API**: http://localhost:8080
+- **Agent API**: http://localhost:8081
 
 ## 服务架构
 
@@ -77,7 +91,7 @@
 - 配置文件: `agent-config.yaml`
 - 日志文件: `/tmp/agent.log`
 - 运行模式: agent-server (连接到控制平面)
-- 监听接口: ens33
+- 监听接口: <NETWORK_INTERFACE>
 - 功能:
   - eBPF 数据包过滤
   - Flow 收集和上报
@@ -116,7 +130,7 @@ database:
 ### Agent 配置 (`agent-config.yaml`)
 ```yaml
 mode: agent-server
-interface: ens33
+interface: <NETWORK_INTERFACE>  # 修改为实际网卡名，如 eth0, ens33, enp0s3
 log_level: info
 
 server:

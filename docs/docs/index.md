@@ -1,75 +1,32 @@
 # 参考文档
 
-本章节提供 eBPF 微隔离系统的完整技术参考文档。
+本章节提供 eBPF 微隔离系统的技术参考文档索引。
+
+## 快速链接
+
+| 类别 | 文档 | 位置 |
+|------|------|------|
+| **快速开始** | 构建指南 | [../build_guide.md](../build_guide.md) |
+| **快速开始** | 部署指南 | [../DEPLOYMENT.md](../DEPLOYMENT.md) |
+| **架构** | 架构概述 | [../architecture_overview.md](../architecture_overview.md) |
+| **API** | Label-based Policy API | [../api-label-based-policies.md](../api-label-based-policies.md) |
+| **学习** | 6周学习指南 | [../learning/weekly-guide/](../learning/weekly-guide/) |
 
 ## 文档目录
 
-### [安装指南](install/index.md)
+### 安装指南
 
-系统安装和部署的详细说明。
+- [源码编译](install/build-from-source.md) - 从源码编译和安装
 
-- [系统要求](install/requirements.md)
-- [Docker 安装](install/docker.md)
-- [Kubernetes 安装](install/kubernetes.md)
-- [二进制安装](install/binary.md)
-- [源码编译](install/build-from-source.md)
+### 架构设计
 
-### [架构设计](architecture/index.md)
+- [架构设计索引](architecture/index.md) - 架构文档导航
 
-系统架构和设计原理。
+### 策略系统
 
-- [架构概述](architecture/overview.md)
-- [数据流](architecture/data-flow.md)
-- [数据平面](architecture/data-plane.md)
-- [控制平面](architecture/control-plane.md)
-- [eBPF Maps](architecture/ebpf-maps.md)
+- [基于标签的策略](policies/label-based.md) - Label-based Policy API 文档
 
-### [事件系统](events/index.md)
-
-系统产生的各类事件。
-
-- [事件概述](events/overview.md)
-- [流事件](events/flow-events.md)
-- [会话事件](events/session-events.md)
-- [策略事件](events/policy-events.md)
-
-### [策略系统](policies/index.md)
-
-策略定义和管理。
-
-- [策略概述](policies/overview.md)
-- [策略语法](policies/syntax.md)
-- [精确匹配策略](policies/exact-match.md)
-- [通配符策略](policies/wildcard.md)
-- [基于标签的策略](policies/label-based.md)
-
-### [CLI 参数](cli-flags/index.md)
-
-命令行参数参考。
-
-- [Agent 参数](cli-flags/agent.md)
-- [Server 参数](cli-flags/server.md)
-
-### [数据源](data-sources/index.md)
-
-内置和自定义数据源。
-
-- [概述](data-sources/overview.md)
-- [会话数据](data-sources/sessions.md)
-- [流数据](data-sources/flows.md)
-- [统计数据](data-sources/statistics.md)
-
-### [集成](integrations/index.md)
-
-与第三方系统集成。
-
-- [Prometheus](integrations/prometheus.md)
-- [Grafana](integrations/grafana.md)
-- [日志系统](integrations/logging.md)
-
-## API 参考
-
-### REST API
+## REST API 端点
 
 | 端点 | 方法 | 描述 |
 |------|------|------|
@@ -81,6 +38,6 @@
 | `/api/v1/flows` | GET | 流数据查询 |
 | `/api/v1/sessions` | GET | 会话数据查询 |
 
-### gRPC API
+---
 
-用于 Agent 和 Server 之间的通信，详见 [gRPC API 文档](api/grpc.md)。
+*注：更多文档正在持续更新中*
