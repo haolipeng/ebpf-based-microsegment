@@ -1,0 +1,319 @@
+// SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+syntax = "proto3";
+
+package identity;
+
+option go_package = "github.com/haolipeng/ebpf-based-microsegment/api/proto/identity";
+
+// Identity represents a security identity with associated labels
+message Identity {
+    // Numeric identity ID (32-bit)
+    uint32 id = 1;
+
+    // Labels that define this identity
+    map<string, string> labels = 2;
+
+    // SHA256 hash of the sorted label key=value pairs
+    string label_hash = 3;
+
+    // Reference count (how many endpoints use this identity)
+    int32 reference_count = 4;
+}
+
+// IPIdentityPair maps an IP prefix to a security identity
+message IPIdentityPair {
+    // IP prefix in CIDR notation (e.g., "10.0.0.1/32", "192.168.0.0/24")
+    string prefix = 1;
+
+    // Security identity ID
+    uint32 identity = 2;
+
+    // Source of this mapping (e.g., "k8s", "manual", "cidr-policy")
+    string source = 3;
+
+    // Kubernetes metadata (if applicable)
+    string namespace = 4;
+    string pod_name = 5;
+    string host_ip = 6;
+}
+
+// IdentityPolicy defines a policy based on source and destination identities
+message IdentityPolicy {
+    // Unique rule ID
+    uint32 rule_id = 1;
+
+    // Human-readable rule name
+    string name = 2;
+
+    // Source identity selector (labels to match)
+    map<string, string> src_labels = 3;
+
+    // Destination identity selector (labels to match)
+    map<string, string> dst_labels = 4;
+
+    // Resolved source identity ID (0 = not resolved yet)
+    uint32 src_identity = 5;
+
+    // Resolved destination identity ID (0 = not resolved yet)
+    uint32 dst_identity = 6;
+
+    // Destination ports (empty = any port)
+    repeated PortRule ports = 7;
+
+    // Protocols (empty = any protocol)
+    repeated string protocols = 8;
+
+    // Policy action
+    PolicyAction action = 9;
+
+    // Priority (higher = more important)
+    uint32 priority = 10;
+
+    // Whether the policy is enabled
+    bool enabled = 11;
+
+    // Description
+    string description = 12;
+}
+
+// PortRule defines a port or port range
+message PortRule {
+    // Port number (for single port) or start of range
+    uint32 port = 1;
+
+    // End of port range (0 = single port)
+    uint32 end_port = 2;
+
+    // Protocol (tcp, udp, any)
+    string protocol = 3;
+}
+
+// PolicyAction represents the action to take
+enum PolicyAction {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_ALLOW = 1;
+    ACTION_DENY = 2;
+    ACTION_LOG = 3;
+}
+
+// IdentityEventType represents the type of identity event
+enum IdentityEventType {
+    EVENT_UNSPECIFIED = 0;
+    EVENT_UPSERT = 1;
+    EVENT_DELETE = 2;
+}
+
+// IdentityEvent represents an identity change event
+message IdentityEvent {
+    // Event type
+    IdentityEventType type = 1;
+
+    // The identity that changed
+    Identity identity = 2;
+}
+
+// IPCacheEvent represents an IPCache change event
+message IPCacheEvent {
+    // Event type
+    IdentityEventType type = 1;
+
+    // The IP-identity mapping that changed
+    IPIdentityPair pair = 2;
+
+    // Old identity (for updates)
+    uint32 old_identity = 3;
+}
+
+// IdentityPolicyEvent represents a policy change event
+message IdentityPolicyEvent {
+    // Event type
+    IdentityEventType type = 1;
+
+    // The policy that changed
+    IdentityPolicy policy = 2;
+}
+
+// === Request/Response Messages ===
+
+// AllocateIdentityRequest requests allocation of an identity for a label set
+message AllocateIdentityRequest {
+    // Labels for the identity
+    map<string, string> labels = 1;
+}
+
+// AllocateIdentityResponse returns the allocated (or existing) identity
+message AllocateIdentityResponse {
+    // The identity
+    Identity identity = 1;
+
+    // Whether this is a newly allocated identity
+    bool is_new = 2;
+}
+
+// ReleaseIdentityRequest requests release of an identity reference
+message ReleaseIdentityRequest {
+    // Identity ID to release
+    uint32 identity_id = 1;
+}
+
+// ReleaseIdentityResponse confirms the release
+message ReleaseIdentityResponse {
+    // Whether the identity was deleted (reference count reached 0)
+    bool deleted = 1;
+
+    // Remaining reference count (if not deleted)
+    int32 remaining_refs = 2;
+}
+
+// GetIdentityRequest requests an identity by ID
+message GetIdentityRequest {
+    // Identity ID
+    uint32 identity_id = 1;
+}
+
+// GetIdentityResponse returns the identity
+message GetIdentityResponse {
+    // The identity
+    Identity identity = 1;
+}
+
+// ListIdentitiesRequest requests all identities
+message ListIdentitiesRequest {
+    // Optional label filter
+    map<string, string> label_filter = 1;
+}
+
+// ListIdentitiesResponse returns all matching identities
+message ListIdentitiesResponse {
+    // List of identities
+    repeated Identity identities = 1;
+}
+
+// GetIPCacheRequest requests the current IPCache state
+message GetIPCacheRequest {
+    // Optional prefix filter (CIDR)
+    string prefix_filter = 1;
+
+    // Optional identity filter
+    uint32 identity_filter = 2;
+}
+
+// GetIPCacheResponse returns IPCache entries
+message GetIPCacheResponse {
+    // List of IP-identity mappings
+    repeated IPIdentityPair entries = 1;
+}
+
+// StreamIdentitiesRequest initiates identity streaming
+message StreamIdentitiesRequest {
+    // Agent ID
+    string agent_id = 1;
+
+    // Whether to include initial state
+    bool include_initial = 2;
+}
+
+// StreamIdentitiesResponse streams identity events
+message StreamIdentitiesResponse {
+    // Type of message
+    oneof message {
+        // Initial sync complete marker
+        bool initial_sync_complete = 1;
+
+        // Identity event
+        IdentityEvent identity_event = 2;
+
+        // IPCache event
+        IPCacheEvent ipcache_event = 3;
+
+        // Policy event
+        IdentityPolicyEvent policy_event = 4;
+    }
+}
+
+// UpsertIPCacheRequest requests upsert of an IP-identity mapping
+message UpsertIPCacheRequest {
+    // The IP-identity mapping
+    IPIdentityPair pair = 1;
+}
+
+// UpsertIPCacheResponse confirms the upsert
+message UpsertIPCacheResponse {
+    // Whether this was an update (vs new entry)
+    bool updated = 1;
+
+    // Previous identity (if updated)
+    uint32 old_identity = 2;
+}
+
+// DeleteIPCacheRequest requests deletion of an IP-identity mapping
+message DeleteIPCacheRequest {
+    // IP prefix to delete
+    string prefix = 1;
+}
+
+// DeleteIPCacheResponse confirms the deletion
+message DeleteIPCacheResponse {
+    // Whether the entry was found and deleted
+    bool deleted = 1;
+}
+
+// AddIdentityPolicyRequest requests addition of an identity policy
+message AddIdentityPolicyRequest {
+    // The policy to add
+    IdentityPolicy policy = 1;
+}
+
+// AddIdentityPolicyResponse confirms the addition
+message AddIdentityPolicyResponse {
+    // The added policy (with resolved identities)
+    IdentityPolicy policy = 1;
+}
+
+// DeleteIdentityPolicyRequest requests deletion of an identity policy
+message DeleteIdentityPolicyRequest {
+    // Rule ID to delete
+    uint32 rule_id = 1;
+}
+
+// DeleteIdentityPolicyResponse confirms the deletion
+message DeleteIdentityPolicyResponse {
+    // Whether the policy was found and deleted
+    bool deleted = 1;
+}
+
+// ListIdentityPoliciesRequest requests all identity policies
+message ListIdentityPoliciesRequest {
+    // Optional filter by enabled status
+    bool enabled_only = 1;
+}
+
+// ListIdentityPoliciesResponse returns all matching policies
+message ListIdentityPoliciesResponse {
+    // List of policies
+    repeated IdentityPolicy policies = 1;
+}
+
+// === Service Definition ===
+
+// IdentityService manages security identities and IPCache
+service IdentityService {
+    // Identity allocation and management
+    rpc AllocateIdentity(AllocateIdentityRequest) returns (AllocateIdentityResponse);
+    rpc ReleaseIdentity(ReleaseIdentityRequest) returns (ReleaseIdentityResponse);
+    rpc GetIdentity(GetIdentityRequest) returns (GetIdentityResponse);
+    rpc ListIdentities(ListIdentitiesRequest) returns (ListIdentitiesResponse);
+
+    // IPCache management
+    rpc GetIPCache(GetIPCacheRequest) returns (GetIPCacheResponse);
+    rpc UpsertIPCache(UpsertIPCacheRequest) returns (UpsertIPCacheResponse);
+    rpc DeleteIPCache(DeleteIPCacheRequest) returns (DeleteIPCacheResponse);
+
+    // Identity policy management
+    rpc AddIdentityPolicy(AddIdentityPolicyRequest) returns (AddIdentityPolicyResponse);
+    rpc DeleteIdentityPolicy(DeleteIdentityPolicyRequest) returns (DeleteIdentityPolicyResponse);
+    rpc ListIdentityPolicies(ListIdentityPoliciesRequest) returns (ListIdentityPoliciesResponse);
+
+    // Streaming for agent synchronization
+    rpc StreamIdentities(StreamIdentitiesRequest) returns (stream StreamIdentitiesResponse);
+}

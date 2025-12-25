@@ -156,8 +156,8 @@ Four-phase optimization strategy:
 ## Related
 
 - Project Goal: <10μs latency, 100K+ sessions (`openspec/project.md`)
-- Architecture: `docs/EBPF_MICROSEGMENTATION_ROADMAP.md`
-- Reference: ZFW analysis in `docs/zfw-analysis/`
+- Architecture: `docs/specs/roadmap.md`
+- Reference: ZFW analysis in `docs/research/zfw/`
 
 ## Contact
 

@@ -220,12 +220,12 @@ design-docs/
 参见 [`docs/`](../docs/) 目录
 
 ### 实施计划
-- [MVP 实施计划](../docs/microsegmentation-mvp-implementation-plan.md)
+- [MVP 实施计划](../docs/archive/mvp-plan.md)
 - [实施总结](../IMPLEMENTATION_SUMMARY.md)
 
 ### 参考项目
-- [NeuVector 架构分析](../docs/neuvector-dp-agent-communication.md)
-- [ZFW 架构分析](../docs/zfw-architecture-analysis.md)
+- [NeuVector 架构分析](../docs/research/neuvector/neuvector-dp-agent-communication.md)
+- [ZFW 架构分析](../docs/research/zfw/zfw-architecture-analysis.md)
 
 ---
 

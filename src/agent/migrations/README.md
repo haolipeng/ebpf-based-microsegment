@@ -272,7 +272,7 @@ cp /backup/agent.db.YYYYMMDD /var/lib/ebpf-agent/agent.db
 ## Additional Resources
 
 - **Full documentation**: `../../docs/database-migrations.md`
-- **API documentation**: `../../docs/api-label-based-policies.md`
+- **API documentation**: `../../docs/references/api/label-based-policies.md`
 - **Architecture**: `../../docs/architecture-comparison.md`
 - **OpenSpec change**: `../../openspec/changes/add-label-based-policy/`
 

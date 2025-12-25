@@ -461,7 +461,7 @@ If performance regressions occur:
 
 ## Documentation Updates
 
-- Update `docs/EBPF_MICROSEGMENTATION_ROADMAP.md` with performance section
+- Update `docs/specs/roadmap.md` with performance section
 - Add performance tuning guide
 - Document optimization techniques in code comments
 - Create flamegraph interpretation guide

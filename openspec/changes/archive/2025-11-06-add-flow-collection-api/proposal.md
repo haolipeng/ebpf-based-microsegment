@@ -376,7 +376,7 @@ struct flow_event {
 
 - `openspec/changes/add-server-component/` - Server 组件实现（必需前置依赖）
 - `openspec/changes/add-grpc-protocol-definitions/` - gRPC 协议定义（已完成）
-- `docs/microsegmentation-mvp-implementation-plan.md` - Phase 4 前端可视化需求
+- `docs/archive/mvp-plan.md` - Phase 4 前端可视化需求
 - `openspec/project.md` - 项目架构和命名约定
 - `src/agent/pkg/workload/` - 工作负载管理（用于标签查询）
 - `src/agent/pkg/policy/` - 策略管理（用于 PolicyID 关联）

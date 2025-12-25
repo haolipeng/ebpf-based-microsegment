@@ -213,7 +213,7 @@ static __always_inline __u32 scan_protocol_bucket(
  * Returns: Policy action (ALLOW/DENY/LOG)
  *
  * Lookup Strategy:
- * 1. Fast Path: Try exact match in policy_map (O(1) hash lookup)
+ * 1. Fast Path: Try exact match in ipaddr_policy_map (O(1) hash lookup)
  * 2. Slow Path (Indexed):
  *    a. Scan protocol-specific bucket (e.g., TCP bucket for TCP flows)
  *    b. Scan ANY protocol bucket (protocol=0, matches all)
@@ -252,7 +252,7 @@ static __always_inline __u8 lookup_policy_action_indexed(
     }
 
     // 1. Try direction-specific exact match
-    struct policy_value *policy = bpf_map_lookup_elem(&policy_map, &pkey);
+    struct policy_value *policy = bpf_map_lookup_elem(&ipaddr_policy_map, &pkey);
     if (policy) {
         policy->hit_count += 1;
         update_stats(STATS_POLICY_HITS);
@@ -262,7 +262,7 @@ static __always_inline __u8 lookup_policy_action_indexed(
 
     // 2. Try bidirectional exact match (direction=ANY)
     pkey.direction = POLICY_DIR_ANY;
-    policy = bpf_map_lookup_elem(&policy_map, &pkey);
+    policy = bpf_map_lookup_elem(&ipaddr_policy_map, &pkey);
     if (policy) {
         policy->hit_count += 1;
         update_stats(STATS_POLICY_HITS);

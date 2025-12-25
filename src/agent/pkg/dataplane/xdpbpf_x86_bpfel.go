@@ -220,16 +220,16 @@ type xdpbpfMapSpecs struct {
 	FragConfigMap     *ebpf.MapSpec `ebpf:"frag_config_map"`
 	FragStateMap      *ebpf.MapSpec `ebpf:"frag_state_map"`
 	FragStatsMap      *ebpf.MapSpec `ebpf:"frag_stats_map"`
+	IpaddrPolicyMap   *ebpf.MapSpec `ebpf:"ipaddr_policy_map"`
+	IpcidrPolicyMap   *ebpf.MapSpec `ebpf:"ipcidr_policy_map"`
 	NatConfigMap      *ebpf.MapSpec `ebpf:"nat_config_map"`
 	NatStatsMap       *ebpf.MapSpec `ebpf:"nat_stats_map"`
-	PolicyMap         *ebpf.MapSpec `ebpf:"policy_map"`
 	ProcessEvents     *ebpf.MapSpec `ebpf:"process_events"`
 	ProcessInfoMap    *ebpf.MapSpec `ebpf:"process_info_map"`
 	ProtocolOffsetMap *ebpf.MapSpec `ebpf:"protocol_offset_map"`
 	SessionMap        *ebpf.MapSpec `ebpf:"session_map"`
 	StatsMap          *ebpf.MapSpec `ebpf:"stats_map"`
 	TimeoutConfigMap  *ebpf.MapSpec `ebpf:"timeout_config_map"`
-	WildcardPolicyMap *ebpf.MapSpec `ebpf:"wildcard_policy_map"`
 }
 
 // xdpbpfVariableSpecs contains global variables before they are loaded into the kernel.
@@ -263,16 +263,16 @@ type xdpbpfMaps struct {
 	FragConfigMap     *ebpf.Map `ebpf:"frag_config_map"`
 	FragStateMap      *ebpf.Map `ebpf:"frag_state_map"`
 	FragStatsMap      *ebpf.Map `ebpf:"frag_stats_map"`
+	IpaddrPolicyMap   *ebpf.Map `ebpf:"ipaddr_policy_map"`
+	IpcidrPolicyMap   *ebpf.Map `ebpf:"ipcidr_policy_map"`
 	NatConfigMap      *ebpf.Map `ebpf:"nat_config_map"`
 	NatStatsMap       *ebpf.Map `ebpf:"nat_stats_map"`
-	PolicyMap         *ebpf.Map `ebpf:"policy_map"`
 	ProcessEvents     *ebpf.Map `ebpf:"process_events"`
 	ProcessInfoMap    *ebpf.Map `ebpf:"process_info_map"`
 	ProtocolOffsetMap *ebpf.Map `ebpf:"protocol_offset_map"`
 	SessionMap        *ebpf.Map `ebpf:"session_map"`
 	StatsMap          *ebpf.Map `ebpf:"stats_map"`
 	TimeoutConfigMap  *ebpf.Map `ebpf:"timeout_config_map"`
-	WildcardPolicyMap *ebpf.Map `ebpf:"wildcard_policy_map"`
 }
 
 func (m *xdpbpfMaps) Close() error {
@@ -282,16 +282,16 @@ func (m *xdpbpfMaps) Close() error {
 		m.FragConfigMap,
 		m.FragStateMap,
 		m.FragStatsMap,
+		m.IpaddrPolicyMap,
+		m.IpcidrPolicyMap,
 		m.NatConfigMap,
 		m.NatStatsMap,
-		m.PolicyMap,
 		m.ProcessEvents,
 		m.ProcessInfoMap,
 		m.ProtocolOffsetMap,
 		m.SessionMap,
 		m.StatsMap,
 		m.TimeoutConfigMap,
-		m.WildcardPolicyMap,
 	)
 }
 

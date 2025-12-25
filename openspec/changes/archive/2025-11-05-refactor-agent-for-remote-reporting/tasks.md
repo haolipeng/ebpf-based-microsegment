@@ -1287,7 +1287,7 @@ Create comprehensive documentation and runnable examples.
   ```
 
 - [ ] **8.3 Create troubleshooting guide**
-  - [ ] Create `docs/troubleshooting.md`
+  - [ ] Create `docs/guides/troubleshooting/README.md`
   - [ ] Document common errors and solutions
   - [ ] Add debugging steps
 

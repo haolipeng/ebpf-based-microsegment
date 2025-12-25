@@ -17,7 +17,7 @@
    - 项目特性和架构图
    - Quick Start 命令
 
-3. **[docs/microsegmentation-mvp-implementation-plan.md](microsegmentation-mvp-implementation-plan.md)** (10 分钟)
+3. **[docs/archive/mvp-plan.md](../archive/mvp-plan.md)** (10 分钟)
    - MVP 8 周实施计划
    - 里程碑和优先级
 
@@ -216,7 +216,7 @@
    - Go 代码注释规范
    - 文档生成指南
 
-4. **[docs/project-diagrams-guide.md](project-diagrams-guide.md)** (可选，30 分钟)
+4. **[docs/contributing/diagrams-guide.md](../contributing/diagrams-guide.md)** (可选，30 分钟)
    - 如何绘制项目图表
    - 图表类型和工具
 

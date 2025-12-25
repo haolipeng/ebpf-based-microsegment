@@ -314,7 +314,7 @@
 - [x] 无需 Kubernetes API 权限（仅需挂载 containerd socket）
 
 **参考文档**：
-- [标签自动获取方式详解](../../docs/label-auto-acquisition.md)
+- [标签自动获取方式详解](../../docs/specs/features/label-acquisition.md)
 - NeuVector 实现：`source-references/neuvector/agent/`
 
 **技术要点**：

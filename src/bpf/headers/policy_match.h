@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
 //
-// input: flow_key, policy maps (exact + wildcard)
+// input: flow_key, policy maps (exact IP + CIDR/wildcard)
 // output: matched policy action (allow/deny), rule_id
 // pos: bpf/headers - policy matching logic shared by TC and XDP programs
 //
@@ -10,13 +10,13 @@
  *
  * 主要功能:
  * - matches_wildcard(): 检查流是否匹配通配符策略
- * - lookup_policy_action(): 执行策略查找 (精确匹配 + 通配符匹配)
+ * - lookup_policy_action(): 执行策略查找 (精确 IP 匹配 + CIDR/通配符匹配)
  *
  * 前置要求 (必须在包含此头文件之前完成):
  * 1. 包含 common_types.h 定义基础类型
  * 2. 定义以下 eBPF Maps:
- *    - policy_map: 精确匹配策略表 (HASH map)
- *    - wildcard_policy_map: 通配符策略表 (ARRAY map)
+ *    - ipaddr_policy_map: 精确 IP 地址匹配策略表 (HASH map)
+ *    - ipcidr_policy_map: CIDR/通配符策略表 (ARRAY map)
  * 3. 定义 update_stats() 函数用于更新统计计数
  */
 
@@ -136,7 +136,7 @@ static __always_inline __u8 lookup_policy_action(
 	}
 
 	// 1. 尝试匹配方向特定的策略 (INGRESS 或 EGRESS)
-	struct policy_value *policy = bpf_map_lookup_elem(&policy_map, &pkey);
+	struct policy_value *policy = bpf_map_lookup_elem(&ipaddr_policy_map, &pkey);
 	if (policy) {
 		// 更新命中计数 (用于策略使用统计)
 		policy->hit_count += 1;
@@ -148,7 +148,7 @@ static __always_inline __u8 lookup_policy_action(
 
 	// 2. 如果没有匹配,回退到双向策略 (direction=ANY)
 	pkey.direction = POLICY_DIR_ANY;
-	policy = bpf_map_lookup_elem(&policy_map, &pkey);
+	policy = bpf_map_lookup_elem(&ipaddr_policy_map, &pkey);
 	if (policy) {
 		policy->hit_count += 1;
 		update_stats(STATS_POLICY_HITS);
@@ -171,7 +171,7 @@ static __always_inline __u8 lookup_policy_action(
 		if (idx >= MAX_ENTRIES_WILDCARD_POLICY)
 			break;
 
-		wildcard = bpf_map_lookup_elem(&wildcard_policy_map, &idx);
+		wildcard = bpf_map_lookup_elem(&ipcidr_policy_map, &idx);
 
 		if (!wildcard)
 			continue;

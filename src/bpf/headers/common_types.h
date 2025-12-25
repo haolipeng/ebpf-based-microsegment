@@ -155,10 +155,10 @@ struct wildcard_policy {
                               // Note: process_path matching is deferred to userspace (Task #48)
 } __attribute__((packed));
 
-// Protocol segment descriptor for indexed wildcard policy lookup
-// Used to track which range of wildcard_policy_map belongs to each protocol
+// Protocol segment descriptor for indexed CIDR/wildcard policy lookup
+// Used to track which range of ipcidr_policy_map belongs to each protocol
 struct protocol_segment {
-    __u32 start_idx;           // Starting index in wildcard_policy_map
+    __u32 start_idx;           // Starting index in ipcidr_policy_map
     __u32 policy_count;        // Number of policies in this segment
     __u32 process_count;       // Number of process-specific policies in this segment
     __u32 reserved;            // Reserved for future use

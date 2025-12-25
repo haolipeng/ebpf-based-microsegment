@@ -406,7 +406,7 @@
 **Priority**: P1
 **Effort**: 1 day
 
-- [ ] Update `docs/EBPF_MICROSEGMENTATION_ROADMAP.md`
+- [ ] Update `docs/specs/roadmap.md`
   - Add performance optimization section
   - Document achieved metrics
   - Update architecture diagrams

@@ -38,8 +38,10 @@ eBPF 内核程序，实现高性能数据包过滤、会话跟踪和策略执行
 | Map 名称 | 类型 | 用途 |
 |----------|------|------|
 | session_map | LRU_HASH | 会话状态缓存（热路径 <1μs） |
-| policy_map | HASH | 精确匹配策略 |
-| wildcard_policy_map | ARRAY | 通配符策略（CIDR/端口范围） |
+| ipaddr_policy_map | HASH | 精确 IP 地址匹配策略 |
+| ipcidr_policy_map | ARRAY | CIDR/通配符策略（CIDR/端口范围） |
+| identity_policy_map | HASH | 身份策略匹配 |
+| ipcache_map | LPM_TRIE | IP 到身份映射缓存 |
 | default_policy | ARRAY | 全局默认策略 |
 | stats_map | PERCPU_ARRAY | Per-CPU 无锁统计 |
 | flow_events | RINGBUF | 流事件上报 |
@@ -49,9 +51,11 @@ eBPF 内核程序，实现高性能数据包过滤、会话跟踪和策略执行
 
 ```
 1. 检查 session_map → 命中则返回缓存 action（热路径）
-2. 精确匹配 policy_map（Hash 查找）
-3. 遍历 wildcard_policy_map（CIDR/端口匹配）
-4. 返回 default_policy
+2. 查询 ipcache_map → 获取源/目的身份 ID
+3. 精确匹配 identity_policy_map（身份策略）
+4. 精确匹配 ipaddr_policy_map（IP 地址策略）
+5. 遍历 ipcidr_policy_map（CIDR/通配符匹配）
+6. 返回 default_policy
 ```
 
 ## 特性标志
@@ -69,7 +73,10 @@ eBPF 内核程序，实现高性能数据包过滤、会话跟踪和策略执行
 sudo bpftool prog show
 
 # 查看 Maps 内容
-sudo bpftool map dump name policy_map
+sudo bpftool map dump name ipaddr_policy_map
+sudo bpftool map dump name ipcidr_policy_map
+sudo bpftool map dump name identity_policy_map
+sudo bpftool map dump name ipcache_map
 
 # 查看调试日志
 sudo cat /sys/kernel/debug/tracing/trace_pipe

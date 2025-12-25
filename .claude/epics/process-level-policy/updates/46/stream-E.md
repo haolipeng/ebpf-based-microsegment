@@ -32,7 +32,7 @@ Created comprehensive testing framework and documentation for process monitoring
   - All tests passing ✅
 
 ### Documentation
-- `docs/process-monitoring.md` (385 lines)
+- `docs/specs/features/process-monitoring.md` (385 lines)
   - Architecture overview
   - Component descriptions
   - Data flow diagrams

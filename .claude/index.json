@@ -1,0 +1,181 @@
+{
+  "timestamp": "2025-11-27T00:02:00+08:00",
+  "scan_version": "1.0",
+  "root_path": "/home/work/ebpf-based-microsegment",
+  "modules": [
+    {
+      "name": "agent",
+      "path": "src/agent",
+      "language": "Go",
+      "entry_points": ["cmd/main.go"],
+      "key_packages": [
+        "pkg/api",
+        "pkg/dataplane",
+        "pkg/policy",
+        "pkg/workload",
+        "pkg/groups",
+        "pkg/labels",
+        "pkg/flow",
+        "pkg/reporter",
+        "pkg/k8s",
+        "pkg/runtime"
+      ],
+      "test_dirs": ["test/e2e", "pkg/*_test.go"],
+      "config_files": ["config/agent.yaml", "config/agent-server.yaml", "config/standalone.yaml"],
+      "coverage": 100,
+      "notes": "Agent 负责 eBPF 数据平面管理、策略执行、工作负载发现、标签管理"
+    },
+    {
+      "name": "server",
+      "path": "src/server",
+      "language": "Go",
+      "entry_points": ["cmd/main.go"],
+      "key_packages": [
+        "pkg/api",
+        "pkg/storage",
+        "pkg/grpc",
+        "pkg/aggregator",
+        "pkg/topology",
+        "pkg/policy",
+        "pkg/graph",
+        "pkg/pubsub"
+      ],
+      "test_dirs": ["tests/e2e_test.go", "pkg/*_test.go"],
+      "config_files": ["config/server.yaml"],
+      "database": {
+        "type": "PostgreSQL",
+        "migrations": "pkg/storage/migrate.go",
+        "models": "pkg/storage/bun_models.go"
+      },
+      "coverage": 100,
+      "notes": "Server 提供中心化策略管理、gRPC API、流数据聚合、拓扑构建"
+    },
+    {
+      "name": "bpf",
+      "path": "src/bpf",
+      "language": "C",
+      "entry_points": [
+        "tc_microsegment.bpf.c",
+        "xdp_microsegment.bpf.c",
+        "process_monitor.bpf.c"
+      ],
+      "headers": [
+        "headers/common_types.h",
+        "headers/policy_match.h",
+        "headers/tcp_state_machine.h",
+        "headers/flow_processing.h",
+        "headers/nat_support.h",
+        "headers/fragment_handler.h",
+        "headers/process_monitor.h"
+      ],
+      "features": {
+        "DEBUG_MODE": "可配置",
+        "ENABLE_IP_FRAGMENT_HANDLING": "可配置",
+        "ENABLE_NAT_SUPPORT": "可配置"
+      },
+      "coverage": 100,
+      "notes": "eBPF 内核程序，实现 TC/XDP 数据包过滤、会话跟踪、策略匹配"
+    },
+    {
+      "name": "proto",
+      "path": "api/proto",
+      "language": "Protobuf",
+      "proto_files": [
+        "common/common.proto",
+        "policy/policy.proto",
+        "flow/flow.proto",
+        "agent/agent.proto",
+        "alert/alert.proto"
+      ],
+      "generated_code": {
+        "go": ["*/*.pb.go", "*/*_grpc.pb.go"]
+      },
+      "coverage": 100,
+      "notes": "gRPC 协议定义，定义 Agent-Server 通信接口"
+    },
+    {
+      "name": "web",
+      "path": "web",
+      "language": "TypeScript/React",
+      "entry_points": ["src/main.tsx"],
+      "frameworks": ["React 19", "Vite 7", "Ant Design 5", "ECharts 6"],
+      "key_directories": [
+        "src/components",
+        "src/pages",
+        "src/hooks",
+        "src/api",
+        "src/types",
+        "src/lib/graph"
+      ],
+      "features": [
+        "Dashboard",
+        "Policy Management",
+        "Flow Monitoring",
+        "Topology Visualization",
+        "Agent Management"
+      ],
+      "test_framework": "Vitest",
+      "coverage": 100,
+      "notes": "Web 管理界面，提供可视化、策略管理、流量监控、拓扑图"
+    }
+  ],
+  "ignored_patterns": [
+    "node_modules/**",
+    ".git/**",
+    ".github/**",
+    "dist/**",
+    "build/**",
+    ".next/**",
+    "__pycache__/**",
+    "*.lock",
+    "*.log",
+    "*.bin",
+    "*.pdf",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.mp4",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    "source-references/**",
+    "libbpf/**",
+    "bpftool/**",
+    "vmlinux/**",
+    "data/**",
+    "bin/**",
+    "*.o",
+    "*.so",
+    "*.a",
+    "*.bpf.o",
+    "*.skel.h",
+    "**/bpf_*.go"
+  ],
+  "statistics": {
+    "total_files_scanned": 350,
+    "go_files": 150,
+    "c_files": 3,
+    "h_files": 14,
+    "proto_files": 5,
+    "typescript_files": 80,
+    "yaml_files": 15,
+    "markdown_files": 50
+  },
+  "coverage_report": {
+    "overall": "100%",
+    "modules": {
+      "agent": "100%",
+      "server": "100%",
+      "bpf": "100%",
+      "proto": "100%",
+      "web": "100%"
+    },
+    "gaps": []
+  },
+  "next_steps": [
+    "如需深入某个模块，请查阅对应的 CLAUDE.md",
+    "建议定期更新文档以反映代码变更",
+    "可针对特定子包进行更详细的扫描"
+  ]
+}

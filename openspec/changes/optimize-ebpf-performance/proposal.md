@@ -190,8 +190,8 @@ Implement a multi-phase optimization strategy targeting the eBPF data plane hot 
 - [Linux kernel BPF docs](https://www.kernel.org/doc/html/latest/bpf/bpf_design_QA.html)
 - [Cilium Performance Guide](https://docs.cilium.io/en/stable/operations/performance/)
 - [BPF Performance Tools](http://www.brendangregg.com/bpf-performance-tools-book.html)
-- Project docs: `docs/EBPF_MICROSEGMENTATION_ROADMAP.md`
-- ZFW Analysis: `docs/zfw-analysis/zfw-deep-dive.md`
+- Project docs: `docs/specs/roadmap.md`
+- ZFW Analysis: `docs/research/zfw/zfw-deep-dive.md`
 
 ## Timeline
 

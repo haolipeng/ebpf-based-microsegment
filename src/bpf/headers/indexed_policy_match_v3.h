@@ -109,7 +109,7 @@ static __always_inline __u32 scan_process_policies(
         }
 
         struct wildcard_policy *wildcard =
-            bpf_map_lookup_elem(&wildcard_policy_map, &idx);
+            bpf_map_lookup_elem(&ipcidr_policy_map, &idx);
 
         if (!wildcard || wildcard->rule_id == 0) {
             break;
@@ -186,7 +186,7 @@ static __always_inline __u32 scan_network_policies(
         }
 
         struct wildcard_policy *wildcard =
-            bpf_map_lookup_elem(&wildcard_policy_map, &idx);
+            bpf_map_lookup_elem(&ipcidr_policy_map, &idx);
 
         if (!wildcard || wildcard->rule_id == 0) {
             break;
@@ -308,7 +308,7 @@ static __always_inline __u8 lookup_policy_action_indexed_v3(
     }
 
     // Try direction-specific exact match
-    struct policy_value *policy = bpf_map_lookup_elem(&policy_map, &pkey);
+    struct policy_value *policy = bpf_map_lookup_elem(&ipaddr_policy_map, &pkey);
     if (policy) {
         policy->hit_count += 1;
         update_stats(STATS_POLICY_HITS);
@@ -318,7 +318,7 @@ static __always_inline __u8 lookup_policy_action_indexed_v3(
 
     // Try bidirectional exact match
     pkey.direction = POLICY_DIR_ANY;
-    policy = bpf_map_lookup_elem(&policy_map, &pkey);
+    policy = bpf_map_lookup_elem(&ipaddr_policy_map, &pkey);
     if (policy) {
         policy->hit_count += 1;
         update_stats(STATS_POLICY_HITS);

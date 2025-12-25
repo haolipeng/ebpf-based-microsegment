@@ -551,7 +551,7 @@ src/agent/pkg/
 
 如有问题或建议，请：
 - 提交 Issue: https://github.com/[your-repo]/issues
-- 查看文档: `docs/wildcard-policy-optimization-proposal.md`
+- 查看文档: `docs/specs/policies/wildcard-optimization.md`
 
 ---
 

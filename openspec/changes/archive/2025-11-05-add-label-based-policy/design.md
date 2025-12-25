@@ -1436,7 +1436,7 @@ src/agent/pkg/
 
 ## 参考
 
-- MVP 计划：`/docs/microsegmentation-mvp-implementation-plan.md`
-- NeuVector 分析：`/docs/neuvector-analysis/neuvector-agent-dp-policy-flow.md`
+- MVP 计划：`/docs/archive/mvp-plan.md`
+- NeuVector 分析：`/docs/research/neuvector/neuvector-agent-dp-policy-flow.md`
 - Illumio 文档：四维度标签模型
 - 代理研究：全面的标签系统分析（先前的研究输出）

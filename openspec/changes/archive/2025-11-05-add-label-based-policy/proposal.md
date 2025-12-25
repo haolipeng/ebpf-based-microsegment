@@ -217,8 +217,8 @@ PolicyRule "allow-web-to-db": web-frontend → mysql-databases tcp/3306 allow
 - **缺点**：编译开销（对于控制平面可接受）
 
 ## 参考资料
-- MVP 计划：`/docs/microsegmentation-mvp-implementation-plan.md`（第 4 周：标签系统）
-- NeuVector 分析：`/docs/neuvector-analysis/neuvector-agent-dp-policy-flow.md`
+- MVP 计划：`/docs/archive/mvp-plan.md`（第 4 周：标签系统）
+- NeuVector 分析：`/docs/research/neuvector/neuvector-agent-dp-policy-flow.md`
 - Illumio 模型：四维标签（Role/App/Env/Location）
 - 研究报告：Agent 研究输出（全面的标签系统分析）
 

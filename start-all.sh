@@ -44,7 +44,7 @@ echo -e "${BLUE}[1/4] 启动 PostgreSQL 数据库...${NC}"
 if docker ps | grep -q microsegment-postgres; then
     echo -e "      ${YELLOW}PostgreSQL 已在运行${NC}"
 else
-    docker-compose -f docker-compose.simple.yml up -d > /dev/null 2>&1
+    docker-compose -f docker-compose.yml up -d > /dev/null 2>&1
     echo -e "      等待 PostgreSQL 就绪..."
 
     # Wait for PostgreSQL to be ready (max 30 seconds)

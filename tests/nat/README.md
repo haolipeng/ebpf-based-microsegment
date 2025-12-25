@@ -214,6 +214,6 @@ If cache hit rate is low (<80%):
 
 ## References
 
-- NAT Support Design: `/docs/NAT_SUPPORT_IMPLEMENTATION.md`
+- NAT Support Design: `/docs/specs/networking/nat-support.md`
 - Conntrack Package: `/src/agent/pkg/conntrack/`
 - BPF NAT Support: `/src/bpf/headers/nat_support.h`

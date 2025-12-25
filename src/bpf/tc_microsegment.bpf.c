@@ -78,7 +78,7 @@ struct {
     __type(value, struct session_value);
 } session_map SEC(".maps");
 
-// Policy map for exact 5-tuple matching
+// IP address policy map for exact 5-tuple matching
 // PINNED: TC 和 XDP 共享策略数据
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -86,10 +86,10 @@ struct {
     __type(key, struct policy_key);
     __type(value, struct policy_value);
     __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
-} policy_map SEC(".maps");
+} ipaddr_policy_map SEC(".maps");
 
-// Wildcard policy map for policies with wildcards (0 = any)
-// Uses ARRAY for linear search (slower but supports wildcards)
+// IP CIDR/wildcard policy map for policies with CIDR or wildcards (0 = any)
+// Uses ARRAY for linear search (slower but supports CIDR and wildcards)
 // PINNED: TC 和 XDP 共享策略数据
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
@@ -97,7 +97,7 @@ struct {
     __type(key, __u32);  // index
     __type(value, struct wildcard_policy);
     __uint(pinning, LIBBPF_PIN_BY_NAME);  // 按名称固定到 /sys/fs/bpf/
-} wildcard_policy_map SEC(".maps");
+} ipcidr_policy_map SEC(".maps");
 
 // Protocol offset map for indexed wildcard lookup
 // Maps protocol number to segment descriptor (start index + count)
@@ -795,7 +795,7 @@ int tc_microsegment_filter(struct __sk_buff *skb) {
     // Fallback to linear scan with process matching
     __u8 action = lookup_policy_action_with_process(
         &original_key, &proc_info, direction, &matched_rule_id,
-        &policy_map, &wildcard_policy_map);
+        &ipaddr_policy_map, &ipcidr_policy_map);
 #endif
 
 #if DEBUG_MODE

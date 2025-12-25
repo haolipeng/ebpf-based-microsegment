@@ -201,15 +201,15 @@ static __always_inline bool matches_wildcard_with_process(
  * @proc: Process match info
  * @direction: Packet direction (POLICY_DIR_INGRESS or POLICY_DIR_EGRESS)
  * @rule_id: Output parameter - matched rule ID
- * @policy_map_ptr: Pointer to policy_map
- * @wildcard_policy_map_ptr: Pointer to wildcard_policy_map
+ * @ipaddr_policy_map_ptr: Pointer to ipaddr_policy_map
+ * @ipcidr_ipaddr_policy_map_ptr: Pointer to ipcidr_ipaddr_policy_map
  *
  * Returns: Policy action (POLICY_ACTION_ALLOW or POLICY_ACTION_DENY)
  *
  * Policy lookup strategy with process awareness:
- * 1. Fast path: Exact match - O(1) hash lookup policy_map
+ * 1. Fast path: Exact match - O(1) hash lookup ipaddr_policy_map
  *    (Note: Exact match doesn't support process fields yet, network-only)
- * 2. Slow path: Wildcard match with process - linear scan wildcard_policy_map
+ * 2. Slow path: Wildcard match with process - linear scan ipcidr_ipaddr_policy_map
  *    - Prioritize policies with process_name set
  *    - Among matched policies, choose highest priority
  * 3. Default: Allow if no match
@@ -224,8 +224,8 @@ static __always_inline __u8 lookup_policy_action_with_process(
     struct process_match_info *proc,
     __u8 direction,
     __u32 *rule_id,
-    void *policy_map_ptr,
-    void *wildcard_policy_map_ptr)
+    void *ipaddr_policy_map_ptr,
+    void *ipcidr_ipaddr_policy_map_ptr)
 {
     // ===== Fast path: Exact match (network-only) =====
     // TODO: Future optimization - add process-aware exact match map
@@ -249,7 +249,7 @@ static __always_inline __u8 lookup_policy_action_with_process(
     }
 
     // Try direction-specific network-only policy
-    struct policy_value *policy = bpf_map_lookup_elem(policy_map_ptr, &pkey);
+    struct policy_value *policy = bpf_map_lookup_elem(ipaddr_policy_map_ptr, &pkey);
     if (policy) {
         policy->hit_count += 1;
         *rule_id = policy->rule_id;
@@ -258,7 +258,7 @@ static __always_inline __u8 lookup_policy_action_with_process(
 
     // Try bi-directional network-only policy
     pkey.direction = POLICY_DIR_ANY;
-    policy = bpf_map_lookup_elem(policy_map_ptr, &pkey);
+    policy = bpf_map_lookup_elem(ipaddr_policy_map_ptr, &pkey);
     if (policy) {
         policy->hit_count += 1;
         *rule_id = policy->rule_id;
@@ -278,7 +278,7 @@ static __always_inline __u8 lookup_policy_action_with_process(
         if (idx >= MAX_ENTRIES_WILDCARD_POLICY)
             break;
 
-        wildcard = bpf_map_lookup_elem(wildcard_policy_map_ptr, &idx);
+        wildcard = bpf_map_lookup_elem(ipcidr_ipaddr_policy_map_ptr, &idx);
         if (!wildcard)
             continue;
 

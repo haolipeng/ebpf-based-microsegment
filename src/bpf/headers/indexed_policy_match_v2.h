@@ -5,7 +5,7 @@
  * a segmented approach instead of hash_of_maps for easier implementation.
  *
  * Architecture:
- * - Single large ARRAY map (wildcard_policy_map) with 1000 slots
+ * - Single large ARRAY map (ipcidr_ipaddr_policy_map) with 1000 slots
  * - Protocol offset map tracks which segment belongs to which protocol
  * - Policies are stored in contiguous segments per protocol
  *
@@ -27,7 +27,7 @@
  *
  * Prerequisites:
  * 1. Include common_types.h
- * 2. Define wildcard_policy_map (existing)
+ * 2. Define ipcidr_ipaddr_policy_map (existing)
  * 3. Define protocol_offset_map (new)
  * 4. Define update_stats() function
  */
@@ -98,7 +98,7 @@ static __always_inline __u32 scan_protocol_segment(
         }
 
         struct wildcard_policy *wildcard =
-            bpf_map_lookup_elem(&wildcard_policy_map, &idx);
+            bpf_map_lookup_elem(&ipcidr_ipaddr_policy_map, &idx);
 
         if (!wildcard) {
             continue;
@@ -170,7 +170,7 @@ static __always_inline __u8 lookup_policy_action_indexed(
     }
 
     // Try direction-specific exact match
-    struct policy_value *policy = bpf_map_lookup_elem(&policy_map, &pkey);
+    struct policy_value *policy = bpf_map_lookup_elem(&ipaddr_policy_map, &pkey);
     if (policy) {
         policy->hit_count += 1;
         update_stats(STATS_POLICY_HITS);
@@ -180,7 +180,7 @@ static __always_inline __u8 lookup_policy_action_indexed(
 
     // Try bidirectional exact match
     pkey.direction = POLICY_DIR_ANY;
-    policy = bpf_map_lookup_elem(&policy_map, &pkey);
+    policy = bpf_map_lookup_elem(&ipaddr_policy_map, &pkey);
     if (policy) {
         policy->hit_count += 1;
         update_stats(STATS_POLICY_HITS);
